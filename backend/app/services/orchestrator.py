@@ -1,0 +1,301 @@
+import asyncio
+from typing import Callable, Awaitable
+
+from app.core.database import (
+    create_project,
+    get_project,
+    update_project_status,
+    save_agent_output,
+    update_output_status,
+    get_latest_output,
+    set_memory,
+    get_memory,
+)
+from app.agents.engine import run_agent, cross_review
+from app.services.file_generator import generate_project_files, get_generated_files_list
+from app.services.pptx_generator import generate_pptx
+from app.services.docx_generator import generate_docx
+from app.services.webhook import send_agent_event, send_research_data, send_approval_event, send_deliverables_ready
+from app.models.schemas import (
+    AgentRole,
+    ProjectStatus,
+    PIPELINE_ORDER,
+    WORKING_STAGES,
+    REVIEW_STAGES,
+)
+
+
+WSCallback = Callable[[str, str, dict], Awaitable[None]]
+
+
+class Orchestrator:
+    def __init__(self):
+        self._ws_callback: WSCallback | None = None
+        self._running_tasks: dict[str, asyncio.Task] = {}
+
+    def set_ws_callback(self, callback: WSCallback):
+        self._ws_callback = callback
+
+    async def _notify(self, msg_type: str, project_id: str, data: dict):
+        if self._ws_callback:
+            await self._ws_callback(msg_type, project_id, data)
+
+    async def start_project(self, problem_statement: str) -> dict:
+        project = await create_project(problem_statement)
+        project_id = project["id"]
+
+        await set_memory(project_id, "problem_statement", problem_statement, "founder")
+
+        await self._notify("agent_started", project_id, {
+            "role": "ceo",
+            "message": "CEO is analyzing the problem statement..."
+        })
+
+        ceo_output = await run_agent(project_id, AgentRole.CEO)
+        await update_output_status(ceo_output["id"], "approved")
+        await set_memory(project_id, "ceo_brief", str(ceo_output["content"]), "ceo")
+
+        await self._notify("agent_completed", project_id, {
+            "role": "ceo",
+            "message": "CEO has created the project brief and assigned work."
+        })
+
+        await self._start_next_agent(project_id, AgentRole.BUSINESS_ANALYST)
+
+        return project
+
+    async def _start_next_agent(self, project_id: str, role: AgentRole):
+        working_status = WORKING_STAGES.get(role)
+        if working_status:
+            await update_project_status(project_id, working_status.value)
+
+        await self._notify("agent_started", project_id, {
+            "role": role.value,
+            "message": f"{role.value.replace('_', ' ').title()} is now working..."
+        })
+
+        async def _run():
+            try:
+                token_count = 0
+
+                async def _stream_to_ws(token: str):
+                    nonlocal token_count
+                    token_count += 1
+                    if token_count % 3 == 0:
+                        await self._notify("agent_stream", project_id, {
+                            "role": role.value,
+                            "token": token,
+                            "token_count": token_count,
+                        })
+
+                output = await run_agent(project_id, role, stream_callback=_stream_to_ws)
+
+                review_data = None
+                try:
+                    review_data = await cross_review(project_id, role, output["content"])
+                except Exception:
+                    pass
+
+                try:
+                    await send_agent_event("agent_completed", project_id, role.value, output.get("content"), review_data)
+                except Exception:
+                    pass
+
+                review_status = REVIEW_STAGES.get(role)
+                if review_status:
+                    await update_project_status(project_id, review_status.value)
+
+                    if review_data:
+                        await self._notify("peer_review_completed", project_id, {
+                            "role": role.value,
+                            "reviewer": review_data.get("reviewer", ""),
+                            "team_note": review_data.get("team_note", ""),
+                            "message": f"{review_data.get('reviewer_label', 'A teammate')} reviewed this work: \"{review_data.get('team_note', '')}\""
+                        })
+
+                    await self._notify("approval_needed", project_id, {
+                        "role": role.value,
+                        "output_id": output["id"],
+                        "content": output["content"],
+                        "message": f"{role.value.replace('_', ' ').title()} has completed their work. Please review and approve."
+                    })
+                elif role == AgentRole.PPT:
+                    if isinstance(output["content"], dict):
+                        try:
+                            pptx_path = generate_pptx(project_id, output["content"])
+                            await self._notify("pptx_generated", project_id, {
+                                "message": "Presentation (.pptx) generated and ready for download!"
+                            })
+                        except Exception as e:
+                            await self._notify("error", project_id, {
+                                "message": f"PPTX generation error: {str(e)}"
+                            })
+                    try:
+                        from app.core.database import get_project_outputs, get_memory as get_mem
+                        all_outputs = await get_project_outputs(project_id)
+                        all_memory = await get_mem(project_id)
+                        proj = await get_project(project_id)
+                        docx_path = generate_docx(project_id, proj, all_outputs, all_memory)
+                        await self._notify("docx_generated", project_id, {
+                            "message": "Project report (.docx) generated and ready for download!"
+                        })
+                    except Exception as e:
+                        await self._notify("error", project_id, {
+                            "message": f"DOCX generation error: {str(e)}"
+                        })
+
+                    await update_project_status(project_id, ProjectStatus.COMPLETED.value)
+
+                    try:
+                        await send_agent_event("project_completed", project_id, "all", None, None)
+                    except Exception:
+                        pass
+
+                    try:
+                        proj_data = await get_project(project_id)
+                        p_name = "Project"
+                        if isinstance(output["content"], dict):
+                            rd = output["content"].get("report_data", {})
+                            if isinstance(rd, dict):
+                                p_name = rd.get("title", p_name)
+                        delivs = ["code.zip", "presentation.pptx", "report.docx"]
+                        await send_deliverables_ready(project_id, p_name, delivs)
+                    except Exception:
+                        pass
+
+                    await self._notify("project_completed", project_id, {
+                        "role": role.value,
+                        "output_id": output["id"],
+                        "content": output["content"],
+                        "message": "All work is complete! Your project is ready."
+                    })
+            except Exception as e:
+                await self._notify("error", project_id, {
+                    "role": role.value,
+                    "message": f"Error: {str(e)}"
+                })
+
+        task = asyncio.create_task(_run())
+        self._running_tasks[project_id] = task
+
+    async def handle_approval(self, project_id: str, output_id: str, approved: bool, feedback: str | None = None):
+        if approved:
+            await update_output_status(output_id, "approved")
+
+            project = await get_project(project_id)
+            if not project:
+                return
+
+            status = project["status"]
+
+            current_role = None
+            for r in PIPELINE_ORDER:
+                rs = REVIEW_STAGES.get(r)
+                if rs and status == rs.value:
+                    current_role = r.value
+                    break
+            try:
+                await send_approval_event(project_id, current_role or "unknown", True)
+            except Exception:
+                pass
+
+            next_role = None
+
+            if status == ProjectStatus.BA_REVIEW.value:
+                next_role = AgentRole.RESEARCHER
+            elif status == ProjectStatus.RESEARCH_REVIEW.value:
+                next_role = AgentRole.ARCHITECT
+            elif status == ProjectStatus.ARCHITECT_REVIEW.value:
+                next_role = AgentRole.ENGINEER
+            elif status == ProjectStatus.ENGINEER_REVIEW.value:
+                engineer_output = await get_latest_output(project_id, AgentRole.ENGINEER.value)
+                if engineer_output and isinstance(engineer_output.get("content"), dict):
+                    try:
+                        zip_path = generate_project_files(project_id, engineer_output["content"])
+                        files_list = get_generated_files_list(project_id)
+                        await self._notify("files_generated", project_id, {
+                            "message": f"Project files generated! {len(files_list)} files ready for download.",
+                            "files": files_list,
+                        })
+                    except Exception as e:
+                        await self._notify("error", project_id, {
+                            "message": f"File generation error: {str(e)}"
+                        })
+                next_role = AgentRole.PPT
+
+            if next_role:
+                await self._notify("approval_accepted", project_id, {
+                    "message": f"Approved! Moving to {next_role.value.replace('_', ' ').title()}..."
+                })
+                await self._start_next_agent(project_id, next_role)
+        else:
+            await update_output_status(output_id, "rejected")
+
+            project = await get_project(project_id)
+            if not project:
+                return
+
+            status = project["status"]
+
+            try:
+                rejected_role = None
+                for r in PIPELINE_ORDER:
+                    rs = REVIEW_STAGES.get(r)
+                    if rs and status == rs.value:
+                        rejected_role = r.value
+                        break
+                await send_approval_event(project_id, rejected_role or "unknown", False, feedback)
+            except Exception:
+                pass
+
+            redo_role = None
+
+            if status == ProjectStatus.BA_REVIEW.value:
+                redo_role = AgentRole.BUSINESS_ANALYST
+            elif status == ProjectStatus.RESEARCH_REVIEW.value:
+                redo_role = AgentRole.RESEARCHER
+            elif status == ProjectStatus.ARCHITECT_REVIEW.value:
+                redo_role = AgentRole.ARCHITECT
+            elif status == ProjectStatus.ENGINEER_REVIEW.value:
+                redo_role = AgentRole.ENGINEER
+
+            if redo_role and feedback:
+                await set_memory(project_id, f"{redo_role.value}_revision_feedback", feedback, "founder")
+
+            if redo_role:
+                await self._notify("revision_requested", project_id, {
+                    "role": redo_role.value,
+                    "message": f"Revision requested. {redo_role.value.replace('_', ' ').title()} is reworking..."
+                })
+                await self._start_next_agent(project_id, redo_role)
+
+    async def get_project_state(self, project_id: str) -> dict:
+        from app.core.database import get_project_outputs
+        project = await get_project(project_id)
+        if not project:
+            return {}
+
+        outputs = await get_project_outputs(project_id)
+        memory = await get_memory(project_id)
+
+        current_agent = None
+        pending_approval = False
+        status = project["status"]
+
+        for role in PIPELINE_ORDER:
+            if status == WORKING_STAGES.get(role, "").value if WORKING_STAGES.get(role) else False:
+                current_agent = role.value
+            if status == REVIEW_STAGES.get(role, "").value if REVIEW_STAGES.get(role) else False:
+                pending_approval = True
+                current_agent = role.value
+
+        return {
+            "project": project,
+            "outputs": outputs,
+            "memory": memory,
+            "current_agent": current_agent,
+            "pending_approval": pending_approval,
+        }
+
+
+orchestrator = Orchestrator()

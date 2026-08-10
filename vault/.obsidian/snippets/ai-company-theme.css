@@ -1,0 +1,575 @@
+/* ============================================================
+   AI Software Company — Obsidian Theme Snippet
+   Accent: #635bff (Electric Purple)
+   Background: #0f0f14 / Surface: #1a1a24
+   ============================================================ */
+
+/* --- Root Variables ---------------------------------------- */
+body.theme-dark {
+  --background-primary: #0f0f14;
+  --background-primary-alt: #141420;
+  --background-secondary: #1a1a24;
+  --background-secondary-alt: #20202e;
+  --background-modifier-border: #2a2a3a;
+  --background-modifier-form-field: #141420;
+  --background-modifier-form-field-highlighted: #1e1e30;
+  --background-modifier-box-shadow: rgba(0, 0, 0, 0.4);
+  --background-modifier-success: #0bbf8c22;
+  --background-modifier-error: #ed5f7422;
+  --background-modifier-error-rgb: 237, 95, 116;
+  --background-modifier-error-hover: #ed5f7433;
+  --background-modifier-cover: rgba(15, 15, 20, 0.85);
+  --text-normal: #dcdde4;
+  --text-muted: #8888a0;
+  --text-faint: #555570;
+  --text-accent: #635bff;
+  --text-accent-hover: #7d76ff;
+  --text-error: #ed5f74;
+  --text-error-hover: #f07a8c;
+  --text-highlight-bg: rgba(99, 91, 255, 0.18);
+  --text-highlight-bg-active: rgba(99, 91, 255, 0.3);
+  --text-selection: rgba(99, 91, 255, 0.25);
+  --text-on-accent: #ffffff;
+  --interactive-normal: #1e1e2e;
+  --interactive-hover: #282840;
+  --interactive-accent: #635bff;
+  --interactive-accent-rgb: 99, 91, 255;
+  --interactive-accent-hover: #7d76ff;
+  --interactive-success: #0bbf8c;
+  --scrollbar-active-thumb-bg: rgba(99, 91, 255, 0.45);
+  --scrollbar-bg: rgba(15, 15, 20, 0.05);
+  --scrollbar-thumb-bg: rgba(99, 91, 255, 0.2);
+  --highlight-mix-blend-mode: lighten;
+}
+
+/* --- Scrollbar ---------------------------------------------- */
+body.theme-dark ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+body.theme-dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+body.theme-dark ::-webkit-scrollbar-thumb {
+  background: rgba(99, 91, 255, 0.25);
+  border-radius: 3px;
+}
+body.theme-dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 91, 255, 0.45);
+}
+
+/* --- Workspace / Sidebar ----------------------------------- */
+body.theme-dark .workspace-leaf {
+  background-color: var(--background-primary);
+}
+body.theme-dark .workspace-leaf-resize-handle {
+  background-color: var(--background-modifier-border);
+}
+body.theme-dark .nav-header {
+  padding: 8px 12px;
+}
+body.theme-dark .nav-file-title,
+body.theme-dark .nav-folder-title {
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 2px 8px;
+  transition: all 0.15s ease;
+}
+body.theme-dark .nav-file-title:hover,
+body.theme-dark .nav-folder-title:hover {
+  color: var(--text-normal);
+  background-color: var(--interactive-hover);
+}
+body.theme-dark .nav-file-title.is-active {
+  color: var(--text-on-accent);
+  background-color: var(--interactive-accent);
+}
+body.theme-dark .nav-folder-title {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+/* --- Headers ----------------------------------------------- */
+body.theme-dark h1,
+body.theme-dark .markdown-rendered h1,
+body.theme-dark .cm-header-1 {
+  background: linear-gradient(135deg, #635bff 0%, #a78bfa 50%, #38bdf8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  padding-bottom: 4px;
+  border-bottom: 2px solid rgba(99, 91, 255, 0.2);
+  margin-bottom: 16px;
+}
+body.theme-dark h2,
+body.theme-dark .markdown-rendered h2,
+body.theme-dark .cm-header-2 {
+  color: #a78bfa;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border-bottom: 1px solid rgba(99, 91, 255, 0.1);
+  padding-bottom: 4px;
+}
+body.theme-dark h3,
+body.theme-dark .markdown-rendered h3,
+body.theme-dark .cm-header-3 {
+  color: #8b80f0;
+  font-weight: 600;
+}
+body.theme-dark h4,
+body.theme-dark .markdown-rendered h4,
+body.theme-dark .cm-header-4 {
+  color: #7d76ff;
+  font-weight: 600;
+}
+body.theme-dark h5,
+body.theme-dark .markdown-rendered h5,
+body.theme-dark .cm-header-5 {
+  color: #6e68e0;
+  font-weight: 500;
+}
+body.theme-dark h6,
+body.theme-dark .markdown-rendered h6,
+body.theme-dark .cm-header-6 {
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.85em;
+  letter-spacing: 0.05em;
+}
+
+/* --- Bold & Italic ----------------------------------------- */
+body.theme-dark strong,
+body.theme-dark .cm-strong {
+  color: #b0a8ff;
+  font-weight: 700;
+}
+body.theme-dark em,
+body.theme-dark .cm-em {
+  color: #c0bce0;
+  font-style: italic;
+}
+
+/* --- Links ------------------------------------------------- */
+body.theme-dark a,
+body.theme-dark .internal-link,
+body.theme-dark .cm-hmd-internal-link,
+body.theme-dark .cm-link,
+body.theme-dark .cm-url {
+  color: var(--text-accent);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+body.theme-dark a:hover,
+body.theme-dark .internal-link:hover {
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}
+body.theme-dark .external-link {
+  color: #38bdf8;
+}
+body.theme-dark .external-link:hover {
+  color: #5ccbfa;
+}
+
+/* --- Tags (Pill Style) ------------------------------------- */
+body.theme-dark .tag,
+body.theme-dark .cm-hashtag {
+  background-color: rgba(99, 91, 255, 0.12);
+  color: #a78bfa;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  border: 1px solid rgba(99, 91, 255, 0.15);
+  transition: all 0.15s ease;
+}
+body.theme-dark .tag:hover,
+body.theme-dark .cm-hashtag:hover {
+  background-color: rgba(99, 91, 255, 0.22);
+  color: #c0b8ff;
+  border-color: rgba(99, 91, 255, 0.3);
+}
+
+/* --- Blockquotes ------------------------------------------- */
+body.theme-dark blockquote,
+body.theme-dark .markdown-rendered blockquote {
+  border-left: 3px solid #635bff;
+  background-color: rgba(99, 91, 255, 0.06);
+  padding: 12px 16px;
+  border-radius: 0 6px 6px 0;
+  margin: 8px 0;
+  color: var(--text-muted);
+}
+
+/* --- Horizontal Rules (Gradient Lines) --------------------- */
+body.theme-dark hr,
+body.theme-dark .markdown-rendered hr {
+  border: none;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #635bff, #a78bfa, #38bdf8, transparent);
+  margin: 24px 0;
+  opacity: 0.6;
+}
+
+/* --- Code Blocks ------------------------------------------- */
+body.theme-dark code,
+body.theme-dark .cm-inline-code {
+  background-color: rgba(99, 91, 255, 0.1);
+  color: #c4b5fd;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+body.theme-dark pre,
+body.theme-dark .markdown-rendered pre {
+  background-color: #0c0c10;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+}
+body.theme-dark pre code {
+  background: none;
+  padding: 0;
+  color: var(--text-normal);
+}
+
+/* --- Tables ------------------------------------------------ */
+body.theme-dark table {
+  border-collapse: collapse;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+body.theme-dark th {
+  background-color: #635bff;
+  color: #ffffff;
+  font-weight: 600;
+  padding: 10px 14px;
+  text-align: left;
+  border: none;
+}
+body.theme-dark td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+body.theme-dark tr:nth-child(even) td {
+  background-color: rgba(99, 91, 255, 0.04);
+}
+body.theme-dark tr:nth-child(odd) td {
+  background-color: var(--background-primary);
+}
+body.theme-dark tr:hover td {
+  background-color: rgba(99, 91, 255, 0.08);
+  transition: background-color 0.15s ease;
+}
+
+/* --- Checkboxes -------------------------------------------- */
+body.theme-dark input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--text-faint);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+body.theme-dark input[type="checkbox"]:checked {
+  background-color: #635bff;
+  border-color: #635bff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px;
+}
+body.theme-dark input[type="checkbox"]:hover {
+  border-color: var(--interactive-accent);
+}
+
+/* --- Lists ------------------------------------------------- */
+body.theme-dark .markdown-rendered ul > li::marker {
+  color: #635bff;
+}
+body.theme-dark .markdown-rendered ol > li::marker {
+  color: #a78bfa;
+  font-weight: 600;
+}
+
+/* --- Callout Blocks ---------------------------------------- */
+
+/* Base callout styling */
+body.theme-dark .callout {
+  border-radius: 8px;
+  border-left-width: 4px;
+  background-color: var(--background-secondary);
+  padding: 4px 12px;
+  margin: 10px 0;
+  transition: box-shadow 0.2s ease;
+}
+body.theme-dark .callout:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+body.theme-dark .callout-title {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Agent callout — orange */
+body.theme-dark .callout[data-callout="agent"] {
+  border-left-color: #f5a623;
+  background-color: rgba(245, 166, 35, 0.06);
+}
+body.theme-dark .callout[data-callout="agent"] .callout-title {
+  color: #f5a623;
+}
+body.theme-dark .callout[data-callout="agent"] .callout-icon::after {
+  content: "🤖";
+}
+body.theme-dark .callout[data-callout="agent"] .callout-icon .svg-icon {
+  display: none;
+}
+
+/* Pipeline callout — green */
+body.theme-dark .callout[data-callout="pipeline"] {
+  border-left-color: #0bbf8c;
+  background-color: rgba(11, 191, 140, 0.06);
+}
+body.theme-dark .callout[data-callout="pipeline"] .callout-title {
+  color: #0bbf8c;
+}
+body.theme-dark .callout[data-callout="pipeline"] .callout-icon::after {
+  content: "⚙️";
+}
+body.theme-dark .callout[data-callout="pipeline"] .callout-icon .svg-icon {
+  display: none;
+}
+
+/* Decision callout — purple */
+body.theme-dark .callout[data-callout="decision"] {
+  border-left-color: #a855f7;
+  background-color: rgba(168, 85, 247, 0.06);
+}
+body.theme-dark .callout[data-callout="decision"] .callout-title {
+  color: #a855f7;
+}
+body.theme-dark .callout[data-callout="decision"] .callout-icon::after {
+  content: "💡";
+}
+body.theme-dark .callout[data-callout="decision"] .callout-icon .svg-icon {
+  display: none;
+}
+
+/* Status callout — blue */
+body.theme-dark .callout[data-callout="status"] {
+  border-left-color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.06);
+}
+body.theme-dark .callout[data-callout="status"] .callout-title {
+  color: #38bdf8;
+}
+body.theme-dark .callout[data-callout="status"] .callout-icon::after {
+  content: "📊";
+}
+body.theme-dark .callout[data-callout="status"] .callout-icon .svg-icon {
+  display: none;
+}
+
+/* Code callout — red */
+body.theme-dark .callout[data-callout="code"] {
+  border-left-color: #ed5f74;
+  background-color: rgba(237, 95, 116, 0.06);
+}
+body.theme-dark .callout[data-callout="code"] .callout-title {
+  color: #ed5f74;
+}
+body.theme-dark .callout[data-callout="code"] .callout-icon::after {
+  content: "🖥️";
+}
+body.theme-dark .callout[data-callout="code"] .callout-icon .svg-icon {
+  display: none;
+}
+
+/* --- Mermaid Diagrams (Dark Theme Compat) ------------------ */
+body.theme-dark .mermaid {
+  background-color: transparent;
+}
+body.theme-dark .mermaid .node rect,
+body.theme-dark .mermaid .node circle,
+body.theme-dark .mermaid .node polygon {
+  fill: #1e1e30;
+  stroke: #635bff;
+  stroke-width: 2px;
+}
+body.theme-dark .mermaid .nodeLabel {
+  color: #dcdde4;
+}
+body.theme-dark .mermaid .edgePath .path {
+  stroke: #555570;
+  stroke-width: 2px;
+}
+body.theme-dark .mermaid .edgeLabel {
+  background-color: #1a1a24;
+  color: #a78bfa;
+}
+body.theme-dark .mermaid .cluster rect {
+  fill: rgba(99, 91, 255, 0.05);
+  stroke: rgba(99, 91, 255, 0.2);
+}
+
+/* --- Graph View -------------------------------------------- */
+body.theme-dark .graph-view.color-fill {
+  color: #635bff;
+}
+body.theme-dark .graph-view.color-circle {
+  color: #635bff;
+}
+body.theme-dark .graph-view.color-line {
+  color: #2a2a3a;
+}
+body.theme-dark .graph-view.color-text {
+  color: #dcdde4;
+}
+body.theme-dark .graph-view.color-fill-highlight {
+  color: #a78bfa;
+}
+body.theme-dark .graph-view.color-fill-focused {
+  color: #7d76ff;
+}
+
+/* --- Search ------------------------------------------------ */
+body.theme-dark .search-result-file-title {
+  color: var(--text-accent);
+  font-weight: 600;
+}
+body.theme-dark .search-result-file-matched-text {
+  color: #f5a623;
+}
+
+/* --- Tooltips & Popups ------------------------------------- */
+body.theme-dark .tooltip {
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* --- Status Bar -------------------------------------------- */
+body.theme-dark .status-bar {
+  background-color: var(--background-secondary);
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* --- Title Bar --------------------------------------------- */
+body.theme-dark .titlebar {
+  background-color: var(--background-primary);
+}
+body.theme-dark .titlebar-text {
+  color: var(--text-muted);
+}
+
+/* --- Tab Header -------------------------------------------- */
+body.theme-dark .workspace-tab-header {
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+body.theme-dark .workspace-tab-header:hover {
+  color: var(--text-normal);
+}
+body.theme-dark .workspace-tab-header.is-active {
+  color: var(--text-accent);
+  border-bottom: 2px solid var(--interactive-accent);
+}
+
+/* --- Images ------------------------------------------------ */
+body.theme-dark img {
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+body.theme-dark img:hover {
+  transform: scale(1.01);
+  box-shadow: 0 4px 20px rgba(99, 91, 255, 0.15);
+}
+
+/* --- Embedded Notes ---------------------------------------- */
+body.theme-dark .markdown-embed {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background-color: var(--background-secondary);
+  padding: 12px;
+}
+body.theme-dark .markdown-embed-title {
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+/* --- Footnotes --------------------------------------------- */
+body.theme-dark .footnote-ref,
+body.theme-dark .footnote-backref {
+  color: var(--text-accent);
+}
+
+/* --- Buttons ----------------------------------------------- */
+body.theme-dark button.mod-cta {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-radius: 6px;
+  font-weight: 600;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+body.theme-dark button.mod-cta:hover {
+  background-color: var(--interactive-accent-hover);
+  transform: translateY(-1px);
+}
+
+/* --- Transitions & Polish ---------------------------------- */
+body.theme-dark .markdown-rendered,
+body.theme-dark .cm-s-obsidian {
+  transition: background-color 0.2s ease;
+}
+
+/* Smooth content fade-in */
+body.theme-dark .view-content {
+  animation: fadeIn 0.2s ease-in;
+}
+@keyframes fadeIn {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
+}
+
+/* --- File Explorer Indentation Lines ----------------------- */
+body.theme-dark .nav-folder-children .nav-folder-children {
+  border-left: 1px solid rgba(99, 91, 255, 0.1);
+  margin-left: 8px;
+  padding-left: 8px;
+}
+
+/* --- Frontmatter ------------------------------------------- */
+body.theme-dark .frontmatter-container {
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+body.theme-dark .frontmatter-container .frontmatter-key {
+  color: var(--text-accent);
+}
+
+/* --- Print / Export Clean ---------------------------------- */
+@media print {
+  body.theme-dark {
+    --background-primary: #ffffff;
+    --text-normal: #1a1a1a;
+  }
+}

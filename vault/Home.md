@@ -1,0 +1,179 @@
+# AI Software Company
+
+> **Your personal AI engineering team** — paste a problem, get a product.
+
+---
+
+> [!status] System Status
+> | Metric | Value |
+> |--------|-------|
+> | **Version** | v1.0 (Hackathon-Ready) |
+> | **Hackathon Date** | Aug 18-19, 2026 |
+> | **Pipeline Status** | Operational |
+> | **Last Test Run** | Project `1c6d47e1f0d3` — All 3 deliverables generated |
+> | **n8n Events** | 12/12 webhook events successful |
+
+---
+
+## Command Center
+
+> [!pipeline] Agent Pipeline
+> **CEO** → **Business Analyst** → **Researcher** → **Architect** → **Engineer** → **PPT Agent**
+>
+> 4 approval gates | Cross-review after each agent | Founder always in control
+
+### Project Docs
+
+| Document | Description |
+|----------|-------------|
+| [[Project Vision]] | Why this exists, the core thesis |
+| [[How It Works]] | End-to-end user journey |
+| [[Agent Roster]] | All 6 agents at a glance |
+
+### Architecture
+
+| Document | Description |
+|----------|-------------|
+| [[Tech Stack]] | Python + Next.js + SQLite + OmniRoute |
+| [[Orchestrator]] | Pipeline engine, approval gates, webhooks |
+| [[Database Schema]] | SQLite schema and queries |
+| [[OmniRoute Setup]] | AI gateway configuration |
+| [[Model Strategy]] | Per-agent model selection and cost analysis |
+
+### Agents
+
+| Document | Description |
+|----------|-------------|
+| [[CEO Agent]] | Generates project brief from problem statement |
+| [[Engineer Agent]] | The critical agent — generates runnable code |
+| [[Agent Roster]] | Full roster with all 6 agents |
+
+### API & Integrations
+
+| Document | Description |
+|----------|-------------|
+| [[API Reference]] | 12 REST + WebSocket endpoints |
+| [[n8n Integration]] | Webhook event hub on srv1867770 |
+| [[GitHub Integration]] | Level 4 auto-deploy (planned) |
+
+### Frontend
+
+| Document | Description |
+|----------|-------------|
+| [[Frontend Dashboard]] | Next.js dashboard, light theme, share buttons |
+
+### Decisions & History
+
+| Document | Description |
+|----------|-------------|
+| [[Search API Comparison]] | Why Tavily over DuckDuckGo |
+| [[Cross Review System]] | Why agents review each other |
+| [[Pipeline Test Results]] | Full test run with timing data |
+
+### Roadmap
+
+| Document | Description |
+|----------|-------------|
+| [[Roadmap]] | V1 done, V1.5 Level 4, V2 product version |
+| [[Training Schedule - LaunchpadX]] | 13-day plan: Learn → Build → SIH → Level Up → LaunchpadX |
+
+### Agentic AI Knowledge Base
+
+| Document | Description |
+|----------|-------------|
+| [[Agentic AI - Master Guide]] | What is agentic AI — the complete picture |
+| [[Types of AI Agents]] | Reactive, deliberative, hybrid + Russell & Norvig classification |
+| [[Agent Design Patterns]] | 7 patterns: ReAct, reflection, tool use, planning, etc. |
+| [[Multi-Agent Architectures]] | Orchestrator, hierarchical, swarm, pipeline, DAG |
+| [[Agent Frameworks Comparison]] | LangGraph vs CrewAI vs OpenAI SDK vs Claude SDK |
+| [[Agent Protocols - MCP and A2A]] | How agents connect to tools and each other |
+| [[Agentic AI Use Cases]] | Real-world production applications across industries |
+| [[Our AI Software Company]] | How our project maps to every agentic AI concept |
+| [[RAG - Retrieval Augmented Generation]] | Naive → Advanced → Agentic → Graph RAG, vector DBs, embeddings |
+| [[Voice Agents]] | STT→LLM→TTS pipeline, platforms (ElevenLabs, Vapi, LiveKit) |
+| [[Call Agents]] | Phone call AI — inbound/outbound, Vapi vs Bland vs Retell |
+| [[AI Agent Market - Competitors]] | Cognition ($26B), Sierra, Harvey, Glean — who's earning what |
+| [[How to Build AI Agents]] | Every approach: no-code → n8n → SDK → raw API, decision tree |
+
+---
+
+## Architecture Overview
+
+```mermaid
+graph LR
+    F["Founder"] -->|problem statement| CEO
+    CEO -->|project brief| BA["Business Analyst"]
+    BA -->|requirements| R["Researcher"]
+    R -->|research report| A["Architect"]
+    A -->|technical spec| E["Engineer"]
+    E -->|runnable code| PPT["PPT Agent"]
+
+    BA -.->|"Gate 1: Approve/Reject"| F
+    R -.->|"Gate 2: Approve/Reject"| F
+    A -.->|"Gate 3: Approve/Reject"| F
+    E -.->|"Gate 4: Approve/Reject"| F
+
+    PPT -->|".pptx + .docx + .zip"| D["Deliverables"]
+
+    style CEO fill:#f5a623,stroke:#f5a623,color:#0f0f14
+    style BA fill:#635bff,stroke:#635bff,color:#fff
+    style R fill:#0bbf8c,stroke:#0bbf8c,color:#0f0f14
+    style A fill:#a855f7,stroke:#a855f7,color:#fff
+    style E fill:#ed5f74,stroke:#ed5f74,color:#fff
+    style PPT fill:#38bdf8,stroke:#38bdf8,color:#0f0f14
+    style F fill:#fbbf24,stroke:#fbbf24,color:#0f0f14
+    style D fill:#635bff,stroke:#635bff,color:#fff
+```
+
+---
+
+## Quick Stats
+
+> [!agent] The Team
+> | Stat | Count |
+> |------|-------|
+> | **AI Agents** | 6 |
+> | **Approval Gates** | 4 |
+> | **Deliverables** | 3 (ZIP, PPTX, DOCX) |
+> | **API Endpoints** | 12 |
+> | **Webhook Event Types** | 5 |
+> | **Budget per Run** | ~$0.26 |
+> | **Runs per $10** | 38+ full pipelines |
+
+---
+
+## Project Structure
+
+```
+AI SOFTWARE TEAM/
+├── backend/
+│   ├── app/
+│   │   ├── agents/       # Agent prompts & execution engine
+│   │   ├── api/          # FastAPI routes
+│   │   ├── core/         # Config, database
+│   │   ├── models/       # Pydantic schemas
+│   │   └── services/     # Orchestrator, file gen, PPTX, webhook
+│   ├── requirements.txt
+│   └── .env
+├── frontend/
+│   ├── src/
+│   │   ├── app/          # Next.js pages
+│   │   ├── components/   # React components
+│   │   └── lib/          # API client, constants
+│   └── package.json
+└── vault/                # This Obsidian vault
+```
+
+---
+
+> [!decision] Design Principles
+> 1. **6 agents, never fewer** — separation of concerns IS the value
+> 2. **Founder always in control** — approval gates are non-negotiable
+> 3. **Real outputs** — runnable code, real presentations, not just text
+> 4. **Build for yourself** — this is your tool, not a demo for judges
+
+---
+
+*Built by Solo Founder + Claude (CTO)*
+
+#home #dashboard

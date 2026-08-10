@@ -1,0 +1,21 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
+DATABASE_PATH = os.getenv("DATABASE_PATH", "company.db")
+SMART_MODEL = os.getenv("SMART_MODEL", "anthropic/claude-sonnet-4")
+
+MODEL_MAP = {
+    "ceo": os.getenv("MODEL_CEO", SMART_MODEL),
+    "business_analyst": os.getenv("MODEL_BA", SMART_MODEL),
+    "researcher": os.getenv("MODEL_RESEARCHER", SMART_MODEL),
+    "architect": os.getenv("MODEL_ARCHITECT", SMART_MODEL),
+    "engineer": os.getenv("MODEL_ENGINEER", SMART_MODEL),
+    "ppt": os.getenv("MODEL_PPT", SMART_MODEL),
+    "cross_review": os.getenv("MODEL_REVIEW", SMART_MODEL),
+}

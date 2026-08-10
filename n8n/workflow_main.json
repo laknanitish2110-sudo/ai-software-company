@@ -1,0 +1,198 @@
+{
+  "name": "AI Software Company — Event Hub",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-company",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            { "outputIndex": 0, "value": "agent_completed" },
+            { "outputIndex": 1, "value": "founder_decision" },
+            { "outputIndex": 2, "value": "project_completed" },
+            { "outputIndex": 2, "value": "deliverables_ready" },
+            { "outputIndex": 3, "value": "share_drive" },
+            { "outputIndex": 3, "value": "share_sheets" },
+            { "outputIndex": 3, "value": "share_email" },
+            { "outputIndex": 3, "value": "share_all" },
+            { "outputIndex": 4, "value": "research_completed" }
+          ]
+        },
+        "dataPropertyName": "event"
+      },
+      "id": "event-router",
+      "name": "Route by Event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Pipeline Log" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Project ID": "={{ $json.project_id }}",
+            "Event": "={{ $json.event }}",
+            "Agent": "={{ $json.data.role }}",
+            "Summary": "={{ JSON.stringify($json.data.summary || {}).substring(0, 500) }}",
+            "Has Review": "={{ $json.data.peer_review ? 'Yes' : 'No' }}"
+          }
+        }
+      },
+      "id": "log-agent",
+      "name": "Log Agent to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [750, 100],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "" } }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Decisions" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Project ID": "={{ $json.project_id }}",
+            "Agent": "={{ $json.data.role }}",
+            "Decision": "={{ $json.data.approved ? 'APPROVED' : 'REJECTED' }}",
+            "Feedback": "={{ $json.data.feedback || '' }}"
+          }
+        }
+      },
+      "id": "log-decision",
+      "name": "Log Decision to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [750, 250],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "" } }
+    },
+    {
+      "parameters": {
+        "channel": "#ai-company",
+        "text": "={{ $json.event === 'project_completed' ? '🎉 Project Complete!' : '📦 Deliverables Ready!' }}\n*Project:* {{ $json.project_id }}\n{{ $json.data.project_name || '' }}\n{{ $json.data.deliverables ? 'Files: ' + $json.data.deliverables.join(', ') : '' }}"
+      },
+      "id": "notify-complete",
+      "name": "Notify Completion",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [750, 400],
+      "credentials": { "slackApi": { "id": "", "name": "" } }
+    },
+    {
+      "parameters": {
+        "channel": "#ai-company",
+        "text": "🤖 *{{ $json.data.role }}* completed\nProject: {{ $json.project_id }}\n{{ $json.data.peer_review ? '📝 Peer review: ' + ($json.data.peer_review.team_note || '') : '' }}"
+      },
+      "id": "notify-agent",
+      "name": "Notify Agent Done",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [950, 100],
+      "credentials": { "slackApi": { "id": "", "name": "" } }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "folderId": "",
+        "name": "={{ $json.data.project_name || $json.project_id }}_report.docx",
+        "binaryPropertyName": "data"
+      },
+      "id": "upload-drive",
+      "name": "Upload to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [750, 550],
+      "credentials": { "googleDriveOAuth2Api": { "id": "", "name": "" } }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Projects" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Project Name": "={{ $json.data.structured_data.project_name }}",
+            "What It Does": "={{ $json.data.structured_data.what_it_does }}",
+            "The Problem": "={{ $json.data.structured_data.the_problem }}",
+            "What It Solves": "={{ $json.data.structured_data.what_it_solves }}",
+            "Future Scope": "={{ JSON.stringify($json.data.structured_data.future_scope) }}",
+            "Cost": "={{ JSON.stringify($json.data.structured_data.cost_estimate) }}",
+            "Status": "={{ $json.data.structured_data.status }}",
+            "Created": "={{ $json.data.structured_data.created_at }}"
+          }
+        }
+      },
+      "id": "export-sheets",
+      "name": "Export to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [950, 550],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "" } }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Research" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.timestamp }}",
+            "Project ID": "={{ $json.project_id }}",
+            "Result Count": "={{ $json.data.result_count }}",
+            "Sources": "={{ ($json.data.sources || []).join(', ') }}"
+          }
+        }
+      },
+      "id": "log-research",
+      "name": "Log Research to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [750, 700],
+      "credentials": { "googleSheetsOAuth2Api": { "id": "", "name": "" } }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Route by Event", "type": "main", "index": 0 }]]
+    },
+    "Route by Event": {
+      "main": [
+        [
+          { "node": "Log Agent to Sheets", "type": "main", "index": 0 },
+          { "node": "Notify Agent Done", "type": "main", "index": 0 }
+        ],
+        [{ "node": "Log Decision to Sheets", "type": "main", "index": 0 }],
+        [{ "node": "Notify Completion", "type": "main", "index": 0 }],
+        [
+          { "node": "Upload to Drive", "type": "main", "index": 0 },
+          { "node": "Export to Sheets", "type": "main", "index": 0 }
+        ],
+        [{ "node": "Log Research to Sheets", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

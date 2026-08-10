@@ -1,0 +1,29 @@
+{
+  "collapse-filter": false,
+  "search": "",
+  "showTags": true,
+  "showAttachments": false,
+  "hideUnresolved": false,
+  "showOrphans": true,
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {"query": "path:01", "color": {"a": 1, "r": 99, "g": 91, "b": 255}},
+    {"query": "path:02", "color": {"a": 1, "r": 11, "g": 191, "b": 140}},
+    {"query": "path:03", "color": {"a": 1, "r": 245, "g": 166, "b": 35}},
+    {"query": "path:04", "color": {"a": 1, "r": 237, "g": 95, "b": 116}},
+    {"query": "path:05", "color": {"a": 1, "r": 56, "g": 189, "b": 248}},
+    {"query": "path:06", "color": {"a": 1, "r": 168, "g": 85, "b": 247}},
+    {"query": "path:07", "color": {"a": 1, "r": 251, "g": 191, "b": 36}},
+    {"query": "file:Home", "color": {"a": 1, "r": 255, "g": 255, "b": 255}}
+  ],
+  "collapse-display": false,
+  "showArrow": true,
+  "textFadeMultiplier": 0,
+  "nodeSizeMultiplier": 1.2,
+  "lineSizeMultiplier": 1,
+  "collapse-forces": true,
+  "centerStrength": 0.5,
+  "repelStrength": 10,
+  "linkStrength": 1,
+  "linkDistance": 80
+}
