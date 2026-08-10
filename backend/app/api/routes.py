@@ -99,6 +99,50 @@ async def get_employee_conversation(project_id: str, role: str):
     return {"role": role, "messages": messages}
 
 
+@router.get("/projects/{project_id}/introspection/{role}")
+async def get_agent_introspection(project_id: str, role: str):
+    from app.agents.engine import SYSTEM_PROMPTS, ROLE_LABELS, AGENT_TIMEOUTS
+    from app.core.config import MODEL_MAP, SMART_MODEL
+
+    try:
+        agent_role = AgentRole(role)
+    except ValueError:
+        raise HTTPException(400, f"Invalid role: {role}")
+
+    memory = await get_memory(project_id)
+
+    timing = {}
+    ikey = f"introspection_{role}"
+    if ikey in memory:
+        try:
+            timing = json.loads(memory[ikey])
+        except Exception:
+            pass
+
+    peer_review = None
+    prkey = f"peer_review_{role}"
+    if prkey in memory:
+        try:
+            peer_review = json.loads(memory[prkey])
+        except Exception:
+            pass
+
+    from app.core.database import get_latest_output
+    output = await get_latest_output(project_id, role)
+
+    return {
+        "role": role,
+        "label": ROLE_LABELS.get(agent_role, role),
+        "model": MODEL_MAP.get(role, SMART_MODEL),
+        "system_prompt": SYSTEM_PROMPTS.get(agent_role, ""),
+        "max_tokens": 16000 if agent_role == AgentRole.ENGINEER else 4096,
+        "timeout": AGENT_TIMEOUTS.get(agent_role, 120),
+        "timing": timing,
+        "output": output,
+        "peer_review": peer_review,
+    }
+
+
 @router.get("/projects/{project_id}/download/code")
 async def download_code(project_id: str):
     zip_path = get_project_zip_path(project_id)

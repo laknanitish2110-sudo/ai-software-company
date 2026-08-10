@@ -42,6 +42,7 @@ desktop.ini
 .idea/
 
 # Obsidian workspace (user-specific, not the vault content)
+.obsidian/
 vault/.obsidian/workspace.json
 vault/.obsidian/workspace-mobile.json
 

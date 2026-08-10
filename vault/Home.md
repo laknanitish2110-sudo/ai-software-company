@@ -94,6 +94,7 @@
 | [[Call Agents]] | Phone call AI — inbound/outbound, Vapi vs Bland vs Retell |
 | [[AI Agent Market - Competitors]] | Cognition ($26B), Sierra, Harvey, Glean — who's earning what |
 | [[How to Build AI Agents]] | Every approach: no-code → n8n → SDK → raw API, decision tree |
+| [[How Companies Build Agents from Problems]] | The 7-step process: problem → decompose → build → demo |
 
 ---
 

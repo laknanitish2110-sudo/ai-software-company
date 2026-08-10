@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>How Companies Build Agents from Problems</title>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Fira+Code&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #1a1a2e;
+    padding: 40px 50px;
+    max-width: 100%;
+  }
+
+  h1 {
+    font-size: 24pt;
+    font-weight: 700;
+    color: #0f0f14;
+    border-bottom: 3px solid #635bff;
+    padding-bottom: 10px;
+    margin-bottom: 8px;
+    margin-top: 0;
+  }
+
+  h2 {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-top: 28px;
+    margin-bottom: 10px;
+    border-bottom: 1.5px solid #e2e2ea;
+    padding-bottom: 6px;
+  }
+
+  h3 {
+    font-size: 13pt;
+    font-weight: 600;
+    color: #635bff;
+    margin-top: 20px;
+    margin-bottom: 8px;
+  }
+
+  h4 {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #444;
+    margin-top: 14px;
+    margin-bottom: 6px;
+  }
+
+  p { margin-bottom: 8px; }
+
+  blockquote {
+    border-left: 4px solid #635bff;
+    padding: 10px 16px;
+    margin: 12px 0;
+    background: #f4f3ff;
+    border-radius: 0 6px 6px 0;
+    font-style: italic;
+    color: #333;
+  }
+
+  blockquote strong { color: #635bff; font-style: normal; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px 0;
+    font-size: 10pt;
+  }
+
+  th {
+    background: #1a1a2e;
+    color: white;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9.5pt;
+  }
+
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e2e2ea;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) td { background: #f8f8fc; }
+
+  code {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    background: #f0f0f5;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 9.5pt;
+    color: #635bff;
+  }
+
+  pre {
+    background: #1a1a2e;
+    color: #e2e2ea;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin: 10px 0 14px 0;
+    overflow-x: auto;
+    font-size: 9pt;
+    line-height: 1.5;
+  }
+
+  pre code {
+    background: none;
+    color: #e2e2ea;
+    padding: 0;
+    font-size: 9pt;
+  }
+
+  ul, ol {
+    margin: 6px 0 10px 20px;
+  }
+
+  li { margin-bottom: 4px; }
+
+  li ul, li ol { margin-top: 4px; margin-bottom: 4px; }
+
+  hr {
+    border: none;
+    border-top: 1.5px solid #e2e2ea;
+    margin: 20px 0;
+  }
+
+  strong { font-weight: 600; }
+
+  input[type="checkbox"] { margin-right: 6px; }
+
+  /* Page breaks */
+  h2 { page-break-after: avoid; }
+  table, pre { page-break-inside: avoid; }
+
+  /* Print styling */
+  @media print {
+    body { padding: 20px 30px; }
+    pre { page-break-inside: avoid; }
+  }
+
+  /* Obsidian callout simulation */
+  .callout {
+    border: 1px solid #635bff;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    background: #f4f3ff;
+  }
+</style>
+
+</head>
+<body>
+<h1>How Companies Build Agents from Problem Statements</h1>
+<p>The actual step-by-step process that companies (and hackathon teams) follow to turn a problem into a working AI agent. This is the playbook for LaunchpadX.</p>
+<hr />
+<h2>The Golden Question</h2>
+<blockquote>
+<p><strong>"What manual process can an AI do instead of a human?"</strong></p>
+</blockquote>
+<p>Every agent starts here. Not "what cool AI thing can we build?" but "what repetitive, rule-based, or knowledge-intensive task is a human doing right now that an AI could handle?"</p>
+<hr />
+<h2>The 7-Step Agent Building Process</h2>
+<h3>Step 1: Decompose the Problem</h3>
+<p><strong>Input:</strong> Problem statement<br />
+<strong>Output:</strong> List of tasks the agent needs to do</p>
+<blockquote>
+<p><strong>Example problem:</strong> "Farmers in rural India struggle to identify crop diseases"</p>
+</blockquote>
+<p>Decompose into tasks:<br />
+1. Accept a photo of a crop<br />
+2. Identify the disease from the image<br />
+3. Search for treatment options<br />
+4. Recommend pesticides available locally<br />
+5. Provide instructions in the farmer's language</p>
+<p><strong>Key question:</strong> Can you describe what a human expert would do step-by-step? If yes, an agent can do it.</p>
+<pre><code>Problem Statement
+      │
+      ▼
+┌─────────────────┐
+│ What would a     │
+│ human expert do? │
+│                  │
+│ Step 1: Look     │
+│ Step 2: Search   │
+│ Step 3: Analyze  │
+│ Step 4: Respond  │
+└─────────────────┘
+      │
+      ▼
+Each step = potential agent task or tool
+</code></pre>
+<hr />
+<h3>Step 2: Decide the Architecture</h3>
+<p>Based on the decomposition, choose:</p>
+<table>
+<thead>
+<tr>
+<th>If the problem...</th>
+<th>Use this architecture</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Has 1-3 simple steps</td>
+<td><strong>Single agent</strong> with tools</td>
+</tr>
+<tr>
+<td>Has steps that need different expertise</td>
+<td><strong>Multi-agent pipeline</strong> (like our project)</td>
+</tr>
+<tr>
+<td>Has steps that can run in parallel</td>
+<td><strong>Orchestrator-worker</strong> pattern</td>
+</tr>
+<tr>
+<td>Needs to handle many similar requests differently</td>
+<td><strong>Router + specialist agents</strong></td>
+</tr>
+<tr>
+<td>Is conversational (back-and-forth)</td>
+<td><strong>Chatbot agent</strong> with memory</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Quick decision for hackathon:</strong></p>
+<pre><code>Can one LLM call with tools solve it?
+├── YES → Single agent (fastest to build, demo in 2 hours)
+└── NO →
+    ├── Steps are sequential? → Pipeline (our style)
+    ├── Steps are parallel? → Orchestrator-worker
+    └── Different user types? → Router + specialists
+</code></pre>
+<hr />
+<h3>Step 3: Define the Tools</h3>
+<p><strong>The agent is only as good as its tools.</strong> This is where most companies spend 70% of their time.</p>
+<table>
+<thead>
+<tr>
+<th>What the agent needs to do</th>
+<th>Tool type</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Get external information</td>
+<td><strong>API call</strong></td>
+<td>Weather API, Google Maps, database query</td>
+</tr>
+<tr>
+<td>Search the internet</td>
+<td><strong>Web search</strong></td>
+<td>Tavily, Serper, Google Search API</td>
+</tr>
+<tr>
+<td>Read documents</td>
+<td><strong>RAG / retrieval</strong></td>
+<td>Vector store search, document parser</td>
+</tr>
+<tr>
+<td>Process images</td>
+<td><strong>Vision model</strong></td>
+<td>GPT-4o vision, Claude vision</td>
+</tr>
+<tr>
+<td>Generate files</td>
+<td><strong>File creation</strong></td>
+<td>python-pptx, docx, code generation</td>
+</tr>
+<tr>
+<td>Send notifications</td>
+<td><strong>Messaging</strong></td>
+<td>Email, SMS, Slack, WhatsApp</td>
+</tr>
+<tr>
+<td>Store/retrieve data</td>
+<td><strong>Database</strong></td>
+<td>SQLite, PostgreSQL, Airtable</td>
+</tr>
+<tr>
+<td>Execute code</td>
+<td><strong>Sandbox</strong></td>
+<td>Code interpreter, Docker sandbox</td>
+</tr>
+</tbody>
+</table>
+<p><strong>For hackathon — keep tools simple:</strong><br />
+- Web search (Tavily — 1 line to add)<br />
+- API calls (HTTP requests to free APIs)<br />
+- File generation (create downloadable output)<br />
+- Vision (if the problem involves images)</p>
+<hr />
+<h3>Step 4: Write the System Prompt</h3>
+<p>This is the agent's "brain" — its instructions, personality, and constraints.</p>
+<p><strong>The formula:</strong></p>
+<pre><code>SYSTEM PROMPT = Role + Goal + Context + Rules + Output Format
+</code></pre>
+<p><strong>Template:</strong></p>
+<pre><code>You are a [ROLE] specializing in [DOMAIN].
+
+Your goal is to [PRIMARY OBJECTIVE] by [HOW].
+
+Context:
+- You are helping [WHO]
+- The user will provide [INPUT TYPE]
+- You have access to these tools: [TOOL LIST]
+
+Rules:
+1. Always [IMPORTANT BEHAVIOR]
+2. Never [DANGEROUS BEHAVIOR]
+3. If unsure, [FALLBACK BEHAVIOR]
+
+Output format:
+Return your response as [FORMAT] with these fields:
+- [FIELD 1]: [description]
+- [FIELD 2]: [description]
+</code></pre>
+<p><strong>Real example (crop disease agent):</strong></p>
+<pre><code>You are an agricultural expert AI specializing in Indian crop diseases.
+
+Your goal is to identify crop diseases from descriptions or images and
+recommend treatments using locally available products.
+
+Context:
+- You are helping farmers in rural India
+- The user will provide a description of crop symptoms or a photo
+- You have access to: web_search, crop_disease_database, local_pesticide_finder
+
+Rules:
+1. Always recommend treatments available in India
+2. Never recommend banned pesticides
+3. If unsure about diagnosis, say so and suggest consulting a local KVK
+4. Provide response in simple language
+
+Output format:
+{
+  &quot;disease_name&quot;: &quot;...&quot;,
+  &quot;confidence&quot;: &quot;high/medium/low&quot;,
+  &quot;symptoms_matched&quot;: [&quot;...&quot;],
+  &quot;treatment&quot;: &quot;...&quot;,
+  &quot;pesticides&quot;: [{&quot;name&quot;: &quot;...&quot;, &quot;dosage&quot;: &quot;...&quot;, &quot;available_at&quot;: &quot;...&quot;}],
+  &quot;prevention&quot;: &quot;...&quot;
+}
+</code></pre>
+<hr />
+<h3>Step 5: Build the Agent Loop</h3>
+<p>The core logic that makes an agent an AGENT (not just a chatbot):</p>
+<pre><code>┌─────────────────────────────────────────┐
+│            THE AGENT LOOP               │
+│                                         │
+│  1. OBSERVE: Read user input + context  │
+│       │                                 │
+│       ▼                                 │
+│  2. THINK: LLM decides what to do       │
+│       │                                 │
+│       ├── Need more info? → Use a TOOL  │
+│       │       │                         │
+│       │       ▼                         │
+│       │   3. ACT: Execute the tool      │
+│       │       │                         │
+│       │       ▼                         │
+│       │   4. OBSERVE: Read tool result  │
+│       │       │                         │
+│       │       └── Back to THINK ────────┤
+│       │                                 │
+│       └── Have enough info? → RESPOND   │
+│               │                         │
+│               ▼                         │
+│  5. OUTPUT: Return final answer         │
+└─────────────────────────────────────────┘
+</code></pre>
+<p><strong>In code (simplified):</strong></p>
+<pre><code class="language-python">def agent_loop(user_input, tools, system_prompt, max_iterations=5):
+    messages = [
+        {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: system_prompt},
+        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: user_input}
+    ]
+
+    for i in range(max_iterations):
+        # THINK: Ask the LLM what to do
+        response = llm.chat(messages, tools=tools)
+
+        # Does it want to use a tool?
+        if response.has_tool_calls:
+            for tool_call in response.tool_calls:
+                # ACT: Execute the tool
+                result = execute_tool(tool_call.name, tool_call.args)
+                # OBSERVE: Feed result back
+                messages.append({&quot;role&quot;: &quot;tool&quot;, &quot;content&quot;: result})
+        else:
+            # RESPOND: LLM is done, return the answer
+            return response.content
+
+    return &quot;Max iterations reached&quot;
+</code></pre>
+<p><strong>This is the same pattern whether you use:</strong><br />
+- Raw API calls (our approach)<br />
+- Claude Agent SDK (handles the loop for you)<br />
+- n8n (AI Agent node does this visually)<br />
+- LangGraph (graph-based loop)<br />
+- CrewAI (agent.execute does this)</p>
+<hr />
+<h3>Step 6: Add Memory &amp; State</h3>
+<p>For agents that need to remember context:</p>
+<table>
+<thead>
+<tr>
+<th>Memory Type</th>
+<th>What</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Conversation memory</strong></td>
+<td>Chat history</td>
+<td>Chatbots, support agents</td>
+</tr>
+<tr>
+<td><strong>Working memory</strong></td>
+<td>Current task state</td>
+<td>Multi-step agents</td>
+</tr>
+<tr>
+<td><strong>Long-term memory</strong></td>
+<td>Past interactions</td>
+<td>Personal assistants</td>
+</tr>
+<tr>
+<td><strong>Shared memory</strong></td>
+<td>State between agents</td>
+<td>Multi-agent systems (our DB)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>For hackathon:</strong> Simple conversation memory (just keep the message history) is enough. Don't over-engineer.</p>
+<hr />
+<h3>Step 7: Test, Fail, Fix, Repeat</h3>
+<p><strong>The testing loop:</strong></p>
+<pre><code>1. Give the agent a problem
+2. Watch what it does (tool calls, reasoning)
+3. Find where it fails:
+   - Wrong tool chosen? → Fix system prompt
+   - Bad tool output? → Fix the tool
+   - Wrong reasoning? → Add examples to prompt
+   - Too slow? → Use faster model or fewer steps
+4. Try again
+</code></pre>
+<p><strong>Common failures and fixes:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Agent doesn't use tools</td>
+<td>Add explicit instructions: "You MUST search before answering"</td>
+</tr>
+<tr>
+<td>Agent hallucinates</td>
+<td>Add: "Only use information from tool results, never make up data"</td>
+</tr>
+<tr>
+<td>Output format wrong</td>
+<td>Add JSON examples in the prompt, use structured output</td>
+</tr>
+<tr>
+<td>Agent loops forever</td>
+<td>Add max iterations, add "if you have enough info, respond"</td>
+</tr>
+<tr>
+<td>Too slow</td>
+<td>Use smaller model, reduce tool calls, cache common queries</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Real Company Examples</h2>
+<h3>How Cognition Built Devin (Coding Agent)</h3>
+<pre><code>Problem: &quot;Developers spend too much time on routine coding tasks&quot;
+
+Decomposition:
+1. Read the GitHub issue / task description
+2. Understand the codebase (search files, read code)
+3. Plan the changes needed
+4. Write the code
+5. Run tests
+6. Fix failures
+7. Open a pull request
+
+Architecture: Single agent with many tools
+Tools: File read/write, shell commands, browser, git
+Prompt: &quot;You are a software engineer...&quot;
+Loop: ReAct (reason about what to do, act, observe result)
+Memory: Full codebase context + conversation history
+</code></pre>
+<h3>How Sierra Built Customer Service Agent</h3>
+<pre><code>Problem: &quot;Customer service is expensive and slow&quot;
+
+Decomposition:
+1. Understand the customer's question
+2. Look up their account/order
+3. Search knowledge base for answer
+4. If simple → answer directly
+5. If complex → escalate to human with context
+
+Architecture: Router + specialist agents
+Tools: CRM lookup, knowledge base search, order tracking API
+Prompt: &quot;You are a helpful customer service agent for [Brand]...&quot;
+Loop: Classify → Route → Resolve or Escalate
+Memory: Customer history + conversation context
+</code></pre>
+<h3>How Harvey Built Legal Agent</h3>
+<pre><code>Problem: &quot;Legal research takes hours of manual work&quot;
+
+Decomposition:
+1. Understand the legal question
+2. Search case law databases
+3. Find relevant precedents
+4. Analyze applicability to the current case
+5. Generate a memo with citations
+
+Architecture: Pipeline (research → analyze → write)
+Tools: Legal database search, document analysis, citation checker
+Prompt: &quot;You are a senior legal research associate...&quot;
+Loop: Multi-step with human review
+Memory: Case context + document library
+</code></pre>
+<hr />
+<h2>The LaunchpadX Playbook</h2>
+<h3>When You Get the Problem Statement</h3>
+<p><strong>First 30 minutes:</strong></p>
+<pre><code>1. Read the problem statement 3 times
+2. Ask: &quot;What would a human expert do to solve this?&quot;
+3. Write down 3-5 steps the human would take
+4. Each step = an agent task or tool
+5. Decide: single agent or multi-agent?
+</code></pre>
+<p><strong>Next 60 minutes:</strong></p>
+<pre><code>6. Pick your stack:
+   - Fast prototype → n8n (visual, quick)
+   - Full control → Raw API + our pipeline
+   - Show off framework knowledge → Claude Agent SDK
+7. Define 2-3 tools the agent needs
+8. Write the system prompt
+9. Build the agent loop
+10. Get a basic version working
+</code></pre>
+<p><strong>Remaining time:</strong></p>
+<pre><code>11. Test with real inputs
+12. Fix failures
+13. Add polish (better output format, error handling)
+14. Build the demo flow
+15. Prepare the pitch
+</code></pre>
+<h3>Pitch Structure for LaunchpadX</h3>
+<pre><code>1. THE PROBLEM (30 sec)
+   &quot;X is a problem because Y. Currently, humans spend Z hours doing it.&quot;
+
+2. OUR AGENT (60 sec)
+   &quot;We built an AI agent that [does the task]. Here's how it works:
+    - It takes [input]
+    - Agent [step 1], [step 2], [step 3]
+    - Output: [tangible deliverable]&quot;
+
+3. LIVE DEMO (90 sec)
+   Show it working. Real input → real output.
+
+4. THE TECH (60 sec)
+   &quot;We used [architecture]. The agent has [N] tools.
+    It follows the [pattern] design pattern.
+    Built with [framework/stack].&quot;
+
+5. WHY IT MATTERS (30 sec)
+   &quot;This saves [time/money]. Companies like [competitor] raised
+    $[amount] solving a similar problem.&quot;
+</code></pre>
+<hr />
+<h2>Quick-Start Templates</h2>
+<h3>Template 1: Research Agent (Easiest)</h3>
+<pre><code class="language-python"># Takes a topic → searches web → writes a report
+tools = [web_search, summarize]
+prompt = &quot;Research [topic] and write a comprehensive report&quot;
+output = &quot;Markdown report with sources&quot;
+</code></pre>
+<p><strong>Build time:</strong> 1-2 hours</p>
+<h3>Template 2: Analysis Agent (Medium)</h3>
+<pre><code class="language-python"># Takes data → analyzes → provides insights + recommendations
+tools = [data_loader, calculator, chart_generator]
+prompt = &quot;Analyze [data] and provide actionable insights&quot;
+output = &quot;JSON with insights, charts, recommendations&quot;
+</code></pre>
+<p><strong>Build time:</strong> 2-4 hours</p>
+<h3>Template 3: Automation Agent (Medium)</h3>
+<pre><code class="language-python"># Takes a trigger → decides action → executes
+tools = [api_call, email_sender, database_query]
+prompt = &quot;When [trigger], determine the best action and execute it&quot;
+output = &quot;Action taken + confirmation&quot;
+</code></pre>
+<p><strong>Build time:</strong> 2-4 hours</p>
+<h3>Template 4: Multi-Agent Pipeline (Advanced — Our Style)</h3>
+<pre><code class="language-python"># Takes a problem → multiple agents collaborate → deliverables
+agents = [planner, researcher, builder, presenter]
+tools = [web_search, file_gen, pptx_gen]
+prompt = &quot;Each agent has a specialized role...&quot;
+output = &quot;Complete project (code + docs + presentation)&quot;
+</code></pre>
+<p><strong>Build time:</strong> 4-8 hours (but we already have it built!)</p>
+<hr />
+<h2>The Secret Sauce (What Judges Love)</h2>
+<ol>
+<li><strong>Tangible output</strong> — Don't just chat, PRODUCE something (file, report, dashboard)</li>
+<li><strong>Live demo</strong> — Show it working, not slides about how it works</li>
+<li><strong>Real problem</strong> — Solve something people actually deal with</li>
+<li><strong>Tool use</strong> — Agents that call APIs and search the web &gt; agents that just talk</li>
+<li><strong>Human-in-the-loop</strong> — Show you thought about safety and control</li>
+<li><strong>Architecture diagram</strong> — One slide showing how agents connect</li>
+<li><strong>Cost/speed numbers</strong> — "Runs in 30 seconds, costs $0.05 per request"</li>
+</ol>
+<hr />
+<p>See How to Build AI Agents | Agent Design Patterns | Training Schedule - LaunchpadX | Our AI Software Company</p>
+<h1>agentic-ai #hackathon #launchpadx #building #knowledge</h1>
+<div style="margin-top: 30px; padding-top: 12px; border-top: 2px solid #635bff; text-align: center; color: #888; font-size: 9pt;">
+    AI Software Company | Built by Nitish + Claude | Aug 2026
+</div>
+</body>
+</html>

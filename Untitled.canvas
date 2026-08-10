@@ -1,1 +1,37 @@
-{}
+{
+	"nodes":[
+		{"id":"07b54d483de3b7ef","type":"text","text":"### 🤖 [[Agentic AI - Master Guide]]\nWhat is agentic AI — the complete picture","x":300,"y":-1740,"width":280,"height":80,"color":"6"},
+		{"id":"e6476625224f0198","type":"text","text":"### 🧩 [[Types of AI Agents]]\nReactive → Deliberative → Hybrid","x":300,"y":-1620,"width":280,"height":80,"color":"6"},
+		{"id":"d00c851cec2a78ab","type":"text","text":"### 🔄 [[Agent Design Patterns]]\nReAct, reflection, planning, tool use","x":300,"y":-1500,"width":280,"height":80,"color":"6"},
+		{"id":"da28769f761b6fb3","type":"text","text":"### 🏗️ [[Multi-Agent Architectures]]\nOrchestrator, swarm, pipeline, DAG","x":300,"y":-1370,"width":280,"height":80,"color":"6"},
+		{"id":"b90df65ef32875a7","type":"text","text":"### ⚔️ [[Agent Frameworks Comparison]]\nLangGraph vs CrewAI vs Claude SDK","x":300,"y":-1250,"width":280,"height":80,"color":"6"},
+		{"id":"e8583342666a6c2a","type":"text","text":"### 🔌 [[Agent Protocols - MCP and A2A]]\nHow agents connect to tools & each other","x":300,"y":-1130,"width":280,"height":80,"color":"6"},
+		{"id":"6f2c3b429d595648","type":"text","text":"### 🌍 [[Agentic AI Use Cases]]\nReal-world production applications","x":300,"y":-1010,"width":280,"height":80,"color":"6"},
+		{"id":"6908002ec2849b50","type":"text","text":"### ⭐ [[Our AI Software Company]]\nOur project mapped to every concept","x":300,"y":-880,"width":280,"height":80,"color":"3"},
+		{"id":"36563e109bf39bab","type":"text","text":"### 📡 [[RAG - Retrieval Augmented Generation]]\nNaive → Agentic → Graph RAG","x":-870,"y":-1740,"width":280,"height":80,"color":"5"},
+		{"id":"b0885531f15dec48","type":"text","text":"### 🎙️ [[Voice Agents]]\nSTT → LLM → TTS pipeline, platforms","x":-870,"y":-1620,"width":280,"height":80,"color":"5"},
+		{"id":"153cd7d45188d953","type":"text","text":"### 📞 [[Call Agents]]\nVapi, Bland AI, Retell — phone AI","x":-870,"y":-1500,"width":280,"height":80,"color":"5"},
+		{"id":"79353a03247dff57","type":"text","text":"### 💰 [[AI Agent Market - Competitors]]\nCognition $26B, Sierra, Harvey, Glean","x":-870,"y":-1370,"width":280,"height":80,"color":"1"},
+		{"id":"0d2de234760283d9","type":"text","text":"### 🏭 [[How Companies Build Agents from Problems]]\n7-step process + LaunchpadX playbook","x":-870,"y":-1250,"width":280,"height":80,"color":"1"},
+		{"id":"2ae1670b3ce217c1","type":"text","text":"### 📅 [[Training Schedule - LaunchpadX]]\n13-day plan: Learn → Build → Launch","x":-870,"y":-1130,"width":280,"height":80,"color":"4"},
+		{"id":"e340e1bf59cc704a","type":"text","text":"### 🏠 [[Home]]\nCommand Center — full project dashboard","x":-870,"y":-1010,"width":280,"height":80,"color":"4"},
+		{"id":"f79cb0e02bad8246","type":"file","file":"vault/08 - Knowledge/How to Build AI Agents.md","x":-400,"y":-1800,"width":460,"height":980}
+	],
+	"edges":[
+		{"id":"7b6086ebdbc83a9c","fromNode":"f79cb0e02bad8246","fromSide":"right","toNode":"07b54d483de3b7ef","toSide":"left","color":"6"},
+		{"id":"151a64d4cde70b8f","fromNode":"f79cb0e02bad8246","fromSide":"right","toNode":"e6476625224f0198","toSide":"left","color":"6"},
+		{"id":"436dea5b71701345","fromNode":"f79cb0e02bad8246","fromSide":"right","toNode":"d00c851cec2a78ab","toSide":"left","color":"6"},
+		{"id":"47f31e94c95680fe","fromNode":"f79cb0e02bad8246","fromSide":"right","toNode":"da28769f761b6fb3","toSide":"left","color":"6"},
+		{"id":"acc6a22c3b7bdeba","fromNode":"f79cb0e02bad8246","fromSide":"right","toNode":"b90df65ef32875a7","toSide":"left","color":"6"},
+		{"id":"ba30fd4ebc15d338","fromNode":"f79cb0e02bad8246","fromSide":"right","toNode":"e8583342666a6c2a","toSide":"left","color":"6"},
+		{"id":"774c84ff5dba3a3f","fromNode":"f79cb0e02bad8246","fromSide":"right","toNode":"6f2c3b429d595648","toSide":"left","color":"6"},
+		{"id":"36f52a9af0c7521d","fromNode":"f79cb0e02bad8246","fromSide":"right","toNode":"6908002ec2849b50","toSide":"left","color":"3"},
+		{"id":"e85edc843c5f61f4","fromNode":"f79cb0e02bad8246","fromSide":"left","toNode":"36563e109bf39bab","toSide":"right","color":"5"},
+		{"id":"d9cb92ab7f51f016","fromNode":"f79cb0e02bad8246","fromSide":"left","toNode":"b0885531f15dec48","toSide":"right","color":"5"},
+		{"id":"5c1dee957cd7515c","fromNode":"f79cb0e02bad8246","fromSide":"left","toNode":"153cd7d45188d953","toSide":"right","color":"5"},
+		{"id":"be9f886983c370dd","fromNode":"f79cb0e02bad8246","fromSide":"left","toNode":"79353a03247dff57","toSide":"right","color":"1"},
+		{"id":"1193b809c6a0a334","fromNode":"f79cb0e02bad8246","fromSide":"left","toNode":"0d2de234760283d9","toSide":"right","color":"1"},
+		{"id":"aa4efd659d7815df","fromNode":"f79cb0e02bad8246","fromSide":"left","toNode":"2ae1670b3ce217c1","toSide":"right","color":"4"},
+		{"id":"0bb13a687baaeb62","fromNode":"f79cb0e02bad8246","fromSide":"left","toNode":"e340e1bf59cc704a","toSide":"right","color":"4"}
+	]
+}

@@ -7,9 +7,21 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 from lxml import etree
 import math
+import random
+import hashlib
 
 PROJECTS_DIR = Path("generated_projects")
 ASSETS_DIR = Path(__file__).parent.parent.parent / "assets"
+TEMPLATE_DIR = ASSETS_DIR / "templates"
+
+TEMPLATE_FILES = [
+    "dark-modern.pptx",
+    "dark-dynamic-lines.pptx",
+    "hendrix-dark-gradient.pptx",
+]
+
+_use_template_bg = False
+_blank_layout_idx = 6
 
 # ─── Design System ───────────────────────────────────────────────
 # Dark gradient palette inspired by Dribbble/Pinterest tech pitch decks
@@ -62,6 +74,65 @@ CONTENT_H = Inches(5.5)
 
 def _rgb(r, g, b):
     return RGBColor(r, g, b)
+
+
+# ─── Template Helpers ───────────────────────────────────────────
+
+def _find_blank_layout(prs):
+    for i, layout in enumerate(prs.slide_layouts):
+        name = layout.name.upper()
+        if 'BLANK' in name and len(layout.placeholders) <= 1:
+            return i
+    for i, layout in enumerate(prs.slide_layouts):
+        if len(layout.placeholders) == 0:
+            return i
+    return len(prs.slide_layouts) - 1
+
+
+def _clear_all_slides(prs):
+    prs_element = prs.part._element
+    sldIdLst = prs_element.find(qn('p:sldIdLst'))
+    if sldIdLst is not None:
+        for sldId in list(sldIdLst):
+            rId = sldId.get(qn('r:id'))
+            prs.part.drop_rel(rId)
+            sldIdLst.remove(sldId)
+
+
+def _create_presentation(project_id: str = ""):
+    global _use_template_bg, _blank_layout_idx
+
+    templates = [TEMPLATE_DIR / tf for tf in TEMPLATE_FILES if (TEMPLATE_DIR / tf).exists()]
+
+    seed = int(hashlib.md5(project_id.encode()).hexdigest()[:8], 16)
+    choice = seed % (len(templates) + 1)
+
+    if choice == 0 or not templates:
+        prs = Presentation()
+        _use_template_bg = False
+        _blank_layout_idx = 6
+    else:
+        template_path = templates[choice - 1]
+        prs = Presentation(str(template_path))
+        _clear_all_slides(prs)
+        _use_template_bg = True
+        _blank_layout_idx = _find_blank_layout(prs)
+
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+
+    return prs
+
+
+def _get_template_name(project_id: str = "") -> str:
+    templates = [tf for tf in TEMPLATE_FILES if (TEMPLATE_DIR / tf).exists()]
+    if not templates:
+        return "custom"
+    seed = int(hashlib.md5(project_id.encode()).hexdigest()[:8], 16)
+    choice = seed % (len(templates) + 1)
+    if choice == 0:
+        return "custom"
+    return templates[choice - 1].replace(".pptx", "")
 
 
 # ─── Background Helpers ─────────────────────────────────────────
@@ -340,8 +411,9 @@ def _add_card(slide, left, top, width, height, fill_rgb=BG_CARD, border_rgb=None
 # ─── Slide Builders ──────────────────────────────────────────────
 
 def _build_title_slide(prs, slide_data):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_three_stop_gradient_bg(slide, "06021A", "0E0830", "1A0E4A", angle=10800000)
+    slide = prs.slides.add_slide(prs.slide_layouts[_blank_layout_idx])
+    if not _use_template_bg:
+        _set_three_stop_gradient_bg(slide, "06021A", "0E0830", "1A0E4A", angle=10800000)
 
     _add_glow_circle(slide, Inches(8), Inches(-1.5), Inches(6), ACCENT, 3000)
     _add_glow_circle(slide, Inches(-2), Inches(4), Inches(5), (124, 58, 237), 2500)
@@ -403,8 +475,9 @@ def _build_title_slide(prs, slide_data):
 
 
 def _build_section_divider(prs, slide_data, num, total):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_gradient_bg(slide, "0A0625", "14103A", angle=8100000)
+    slide = prs.slides.add_slide(prs.slide_layouts[_blank_layout_idx])
+    if not _use_template_bg:
+        _set_gradient_bg(slide, "0A0625", "14103A", angle=8100000)
 
     _add_glow_circle(slide, Inches(6), Inches(0), Inches(8), ACCENT, 2000)
     _add_top_accent_bar(slide)
@@ -440,8 +513,9 @@ def _build_section_divider(prs, slide_data, num, total):
 
 
 def _build_content_slide(prs, slide_data, num, total):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_gradient_bg(slide, "0A0625", "100C30", angle=5400000)
+    slide = prs.slides.add_slide(prs.slide_layouts[_blank_layout_idx])
+    if not _use_template_bg:
+        _set_gradient_bg(slide, "0A0625", "100C30", angle=5400000)
 
     _add_top_accent_bar(slide)
     _add_corner_decoration(slide, "top-right")
@@ -473,8 +547,9 @@ def _build_content_slide(prs, slide_data, num, total):
 
 
 def _build_two_column_slide(prs, slide_data, num, total):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_gradient_bg(slide, "0A0625", "100C30", angle=5400000)
+    slide = prs.slides.add_slide(prs.slide_layouts[_blank_layout_idx])
+    if not _use_template_bg:
+        _set_gradient_bg(slide, "0A0625", "100C30", angle=5400000)
 
     _add_top_accent_bar(slide)
 
@@ -524,8 +599,9 @@ def _build_two_column_slide(prs, slide_data, num, total):
 
 
 def _build_stats_slide(prs, slide_data, num, total):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_three_stop_gradient_bg(slide, "06021A", "0E0830", "160E40", angle=5400000)
+    slide = prs.slides.add_slide(prs.slide_layouts[_blank_layout_idx])
+    if not _use_template_bg:
+        _set_three_stop_gradient_bg(slide, "06021A", "0E0830", "160E40", angle=5400000)
 
     _add_top_accent_bar(slide)
     _add_glow_circle(slide, Inches(5), Inches(1), Inches(6), ACCENT, 1500)
@@ -603,8 +679,9 @@ def _build_stats_slide(prs, slide_data, num, total):
 
 
 def _build_comparison_slide(prs, slide_data, num, total):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_gradient_bg(slide, "0A0625", "100C30", angle=5400000)
+    slide = prs.slides.add_slide(prs.slide_layouts[_blank_layout_idx])
+    if not _use_template_bg:
+        _set_gradient_bg(slide, "0A0625", "100C30", angle=5400000)
 
     _add_top_accent_bar(slide)
 
@@ -694,8 +771,9 @@ def _build_comparison_slide(prs, slide_data, num, total):
 
 
 def _build_product_slide(prs, slide_data, num, total):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_three_stop_gradient_bg(slide, "06021A", "0E0830", "160E40", angle=8100000)
+    slide = prs.slides.add_slide(prs.slide_layouts[_blank_layout_idx])
+    if not _use_template_bg:
+        _set_three_stop_gradient_bg(slide, "06021A", "0E0830", "160E40", angle=8100000)
 
     _add_top_accent_bar(slide)
     _add_glow_circle(slide, Inches(9), Inches(-1), Inches(5), ACCENT, 2000)
@@ -760,8 +838,9 @@ def _build_product_slide(prs, slide_data, num, total):
 
 
 def _build_thank_you_slide(prs, slide_data, num, total):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_three_stop_gradient_bg(slide, "06021A", "0E0830", "1A0E4A", angle=10800000)
+    slide = prs.slides.add_slide(prs.slide_layouts[_blank_layout_idx])
+    if not _use_template_bg:
+        _set_three_stop_gradient_bg(slide, "06021A", "0E0830", "1A0E4A", angle=10800000)
 
     _add_glow_circle(slide, Inches(4), Inches(0), Inches(8), ACCENT, 2500)
     _add_glow_circle(slide, Inches(-1), Inches(3), Inches(5), (124, 58, 237), 2000)
@@ -890,9 +969,7 @@ BUILDERS = {
 def generate_pptx(project_id: str, ppt_output: dict) -> str:
     PROJECTS_DIR.mkdir(exist_ok=True)
 
-    prs = Presentation()
-    prs.slide_width = SLIDE_W
-    prs.slide_height = SLIDE_H
+    prs = _create_presentation(project_id)
 
     slides_data = ppt_output.get("slides", [])
     pitch = ppt_output.get("pitch", {})
