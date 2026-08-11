@@ -51,6 +51,20 @@
 - [x] **CORS configuration** — regex match for `*.vercel.app` domains
 - [x] **Health endpoint** — `GET /health` for Railway monitoring
 
+## V1.2 — RAG Workflow Agent (DONE)
+**Completed:** 2026-08-11
+**Status:** Complete
+
+### What's new
+- [x] **RAG Workflow Agent** — searches 19,534 n8n workflows before pipeline starts
+  - Workflow indexer: parses JSONs into SQLite with FTS5 full-text search
+  - 27 domain categories, SIH theme mapping
+  - 7,554 AI-powered workflows identified (39%)
+  - Three-tier classification: reusable / modifiable / inspiration
+- [x] **Auto-wired into pipeline** — runs before CEO, results in shared memory for all agents
+- [x] **5 new API endpoints** — `/workflows/analyze`, `/search`, `/categories`, etc.
+- [x] **Node-based categorization** — uncategorized workflows classified by their n8n node types
+
 ## V1.5 — Level 4 Engineer
 **Goal:** Engineer agent auto-deploys generated projects
 

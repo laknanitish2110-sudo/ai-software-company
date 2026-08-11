@@ -7,7 +7,7 @@
 > [!status] System Status
 > | Metric | Value |
 > |--------|-------|
-> | **Version** | v1.1 (Deployed + Polished) |
+> | **Version** | v1.2 (RAG Workflow Agent) |
 > | **SIH Hackathon** | Aug 18-19, 2026 (7 days) |
 > | **LaunchpadX** | Aug 22-23, 2026 (11 days) |
 > | **Frontend** | [Vercel](https://frontend-wheat-ten-gla6y29t60.vercel.app) — auto-deploy |
@@ -20,9 +20,9 @@
 ## Command Center
 
 > [!pipeline] Agent Pipeline
-> **CEO** → **Business Analyst** → **Researcher** → **Architect** → **Engineer** → **PPT Agent**
+> **RAG Agent** → **CEO** → **Business Analyst** → **Researcher** → **Architect** → **Engineer** → **PPT Agent**
 >
-> 4 approval gates | Cross-review after each agent | Founder always in control
+> RAG searches 19,534 workflows first | 4 approval gates | Cross-review after each agent | Founder always in control
 
 ### Project Docs
 
@@ -46,15 +46,16 @@
 
 | Document | Description |
 |----------|-------------|
+| [[RAG Workflow Agent]] | Searches 19,534 n8n workflows for matches |
 | [[CEO Agent]] | Generates project brief from problem statement |
 | [[Engineer Agent]] | The critical agent — generates runnable code |
-| [[Agent Roster]] | Full roster with all 6 agents |
+| [[Agent Roster]] | Full roster with all 7 agents |
 
 ### API & Integrations
 
 | Document | Description |
 |----------|-------------|
-| [[API Reference]] | 12 REST + WebSocket endpoints |
+| [[API Reference]] | 17 REST + WebSocket endpoints |
 | [[n8n Integration]] | Webhook event hub on srv1867770 |
 | [[GitHub Integration]] | Auto-deploy live: Vercel (frontend) + Railway (backend) |
 
@@ -76,7 +77,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [[Roadmap]] | V1 done, V1.5 Level 4, V2 product version |
+| [[Roadmap]] | V1-V1.2 done, V1.5 Level 4, V2 product version |
 | [[Training Schedule - LaunchpadX]] | 13-day plan: Learn → Build → SIH → Level Up → LaunchpadX |
 
 ### Agentic AI Knowledge Base
@@ -104,7 +105,8 @@
 
 ```mermaid
 graph LR
-    F["Founder"] -->|problem statement| CEO
+    F["Founder"] -->|problem statement| RAG["RAG Agent"]
+    RAG -->|"workflow matches (19,534 searched)"| CEO
     CEO -->|project brief| BA["Business Analyst"]
     BA -->|requirements| R["Researcher"]
     R -->|research report| A["Architect"]
@@ -125,6 +127,7 @@ graph LR
     style E fill:#ed5f74,stroke:#ed5f74,color:#fff
     style PPT fill:#38bdf8,stroke:#38bdf8,color:#0f0f14
     style F fill:#fbbf24,stroke:#fbbf24,color:#0f0f14
+    style RAG fill:#10b981,stroke:#10b981,color:#fff
     style D fill:#635bff,stroke:#635bff,color:#fff
 ```
 
@@ -135,7 +138,7 @@ graph LR
 > [!agent] The Team
 > | Stat | Count |
 > |------|-------|
-> | **AI Agents** | 6 |
+> | **AI Agents** | 7 (6 pipeline + RAG) |
 > | **Approval Gates** | 4 |
 > | **Deliverables** | 3 (ZIP, PPTX, DOCX) |
 > | **API Endpoints** | 12 |

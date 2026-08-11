@@ -4,6 +4,7 @@
 
 | Agent | Role | Approval Gate | Output Format |
 |-------|------|--------------|---------------|
+| RAG Agent | Workflow Retrieval | No (auto, pre-pipeline) | JSON (workflow recommendations) |
 | CEO | Project Manager | No (auto-approved) | JSON |
 | Business Analyst | Requirements | Yes | JSON |
 | Researcher | Market Research | Yes | JSON |
@@ -13,6 +14,7 @@
 
 ## Individual Agents
 
+- [[RAG Workflow Agent]] — searches 19,534 n8n workflows before pipeline starts
 - [[CEO Agent]]
 - [[Business Analyst Agent]]
 - [[Researcher Agent]]
@@ -46,6 +48,25 @@ All agent prompts were tuned for SIH hackathon context:
 | Architect | Indian scale (1.4B people, 500M smartphones), Railway/Render hosting, UPI payments |
 | Engineer | Indian locale (INR, IST, pincode), Indian sample data, 3-command setup |
 | PPT | SIH judge criteria, Indian statistics and examples |
+
+## RAG Workflow Agent (v1.2)
+
+Before the pipeline starts, the RAG agent searches a library of **19,534 indexed n8n workflows** for matches against the problem statement. Results are stored in shared memory so every agent sees them.
+
+| Metric | Value |
+|--------|-------|
+| **Workflows indexed** | 19,534 |
+| **Categories** | 27 domain categories |
+| **AI-powered workflows** | 7,554 (39%) |
+| **Search engine** | SQLite FTS5 full-text search |
+| **Response time** | Instant (<100ms) |
+
+The agent classifies matches into three tiers:
+- **Reusable** (relevance 70%+) — use directly
+- **Modifiable** (40-70%) — adapt for this problem
+- **Inspiration** (<40%) — patterns to learn from
+
+See [[RAG Workflow Agent]] for details.
 
 ## Key Design Decisions
 
