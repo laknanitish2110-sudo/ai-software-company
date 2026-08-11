@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import StartProject from "@/components/StartProject";
+import { useToast } from "@/components/Toast";
 import { createProject, getProjects, getDemoStatus, loadDemoCache } from "@/lib/api";
 
 interface RecentProject {
@@ -16,6 +17,7 @@ export default function Home() {
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [hasDemo, setHasDemo] = useState(false);
   const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     getProjects()
@@ -25,7 +27,9 @@ export default function Home() {
           .slice(0, 3);
         setRecentProjects(recent);
       })
-      .catch(() => {});
+      .catch(() => {
+        toast("warning", "Backend offline", "Could not load recent projects. Is the backend running?");
+      });
 
     getDemoStatus()
       .then((s) => setHasDemo(s.has_demo))
@@ -38,9 +42,8 @@ export default function Home() {
       const project = await createProject(problem);
       localStorage.setItem("lastProjectId", project.id);
       router.push(`/project/${project.id}`);
-    } catch (err) {
-      console.error("Failed to start project:", err);
-      alert("Failed to start project. Is the backend running?");
+    } catch {
+      toast("error", "Failed to start project", "Could not connect to the backend. Make sure it's running on port 8000.");
       setLoading(false);
     }
   }
@@ -52,10 +55,10 @@ export default function Home() {
       if (data?.project) {
         router.push(`/project/${data.project.id}`);
       } else {
-        alert("No demo cache found. Run a successful pipeline first.");
+        toast("warning", "No demo found", "Run a successful pipeline first, then save it as a demo.");
       }
     } catch {
-      alert("Failed to load demo.");
+      toast("error", "Demo load failed", "Could not load the demo cache from the backend.");
     } finally {
       setLoading(false);
     }

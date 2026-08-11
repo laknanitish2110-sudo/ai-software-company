@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { AGENT_CONFIG } from "@/lib/constants";
+import { useToast } from "./Toast";
 import { callEmployee, getConversation } from "@/lib/api";
 
 interface Props {
@@ -14,6 +15,7 @@ export default function CallEmployee({ projectId }: Props) {
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -42,9 +44,10 @@ export default function CallEmployee({ projectId }: Props) {
         { role: "assistant", content: response.response },
       ]);
     } catch {
+      toast("error", "Connection failed", `Could not reach ${AGENT_CONFIG[selectedRole]?.label || "this employee"}. Check that the backend is running.`);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Error: Could not reach this employee." },
+        { role: "assistant", content: "Sorry, I couldn't process that request. The backend may be offline — please try again." },
       ]);
     } finally {
       setLoading(false);

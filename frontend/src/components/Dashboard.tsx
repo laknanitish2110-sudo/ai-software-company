@@ -6,6 +6,7 @@ import AgentCanvas from "./AgentCanvas";
 import AgentIntrospection from "./AgentIntrospection";
 import AgentOutputCard from "./AgentOutput";
 import CallEmployee from "./CallEmployee";
+import { useToast } from "./Toast";
 import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, shareProject, getIntegrationStatus, saveDemoCache } from "@/lib/api";
 import { STATUS_LABELS } from "@/lib/constants";
 
@@ -25,13 +26,15 @@ export default function Dashboard({ projectId }: Props) {
   const [agentStartTime, setAgentStartTime] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [inspectingAgent, setInspectingAgent] = useState<string | null>(null);
+  const [wsConnected, setWsConnected] = useState(true);
+  const { toast } = useToast();
 
   const refreshState = useCallback(async () => {
     try {
       const s = await getProjectState(projectId);
       setState(s);
     } catch {
-      // Backend may be busy with agent processing
+      toast("warning", "Connection issue", "Could not refresh project state from the backend.");
     }
   }, [projectId]);
 
@@ -70,6 +73,10 @@ export default function Dashboard({ projectId }: Props) {
         setAgentStartTime(Date.now());
       }
 
+      if (msg.type === "error") {
+        toast("error", "Pipeline error", msg.data.message || "An agent encountered an error.");
+      }
+
       if (msg.type === "approval_needed" || msg.type === "agent_completed" || msg.type === "project_completed") {
         setStreamingAgent(null);
         setStreamTokens(0);
@@ -86,6 +93,9 @@ export default function Dashboard({ projectId }: Props) {
       ]);
       refreshState();
     });
+
+    ws.addEventListener("open", () => setWsConnected(true));
+    ws.addEventListener("close", () => setWsConnected(false));
 
     return () => ws.close();
   }, [projectId, refreshState]);
@@ -140,6 +150,30 @@ export default function Dashboard({ projectId }: Props) {
 
   return (
     <div className="min-h-screen p-6 max-w-6xl mx-auto">
+      {/* Connection banner */}
+      {!wsConnected && (
+        <div
+          className="animate-fade-in"
+          style={{
+            background: "rgba(237,95,116,0.08)",
+            border: "1px solid rgba(237,95,116,0.2)",
+            borderRadius: 10,
+            padding: "10px 16px",
+            marginBottom: 16,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 13,
+            color: "var(--danger)",
+          }}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--danger)", flexShrink: 0 }} />
+          <span>
+            <strong>Disconnected</strong> — live updates paused. The backend may be down or restarting.
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-6 animate-fade-in">
         <div className="flex items-center gap-3 mb-1">
@@ -183,8 +217,8 @@ export default function Dashboard({ projectId }: Props) {
             <button onClick={async () => {
               try {
                 await saveDemoCache(projectId);
-                alert("Demo cached! You can now use Demo Mode from the start page.");
-              } catch { alert("Failed to save demo cache."); }
+                toast("success", "Demo saved", "You can now use Demo Mode from the start page.");
+              } catch { toast("error", "Save failed", "Could not save demo cache."); }
             }}
                     className="btn-ghost text-sm py-2.5 px-5 flex items-center gap-2"
                     style={{ borderColor: "var(--warning-border)", color: "var(--warning)" }}>
