@@ -1,165 +1,89 @@
 # GitHub Integration
 
-#integration #level-4 #deploy
+#integration #deploy #live
 
-> Auto-deploy every project the Engineer builds. Judges click a link, see a working app.
+> Auto-deploy the AI Software Company platform. Frontend on Vercel, backend on Railway — both auto-deploy from GitHub.
 
-## Status: `Planned` — starts when GitHub Student Developer Pack arrives
+## Status: `Live` — deployed 2026-08-11
 
-## Why This Matters
+## What's Deployed
 
-The Engineer currently generates code as a ZIP file. Nobody runs ZIP files at a hackathon. Judges want to **click a link and see it work.**
+| Service | Platform | URL | Auto-deploy |
+|---------|----------|-----|-------------|
+| **Frontend** | Vercel | [frontend-wheat-ten-gla6y29t60.vercel.app](https://frontend-wheat-ten-gla6y29t60.vercel.app) | Yes (git push) |
+| **Backend** | Railway | [ai-software-company-production.up.railway.app](https://ai-software-company-production.up.railway.app) | CLI deploy |
 
-With GitHub integration, every pipeline run produces:
-- A **public GitHub repo** with clean code
-- A **live deployed URL** judges can visit
-- A **CI/CD pipeline** that validates the code actually builds
+## Vercel Setup (Frontend)
 
-## Architecture
+- **Root Directory:** `frontend` (set in Build and Deployment settings)
+- **Framework:** Next.js (auto-detected)
+- **Environment Variables:**
+  - `NEXT_PUBLIC_API_URL` = `https://ai-software-company-production.up.railway.app/api`
+  - `NEXT_PUBLIC_WS_URL` = `wss://ai-software-company-production.up.railway.app/api`
+- **Auto-deploy:** Triggers on every push to `master` branch
 
-```
-Engineer generates code
-    |
-    v
-[github.py] Create repo + push files
-    |
-    v
-[GitHub Actions] Install deps -> Build -> Test
-    |
-    +---> Build fails? --> Feed errors to Engineer --> Fix --> Push again
-    |
-    +---> Build passes? --> Deploy
-                              |
-                              v
-                    [Vercel / GitHub Pages]
-                              |
-                              v
-                    Live URL returned to user
-```
+## Railway Setup (Backend)
 
-## Repo Strategy
+- **Project name:** `elegant-kindness`
+- **Root Directory:** Deployed via CLI with `--path-as-root` flag
+- **Runtime:** Python 3.11.9
+- **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}` (from Procfile)
+- **Health check:** `GET /health` returns `{"status": "ok"}`
 
-One GitHub org (e.g. `sih-builds`), one repo per project.
-
-```
-sih-builds/smart-waste-management
-sih-builds/grievance-redressal-ai
-sih-builds/rural-health-monitor
-```
-
-Each repo is public, browsable, and shareable with judges.
-
-## Deployment Targets
-
-| Project Type | Deploy To | Cost |
-|-------------|-----------|------|
-| Static / React / Next.js | Vercel | Free (Student Pack) |
-| Full-stack (Node + DB) | Vercel + Vercel Postgres | Free tier |
-| Python backend | Railway | Free credits (Student Pack) |
-| Static HTML/CSS/JS | GitHub Pages | Free |
-
-**Primary:** Vercel (auto-deploy on push, instant `.vercel.app` URL)
-**Fallback:** GitHub Pages (static sites only)
-
-## GitHub Actions Workflow
-
-Pushed into every repo as `.github/workflows/build.yml`:
-
-```yaml
-name: Build & Deploy
-on: push
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Detect project type
-        id: detect
-        run: |
-          if [ -f "package.json" ]; then echo "type=node" >> $GITHUB_OUTPUT
-          elif [ -f "requirements.txt" ]; then echo "type=python" >> $GITHUB_OUTPUT
-          else echo "type=static" >> $GITHUB_OUTPUT; fi
-      - name: Setup Node
-        if: steps.detect.outputs.type == 'node'
-        uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - name: Install & Build (Node)
-        if: steps.detect.outputs.type == 'node'
-        run: npm install && npm run build
-      - name: Setup Python
-        if: steps.detect.outputs.type == 'python'
-        uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - name: Install & Test (Python)
-        if: steps.detect.outputs.type == 'python'
-        run: pip install -r requirements.txt
-      - name: Report status
-        if: always()
-        run: |
-          curl -X POST "${{ secrets.WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d '{"event":"build_status","repo":"${{ github.repository }}","status":"${{ job.status }}"}'
-```
-
-## New Backend Services
-
-| File | Purpose |
-|------|---------|
-| `app/services/github.py` | GitHub API — create repo, push files, read Actions status |
-| `app/services/deployer.py` | Vercel API — trigger deploy, get URL |
-| `app/services/build_monitor.py` | Watch build status, feed errors back |
-
-## Config Needed (.env)
+### Railway Environment Variables
 
 ```env
-GITHUB_TOKEN=ghp_...          # Fine-grained PAT (repo, workflow, actions)
-GITHUB_ORG=sih-builds         # Or personal account
-VERCEL_TOKEN=...              # From Vercel dashboard
-VERCEL_TEAM_ID=...            # Optional
+OPENROUTER_API_KEY=sk-or-v1-...
+TAVILY_API_KEY=tvly-dev-...
+FRONTEND_URL=https://frontend-wheat-ten-gla6y29t60.vercel.app
+SMART_MODEL=google/gemma-3-27b-it:free
+MODEL_CEO=google/gemma-3-27b-it:free
+MODEL_BA=google/gemma-3-27b-it:free
+MODEL_RESEARCHER=google/gemma-3-27b-it:free
+MODEL_ARCHITECT=deepseek/deepseek-chat-v3-0324:free
+MODEL_ENGINEER=anthropic/claude-sonnet-4
+MODEL_PPT=google/gemma-3-27b-it:free
+MODEL_REVIEW=google/gemma-3-27b-it:free
+FALLBACK_MODEL=google/gemini-2.5-flash
+MISE_PYTHON_GITHUB_ATTESTATIONS=false
 ```
 
-## Orchestrator Changes
+### Railway CLI Commands
 
-```python
-# After Engineer approval:
-files = generate_project_files(project_id, content)
-repo_url = await github.create_and_push(project_id, files)
-deploy_url = await deployer.deploy(repo_url, project_type)
-build_ok = await build_monitor.wait_for_build(repo_url)
+```bash
+# Deploy backend
+npx @railway/cli up ./backend --path-as-root --detach
 
-if not build_ok:
-    errors = await build_monitor.get_errors(repo_url)
-    # Auto-fix loop: feed errors back to Engineer
-    
-save_urls(project_id, repo_url, deploy_url)
-start_next_agent(PPT)  # PPT now knows the live URL
+# Check status
+npx @railway/cli service status
+
+# View logs
+npx @railway/cli service logs
+
+# Set environment variable
+npx @railway/cli variables set KEY=value
 ```
 
-## Phase 2: Interactive Engineer
+## CORS Configuration
 
-After GitHub integration works, the Engineer stage becomes interactive:
+Backend allows:
+- `http://localhost:3000` and `http://localhost:3001` (local dev)
+- Any `*.vercel.app` domain (regex match)
+- Explicit `FRONTEND_URL` from env var
 
-1. Engineer shows build plan
-2. User approves/modifies
-3. Engineer generates v1 -> push -> deploy
-4. User sees live preview
-5. User requests changes -> Engineer iterates -> redeploy
-6. Repeat until "ship it"
-7. PPT creates slides with screenshots of the REAL app
+## GitHub Student Developer Pack
 
-## What GitHub Student Pack Provides
-
-- GitHub repos (unlimited public)
-- GitHub Actions (2,000 min/month free)
-- GitHub Pages (free static hosting)
+Approved 2026-08-11. Provides:
 - Vercel Pro (free with Student Pack)
 - Railway credits ($5/month)
-- Azure credits ($100)
-- Namecheap free domain (.me)
+- GitHub Actions (2,000 min/month)
+- Namecheap free .me domain
 
-## Dependencies
+## Build Notes
 
-- [[Tech Stack]]
-- [[Orchestrator]]
-- [[Engineer Agent]]
-- [[Model Strategy]]
+- Railway required `MISE_PYTHON_GITHUB_ATTESTATIONS=false` to bypass Python 3.11.9 attestation check failure in their builder
+- Vercel required Root Directory set to `frontend` under Build and Deployment settings (not General)
+
+---
+
+Related: [[Tech Stack]], [[Orchestrator]], [[Engineer Agent]], [[Model Strategy]]

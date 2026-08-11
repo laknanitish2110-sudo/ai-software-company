@@ -7,10 +7,12 @@
 > [!status] System Status
 > | Metric | Value |
 > |--------|-------|
-> | **Version** | v1.0 (Hackathon-Ready) |
-> | **Hackathon Date** | Aug 18-19, 2026 |
+> | **Version** | v1.1 (Deployed + Polished) |
+> | **SIH Hackathon** | Aug 18-19, 2026 (7 days) |
+> | **LaunchpadX** | Aug 22-23, 2026 (11 days) |
+> | **Frontend** | [Vercel](https://frontend-wheat-ten-gla6y29t60.vercel.app) — auto-deploy |
+> | **Backend** | [Railway](https://ai-software-company-production.up.railway.app) — live |
 > | **Pipeline Status** | Operational |
-> | **Last Test Run** | Project `1c6d47e1f0d3` — All 3 deliverables generated |
 > | **n8n Events** | 12/12 webhook events successful |
 
 ---
@@ -54,7 +56,7 @@
 |----------|-------------|
 | [[API Reference]] | 12 REST + WebSocket endpoints |
 | [[n8n Integration]] | Webhook event hub on srv1867770 |
-| [[GitHub Integration]] | Level 4 auto-deploy (planned) |
+| [[GitHub Integration]] | Auto-deploy live: Vercel (frontend) + Railway (backend) |
 
 ### Frontend
 

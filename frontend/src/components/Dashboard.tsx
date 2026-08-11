@@ -7,6 +7,7 @@ import AgentIntrospection from "./AgentIntrospection";
 import AgentOutputCard from "./AgentOutput";
 import CallEmployee from "./CallEmployee";
 import { useToast } from "./Toast";
+import { DashboardSkeleton } from "./Skeleton";
 import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, shareProject, getIntegrationStatus, saveDemoCache } from "@/lib/api";
 import { STATUS_LABELS } from "@/lib/constants";
 
@@ -111,16 +112,7 @@ export default function Dashboard({ projectId }: Props) {
   }
 
   if (!state?.project) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="dot-loading" style={{ display: "flex", gap: 6 }}>
-            <span /><span /><span />
-          </div>
-          <span style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading project...</span>
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   useEffect(() => {
@@ -326,13 +318,33 @@ export default function Dashboard({ projectId }: Props) {
           {activeTab === "outputs" ? (
             <div className="space-y-4">
               {outputs.length === 0 && (
-                <div className="card p-10 text-center">
-                  <div className="dot-loading mb-3" style={{ display: "flex", justifyContent: "center", gap: 6 }}>
-                    <span /><span /><span />
+                <div className="card p-10 text-center animate-fade-in">
+                  <div className="text-4xl mb-4">
+                    {streamingAgent ? "🔄" : "🏢"}
                   </div>
-                  <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-                    Your AI team is getting started...
-                  </span>
+                  <div className="text-[15px] font-medium mb-1" style={{ color: "var(--text-primary)" }}>
+                    {streamingAgent ? "Your AI team is working..." : "Assembling your team"}
+                  </div>
+                  <div className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
+                    {streamingAgent
+                      ? `${streamingAgent.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} is preparing their deliverable`
+                      : "The CEO is reviewing your problem statement"}
+                  </div>
+                  <div className="flex justify-center gap-2">
+                    {["CEO", "BA", "Research", "Architect", "Engineer", "PPT"].map((label, i) => (
+                      <span
+                        key={label}
+                        className="text-xs px-2.5 py-1 rounded-full"
+                        style={{
+                          background: i === 0 && !streamingAgent ? "var(--accent-bg)" : "var(--bg-elevated)",
+                          color: i === 0 && !streamingAgent ? "var(--accent)" : "var(--text-muted)",
+                          border: `1px solid ${i === 0 && !streamingAgent ? "var(--accent-border)" : "var(--border)"}`,
+                        }}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
               {outputs.map((output, i) => (

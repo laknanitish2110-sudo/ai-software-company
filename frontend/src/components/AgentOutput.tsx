@@ -7,10 +7,13 @@ interface PeerReview {
   reviewer: string;
   reviewer_label: string;
   reviewed: string;
+  quality_score?: number;
   overall_assessment: string;
   strengths: string[];
   concerns: string[];
   suggestions: string[];
+  alignment_check?: string;
+  hackathon_readiness?: string;
   team_note: string;
 }
 
@@ -72,6 +75,19 @@ function renderValue(value: unknown, depth: number = 0): React.ReactNode {
   return <span>{String(value)}</span>;
 }
 
+function ScoreBadge({ score }: { score: number }) {
+  const color = score >= 8 ? "var(--success)" : score >= 6 ? "var(--accent)" : score >= 4 ? "var(--warning)" : "var(--danger)";
+  const bg = score >= 8 ? "var(--success-bg)" : score >= 6 ? "var(--accent-bg)" : score >= 4 ? "var(--warning-bg)" : "rgba(237,95,116,0.06)";
+  const border = score >= 8 ? "var(--success-border)" : score >= 6 ? "var(--accent-border)" : score >= 4 ? "var(--warning-border)" : "rgba(237,95,116,0.15)";
+  const label = score >= 8 ? "Strong" : score >= 6 ? "Good" : score >= 4 ? "Needs work" : "Weak";
+
+  return (
+    <span className="status-badge" style={{ background: bg, color, border: `1px solid ${border}`, fontSize: 11 }}>
+      {score}/10 {label}
+    </span>
+  );
+}
+
 function PeerReviewSection({ review }: { review: PeerReview }) {
   const reviewerConfig = AGENT_CONFIG[review.reviewer];
 
@@ -82,6 +98,7 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
         <span className="text-sm font-semibold" style={{ color: "var(--accent)" }}>
           Peer Review by {review.reviewer_label}
         </span>
+        {review.quality_score != null && <ScoreBadge score={review.quality_score} />}
       </div>
 
       {review.team_note && (
@@ -130,6 +147,23 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
                 <span style={{ color: "var(--text-secondary)" }}>{s}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {(review.alignment_check || review.hackathon_readiness) && (
+          <div className="mt-1 pt-3" style={{ borderTop: "1px solid var(--accent-border)" }}>
+            {review.alignment_check && (
+              <div className="mb-2">
+                <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>Alignment</div>
+                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{review.alignment_check}</div>
+              </div>
+            )}
+            {review.hackathon_readiness && (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>Hackathon readiness</div>
+                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{review.hackathon_readiness}</div>
+              </div>
+            )}
           </div>
         )}
       </div>

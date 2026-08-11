@@ -23,6 +23,7 @@ from app.agents.prompts import (
     ENGINEER_SYSTEM_PROMPT,
     PPT_SYSTEM_PROMPT,
     CROSS_REVIEW_PROMPT,
+    REVIEW_CRITERIA,
 )
 from app.models.schemas import AgentRole
 from app.services.web_search import research_topic
@@ -284,6 +285,7 @@ REVIEW_MATRIX: dict[AgentRole, AgentRole] = {
     AgentRole.RESEARCHER: AgentRole.BUSINESS_ANALYST,
     AgentRole.ARCHITECT: AgentRole.RESEARCHER,
     AgentRole.ENGINEER: AgentRole.ARCHITECT,
+    AgentRole.PPT: AgentRole.ENGINEER,
 }
 
 
@@ -299,10 +301,13 @@ async def cross_review(project_id: str, reviewed_role: AgentRole, output_content
     if len(output_json) > 8000:
         output_json = output_json[:8000] + "\n... (truncated for review)"
 
+    role_criteria = REVIEW_CRITERIA.get(reviewed_role.value, "")
+
     review_prompt = CROSS_REVIEW_PROMPT.format(
         reviewer_label=reviewer_label,
         reviewed_label=reviewed_label,
         output_json=output_json,
+        role_criteria=role_criteria,
     )
 
     review_model = MODEL_MAP.get("cross_review", SMART_MODEL)

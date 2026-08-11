@@ -23,6 +23,34 @@
 - [x] End-to-end test with all deliverables (see [[Pipeline Test Results]])
 - [x] Model strategy — free models + Claude Sonnet 4 for Engineer (see [[Model Strategy]])
 
+## V1.1 — Deployed + Polished (DONE)
+**Completed:** 2026-08-11
+**Status:** Complete
+
+### What's new
+- [x] **Backend deployed on Railway** — live at `ai-software-company-production.up.railway.app`
+- [x] **Frontend deployed on Vercel** — live at `frontend-wheat-ten-gla6y29t60.vercel.app`
+- [x] **SIH-optimized agent prompts** — all 6 agents tuned for ultra-short SIH inputs (median 72 chars)
+  - CEO: 3 concrete expansion examples, Indian context (PM Kisan, DIKSHA, CSC centres)
+  - BA: Indian personas mandatory, DPDP Act 2023, 2G connectivity, 24h scope
+  - Researcher: Bhashini API, IndiaAI, prior SIH winners, Indian startup sources
+  - Architect: Railway/Render hosting, Indian scale (1.4B people), Razorpay/PhonePe UPI
+  - Engineer: Indian locale (INR, IST, pincode), 3-command setup
+  - PPT: SIH judge criteria, Indian statistics
+- [x] **Skeleton loading states** — shimmer animation loaders replacing blank screens
+  - DashboardSkeleton, SkeletonCanvas, SkeletonOutputCard, SkeletonActivity
+  - CSS `@keyframes shimmer` and `@keyframes pulseSubtle` animations
+- [x] **Enhanced peer review system**
+  - Quality score (1-10) with color-coded badge (green/blue/yellow/red)
+  - Role-specific review criteria (5 questions per role, SIH-focused)
+  - PPT agent now reviewed by Engineer
+  - Alignment check and hackathon readiness fields
+- [x] **Toast notification system** — success/error/warning/info toasts with auto-dismiss
+- [x] **WebSocket disconnect banner** — visual warning + auto-reconnect
+- [x] **Agent introspection panel** — view token usage, model, processing time
+- [x] **CORS configuration** — regex match for `*.vercel.app` domains
+- [x] **Health endpoint** — `GET /health` for Railway monitoring
+
 ## V1.5 — Level 4 Engineer
 **Goal:** Engineer agent auto-deploys generated projects
 
@@ -31,8 +59,8 @@
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| **GitHub Integration** | Auto-create repo, push generated code | Planned |
-| **Vercel Deploy** | Auto-deploy from GitHub, return live URL | Planned |
+| **GitHub Auto-Create** | Auto-create repo, push generated code | Planned |
+| **Vercel Auto-Deploy** | Auto-deploy from GitHub, return live URL | Planned |
 | **Interactive Build** | Founder watches code appear in real-time editor | Planned |
 | **Live Preview** | Generated app running at a real URL, not a ZIP | Planned |
 | **Iteration Mode** | Edit code in-browser, re-deploy instantly | Planned |
@@ -92,6 +120,6 @@ See [[GitHub Integration]] and [[Engineer Agent]] for details.
 
 ---
 
-Related: [[Project Vision]], [[How It Works]], [[Pipeline Test Results]], [[Model Strategy]], [[n8n Integration]]
+Related: [[Project Vision]], [[How It Works]], [[Pipeline Test Results]], [[Model Strategy]], [[n8n Integration]], [[GitHub Integration]]
 
 #roadmap #planning
