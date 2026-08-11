@@ -1,5 +1,9 @@
 import asyncio
+import json
+import logging
 from typing import Callable, Awaitable
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import (
     create_project,
@@ -12,6 +16,7 @@ from app.core.database import (
     get_memory,
 )
 from app.agents.engine import run_agent, cross_review
+from app.services.workflow_search import analyze_for_problem
 from app.services.file_generator import generate_project_files, get_generated_files_list
 from app.services.pptx_generator import generate_pptx
 from app.services.docx_generator import generate_docx
@@ -45,6 +50,33 @@ class Orchestrator:
         project_id = project["id"]
 
         await set_memory(project_id, "problem_statement", problem_statement, "founder")
+
+        try:
+            workflow_analysis = analyze_for_problem(problem_statement, limit=10)
+            await set_memory(project_id, "workflow_recommendations", json.dumps({
+                "total_matches": workflow_analysis["total_matches"],
+                "keywords": workflow_analysis["keywords_extracted"],
+                "reusable": [{"name": w["name"], "category": w["domain_category"],
+                              "integrations": w["integrations"], "ai": w["has_ai_nodes"],
+                              "score": w["relevance_score"]}
+                             for w in workflow_analysis.get("reusable", [])[:5]],
+                "modifiable": [{"name": w["name"], "category": w["domain_category"],
+                                "integrations": w["integrations"], "ai": w["has_ai_nodes"],
+                                "score": w["relevance_score"]}
+                               for w in workflow_analysis.get("modifiable", [])[:5]],
+                "inspiration": [{"name": w["name"], "category": w["domain_category"]}
+                                for w in workflow_analysis.get("inspiration", [])[:3]],
+                "categories_matched": workflow_analysis["categories_matched"],
+                "sih_themes_matched": workflow_analysis["sih_themes_matched"],
+                "summary": workflow_analysis["summary"],
+            }), "rag_agent")
+            await self._notify("workflow_analysis", project_id, {
+                "message": f"RAG Agent analyzed 19,500+ workflows: {workflow_analysis['summary']}",
+                "total_matches": workflow_analysis["total_matches"],
+                "categories": workflow_analysis["categories_matched"],
+            })
+        except Exception as e:
+            logger.warning(f"Workflow analysis failed (non-critical): {e}")
 
         await self._notify("agent_started", project_id, {
             "role": "ceo",

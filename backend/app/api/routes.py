@@ -23,6 +23,13 @@ from app.core.database import (
     get_conversation,
 )
 from app.agents.engine import call_employee
+from app.services.workflow_search import (
+    analyze_for_problem,
+    search_workflows,
+    search_by_category,
+    get_category_stats,
+    get_workflow_detail,
+)
 
 router = APIRouter()
 
@@ -270,6 +277,44 @@ async def download_demo_deliverable(file_type: str):
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }
     return FileResponse(path, media_type=media_types.get(file_type, "application/octet-stream"), filename=f"demo-project.{file_type}")
+
+
+# --- Workflow RAG endpoints ---
+
+class WorkflowSearchRequest(BaseModel):
+    query: str
+    limit: int = 10
+    category: str | None = None
+    ai_only: bool = False
+
+
+@router.post("/workflows/analyze")
+async def analyze_workflows(req: WorkflowSearchRequest):
+    """RAG entry point — takes a problem statement, returns categorized workflow matches."""
+    return analyze_for_problem(req.query, limit=req.limit)
+
+
+@router.get("/workflows/search")
+async def search_workflow_index(q: str, limit: int = 10, category: str | None = None, ai_only: bool = False):
+    return search_workflows(q, limit=limit, category=category, ai_only=ai_only)
+
+
+@router.get("/workflows/categories")
+async def workflow_categories():
+    return get_category_stats()
+
+
+@router.get("/workflows/category/{category}")
+async def workflows_by_category(category: str, limit: int = 20, ai_only: bool = False):
+    return search_by_category(category, limit=limit, ai_only=ai_only)
+
+
+@router.get("/workflows/{workflow_id}")
+async def workflow_detail(workflow_id: int):
+    result = get_workflow_detail(workflow_id)
+    if not result:
+        raise HTTPException(404, "Workflow not found")
+    return result
 
 
 @router.websocket("/ws/{project_id}")

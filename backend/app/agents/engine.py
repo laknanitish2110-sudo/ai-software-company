@@ -181,8 +181,34 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
                 label = ROLE_LABELS.get(AgentRole(role), role)
                 parts.append(f"## {label}'s Approved Output\n```json\n{json.dumps(output['content'], indent=2)}\n```")
 
-    if memory:
-        parts.append(f"## Shared Project Memory\n```json\n{json.dumps(memory, indent=2)}\n```")
+    workflow_recs = memory.pop("workflow_recommendations", None)
+    if workflow_recs:
+        try:
+            recs = json.loads(workflow_recs) if isinstance(workflow_recs, str) else workflow_recs
+            wf_parts = [f"## Existing n8n Workflow Library Analysis\n**{recs.get('summary', '')}**"]
+            if recs.get("reusable"):
+                wf_parts.append("### Reusable Workflows (use directly)")
+                for w in recs["reusable"]:
+                    wf_parts.append(f"- **{w['name']}** ({w['category']}) — integrations: {w['integrations']} | relevance: {w['score']:.0%}")
+            if recs.get("modifiable"):
+                wf_parts.append("### Modifiable Workflows (adapt for this problem)")
+                for w in recs["modifiable"]:
+                    wf_parts.append(f"- **{w['name']}** ({w['category']}) — integrations: {w['integrations']} | relevance: {w['score']:.0%}")
+            if recs.get("inspiration"):
+                wf_parts.append("### Inspiration Workflows (patterns to learn from)")
+                for w in recs["inspiration"]:
+                    wf_parts.append(f"- {w['name']} ({w['category']})")
+            if recs.get("categories_matched"):
+                wf_parts.append(f"\n**Matched categories:** {', '.join(recs['categories_matched'])}")
+            if recs.get("sih_themes_matched"):
+                wf_parts.append(f"**SIH themes:** {', '.join(recs['sih_themes_matched'])}")
+            parts.append("\n".join(wf_parts))
+        except Exception:
+            pass
+
+    filtered_memory = {k: v for k, v in memory.items() if k != "workflow_recommendations"}
+    if filtered_memory:
+        parts.append(f"## Shared Project Memory\n```json\n{json.dumps(filtered_memory, indent=2)}\n```")
 
     return "\n\n".join(parts)
 
