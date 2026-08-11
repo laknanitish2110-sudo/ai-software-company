@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 export interface Project {
   id: string;
@@ -185,7 +185,8 @@ export function connectWebSocket(
   projectId: string,
   onMessage: (msg: WSMessage) => void
 ): WebSocket {
-  const ws = new WebSocket(`ws://localhost:8000/api/ws/${projectId}`);
+  const wsBase = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/api";
+  const ws = new WebSocket(`${wsBase}/ws/${projectId}`);
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     onMessage(data);
