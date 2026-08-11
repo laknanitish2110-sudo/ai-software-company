@@ -49,3 +49,5 @@ vault/.obsidian/workspace-mobile.json
 
 # Claude
 .claude/
+
+.vercel
