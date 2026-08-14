@@ -4,12 +4,12 @@
 
 | Agent | Role | Approval Gate | Output Format |
 |-------|------|--------------|---------------|
-| RAG Agent | Workflow Retrieval | No (auto, pre-pipeline) | JSON (workflow recommendations) |
-| CEO | Project Manager | No (auto-approved) | JSON |
+| CEO | Project Manager + Classifier | No (auto-approved) | JSON (brief + deliverable_type + components) |
+| RAG Agent | Component-based Workflow Search | No (auto, post-CEO) | JSON (per-component workflow recommendations) |
 | Business Analyst | Requirements | Yes | JSON |
 | Researcher | Market Research | Yes | JSON |
 | Architect | Technical Design | Yes | JSON |
-| Engineer | Implementation | Yes | JSON -> .zip files |
+| Engineer | Implementation | Yes | JSON -> .zip and/or .json (n8n workflow) |
 | PPT | Presentation | No (auto-complete) | JSON -> .pptx file |
 
 ## Individual Agents
@@ -49,9 +49,21 @@ All agent prompts were tuned for SIH hackathon context:
 | Engineer | Indian locale (INR, IST, pincode), Indian sample data, 3-command setup |
 | PPT | SIH judge criteria, Indian statistics and examples |
 
-## RAG Workflow Agent (v1.2)
+## Pipeline Order (v1.3)
 
-Before the pipeline starts, the RAG agent searches a library of **19,534 indexed n8n workflows** for matches against the problem statement. Results are stored in shared memory so every agent sees them.
+```
+CEO (FIRST) → RAG → BA → Researcher → Architect → Engineer → PPT
+```
+
+CEO runs first to:
+1. Break problem into 3-7 searchable components
+2. Classify `deliverable_type` as `code`, `workflow`, or `hybrid`
+
+RAG then searches per-component using the CEO's breakdown, not the raw input.
+
+## RAG Workflow Agent (v1.3)
+
+After CEO breaks the problem into components, the RAG agent searches **19,534 indexed n8n workflows** per-component. Results tagged with `matched_component` are stored in shared memory.
 
 | Metric | Value |
 |--------|-------|
@@ -59,12 +71,21 @@ Before the pipeline starts, the RAG agent searches a library of **19,534 indexed
 | **Categories** | 27 domain categories |
 | **AI-powered workflows** | 7,554 (39%) |
 | **Search engine** | SQLite FTS5 full-text search |
+| **Search mode** | Per-component (from CEO breakdown) |
 | **Response time** | Instant (<100ms) |
 
 The agent classifies matches into three tiers:
 - **Reusable** (relevance 70%+) — use directly
 - **Modifiable** (40-70%) — adapt for this problem
 - **Inspiration** (<40%) — patterns to learn from
+
+## Deliverable Types (v1.3)
+
+| Type | Output | Example |
+|------|--------|---------|
+| `code` | .zip with project files | "Student portal for attendance" |
+| `workflow` | .json importable into n8n | "AI chatbot for WhatsApp support" |
+| `hybrid` | Both .zip and .json | "E-commerce with inventory automation" |
 
 See [[RAG Workflow Agent]] for details.
 

@@ -7,7 +7,7 @@
 > [!status] System Status
 > | Metric | Value |
 > |--------|-------|
-> | **Version** | v1.2 (RAG Workflow Agent) |
+> | **Version** | v1.3 (CEO-First Pipeline + Workflow JSON) |
 > | **SIH Hackathon** | Aug 18-19, 2026 (7 days) |
 > | **LaunchpadX** | Aug 22-23, 2026 (11 days) |
 > | **Frontend** | [Vercel](https://frontend-wheat-ten-gla6y29t60.vercel.app) — auto-deploy |
@@ -20,9 +20,9 @@
 ## Command Center
 
 > [!pipeline] Agent Pipeline
-> **RAG Agent** → **CEO** → **Business Analyst** → **Researcher** → **Architect** → **Engineer** → **PPT Agent**
+> **CEO** → **RAG Agent** → **Business Analyst** → **Researcher** → **Architect** → **Engineer** → **PPT Agent**
 >
-> RAG searches 19,534 workflows first | 4 approval gates | Cross-review after each agent | Founder always in control
+> CEO classifies deliverable_type + breaks into components | RAG searches per-component | 4 approval gates | Founder always in control
 
 ### Project Docs
 
@@ -55,7 +55,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [[API Reference]] | 17 REST + WebSocket endpoints |
+| [[API Reference]] | 18 REST + WebSocket endpoints |
 | [[n8n Integration]] | Webhook event hub on srv1867770 |
 | [[GitHub Integration]] | Auto-deploy live: Vercel (frontend) + Railway (backend) |
 
@@ -77,7 +77,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [[Roadmap]] | V1-V1.2 done, V1.5 Level 4, V2 product version |
+| [[Roadmap]] | V1-V1.3 done, V1.5 Level 4, V2 product version |
 | [[Training Schedule - LaunchpadX]] | 13-day plan: Learn → Build → SIH → Level Up → LaunchpadX |
 
 ### Agentic AI Knowledge Base
@@ -105,9 +105,9 @@
 
 ```mermaid
 graph LR
-    F["Founder"] -->|problem statement| RAG["RAG Agent"]
-    RAG -->|"workflow matches (19,534 searched)"| CEO
-    CEO -->|project brief| BA["Business Analyst"]
+    F["Founder"] -->|problem statement| CEO
+    CEO -->|"components + deliverable_type"| RAG["RAG Agent"]
+    RAG -->|"per-component workflow matches"| BA["Business Analyst"]
     BA -->|requirements| R["Researcher"]
     R -->|research report| A["Architect"]
     A -->|technical spec| E["Engineer"]
@@ -118,7 +118,7 @@ graph LR
     A -.->|"Gate 3: Approve/Reject"| F
     E -.->|"Gate 4: Approve/Reject"| F
 
-    PPT -->|".pptx + .docx + .zip"| D["Deliverables"]
+    PPT -->|".pptx + .docx + .zip + .json"| D["Deliverables"]
 
     style CEO fill:#f5a623,stroke:#f5a623,color:#0f0f14
     style BA fill:#635bff,stroke:#635bff,color:#fff
@@ -140,7 +140,7 @@ graph LR
 > |------|-------|
 > | **AI Agents** | 7 (6 pipeline + RAG) |
 > | **Approval Gates** | 4 |
-> | **Deliverables** | 3 (ZIP, PPTX, DOCX) |
+> | **Deliverables** | 4 (ZIP, PPTX, DOCX, n8n JSON) |
 > | **API Endpoints** | 12 |
 > | **Webhook Event Types** | 5 |
 > | **Budget per Run** | ~$0.26 |

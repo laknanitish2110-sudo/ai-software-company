@@ -65,6 +65,24 @@
 - [x] **5 new API endpoints** — `/workflows/analyze`, `/search`, `/categories`, etc.
 - [x] **Node-based categorization** — uncategorized workflows classified by their n8n node types
 
+## V1.3 — CEO-First Pipeline + Workflow JSON (DONE)
+**Completed:** 2026-08-14
+**Status:** Complete
+
+### What's new
+- [x] **CEO-first pipeline** — CEO runs before RAG, breaks problem into 3-7 searchable components
+- [x] **Deliverable type classification** — CEO classifies output as `code`, `workflow`, or `hybrid`
+  - "code" → web app, API, CLI (regular ZIP download)
+  - "workflow" → automation/agent pipeline (n8n workflow JSON, importable into n8n)
+  - "hybrid" → both a code project AND an automation workflow (rare, only when genuinely needed)
+- [x] **Component-by-component RAG search** — RAG searches each CEO component separately, tags results with matched component
+- [x] **n8n workflow JSON as deliverable** — Engineer generates valid n8n workflow JSON with real node types, connections, credential placeholders
+- [x] **Workflow JSON download** — new endpoint `GET /api/projects/{id}/download/workflow`
+- [x] **Token efficiency** — no wasted tokens generating both code and workflow when only one is needed
+- [x] **Per-component context** — agents see which workflows match which component of the problem
+- [x] **26 API routes** (was 25)
+- [x] **4 deliverable types** (ZIP, PPTX, DOCX, n8n JSON)
+
 ## V1.5 — Level 4 Engineer
 **Goal:** Engineer agent auto-deploys generated projects
 
