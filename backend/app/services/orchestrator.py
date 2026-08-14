@@ -16,8 +16,9 @@ from app.core.database import (
     get_memory,
 )
 from app.agents.engine import run_agent, cross_review
-from app.services.workflow_search import analyze_for_problem
+from app.services.workflow_search import analyze_for_problem, analyze_by_components
 from app.services.file_generator import generate_project_files, get_generated_files_list
+from app.services.workflow_generator import generate_workflow_json
 from app.services.pptx_generator import generate_pptx
 from app.services.docx_generator import generate_docx
 from app.services.webhook import send_agent_event, send_research_data, send_approval_event, send_deliverables_ready
@@ -51,33 +52,7 @@ class Orchestrator:
 
         await set_memory(project_id, "problem_statement", problem_statement, "founder")
 
-        try:
-            workflow_analysis = analyze_for_problem(problem_statement, limit=10)
-            await set_memory(project_id, "workflow_recommendations", json.dumps({
-                "total_matches": workflow_analysis["total_matches"],
-                "keywords": workflow_analysis["keywords_extracted"],
-                "reusable": [{"name": w["name"], "category": w["domain_category"],
-                              "integrations": w["integrations"], "ai": w["has_ai_nodes"],
-                              "score": w["relevance_score"]}
-                             for w in workflow_analysis.get("reusable", [])[:5]],
-                "modifiable": [{"name": w["name"], "category": w["domain_category"],
-                                "integrations": w["integrations"], "ai": w["has_ai_nodes"],
-                                "score": w["relevance_score"]}
-                               for w in workflow_analysis.get("modifiable", [])[:5]],
-                "inspiration": [{"name": w["name"], "category": w["domain_category"]}
-                                for w in workflow_analysis.get("inspiration", [])[:3]],
-                "categories_matched": workflow_analysis["categories_matched"],
-                "sih_themes_matched": workflow_analysis["sih_themes_matched"],
-                "summary": workflow_analysis["summary"],
-            }), "rag_agent")
-            await self._notify("workflow_analysis", project_id, {
-                "message": f"RAG Agent analyzed 19,500+ workflows: {workflow_analysis['summary']}",
-                "total_matches": workflow_analysis["total_matches"],
-                "categories": workflow_analysis["categories_matched"],
-            })
-        except Exception as e:
-            logger.warning(f"Workflow analysis failed (non-critical): {e}")
-
+        # Step 1: CEO runs FIRST — breaks problem into components and classifies deliverable type
         await self._notify("agent_started", project_id, {
             "role": "ceo",
             "message": "CEO is analyzing the problem statement..."
@@ -87,10 +62,57 @@ class Orchestrator:
         await update_output_status(ceo_output["id"], "approved")
         await set_memory(project_id, "ceo_brief", str(ceo_output["content"]), "ceo")
 
+        ceo_content = ceo_output.get("content", {})
+        deliverable_type = "code"
+        components = []
+        if isinstance(ceo_content, dict):
+            deliverable_type = ceo_content.get("deliverable_type", "code")
+            components = ceo_content.get("components", [])
+
+        await set_memory(project_id, "deliverable_type", deliverable_type, "ceo")
+
         await self._notify("agent_completed", project_id, {
             "role": "ceo",
-            "message": "CEO has created the project brief and assigned work."
+            "message": f"CEO classified deliverable as '{deliverable_type}' with {len(components)} components."
         })
+
+        # Step 2: RAG searches PER-COMPONENT using CEO's breakdown
+        try:
+            if components:
+                workflow_analysis = analyze_by_components(components, limit_per_component=5)
+            else:
+                workflow_analysis = analyze_for_problem(problem_statement, limit=10)
+
+            await set_memory(project_id, "workflow_recommendations", json.dumps({
+                "total_matches": workflow_analysis["total_matches"],
+                "keywords": workflow_analysis.get("keywords_extracted", []),
+                "components_searched": workflow_analysis.get("components_searched", []),
+                "component_results": workflow_analysis.get("component_results", {}),
+                "reusable": [{"name": w["name"], "category": w["domain_category"],
+                              "integrations": w.get("integrations", ""), "ai": w.get("has_ai_nodes", False),
+                              "score": w["relevance_score"],
+                              "component": w.get("matched_component", "")}
+                             for w in workflow_analysis.get("reusable", [])[:5]],
+                "modifiable": [{"name": w["name"], "category": w["domain_category"],
+                                "integrations": w.get("integrations", ""), "ai": w.get("has_ai_nodes", False),
+                                "score": w["relevance_score"],
+                                "component": w.get("matched_component", "")}
+                               for w in workflow_analysis.get("modifiable", [])[:5]],
+                "inspiration": [{"name": w["name"], "category": w["domain_category"]}
+                                for w in workflow_analysis.get("inspiration", [])[:3]],
+                "categories_matched": workflow_analysis["categories_matched"],
+                "sih_themes_matched": workflow_analysis["sih_themes_matched"],
+                "summary": workflow_analysis["summary"],
+                "deliverable_type": deliverable_type,
+            }), "rag_agent")
+            await self._notify("workflow_analysis", project_id, {
+                "message": f"RAG searched {len(components)} components across 19,500+ workflows: {workflow_analysis['summary']}",
+                "total_matches": workflow_analysis["total_matches"],
+                "categories": workflow_analysis["categories_matched"],
+                "deliverable_type": deliverable_type,
+            })
+        except Exception as e:
+            logger.warning(f"Workflow analysis failed (non-critical): {e}")
 
         await self._start_next_agent(project_id, AgentRole.BUSINESS_ANALYST)
 
@@ -242,17 +264,30 @@ class Orchestrator:
             elif status == ProjectStatus.ENGINEER_REVIEW.value:
                 engineer_output = await get_latest_output(project_id, AgentRole.ENGINEER.value)
                 if engineer_output and isinstance(engineer_output.get("content"), dict):
-                    try:
-                        zip_path = generate_project_files(project_id, engineer_output["content"])
-                        files_list = get_generated_files_list(project_id)
-                        await self._notify("files_generated", project_id, {
-                            "message": f"Project files generated! {len(files_list)} files ready for download.",
-                            "files": files_list,
-                        })
-                    except Exception as e:
-                        await self._notify("error", project_id, {
-                            "message": f"File generation error: {str(e)}"
-                        })
+                    content = engineer_output["content"]
+                    if content.get("files"):
+                        try:
+                            zip_path = generate_project_files(project_id, content)
+                            files_list = get_generated_files_list(project_id)
+                            await self._notify("files_generated", project_id, {
+                                "message": f"Project files generated! {len(files_list)} files ready for download.",
+                                "files": files_list,
+                            })
+                        except Exception as e:
+                            await self._notify("error", project_id, {
+                                "message": f"File generation error: {str(e)}"
+                            })
+                    if content.get("n8n_workflow"):
+                        try:
+                            wf_path = generate_workflow_json(project_id, content)
+                            if wf_path:
+                                await self._notify("workflow_generated", project_id, {
+                                    "message": "n8n workflow JSON generated! Ready for import into n8n.",
+                                })
+                        except Exception as e:
+                            await self._notify("error", project_id, {
+                                "message": f"Workflow JSON generation error: {str(e)}"
+                            })
                 next_role = AgentRole.PPT
 
             if next_role:

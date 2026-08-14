@@ -118,10 +118,6 @@ def get_workflow_detail(workflow_id: int) -> Optional[dict]:
 
 
 def analyze_for_problem(problem_statement: str, limit: int = 10) -> dict:
-    """
-    Main entry point for RAG agent — takes a problem statement,
-    returns categorized workflow recommendations.
-    """
     keywords = _extract_keywords(problem_statement)
 
     direct_matches = search_workflows(" ".join(keywords), limit=limit)
@@ -162,6 +158,76 @@ def analyze_for_problem(problem_statement: str, limit: int = 10) -> dict:
         "query": problem_statement,
         "keywords_extracted": keywords,
         "total_matches": len(direct_matches),
+        "reusable": reusable[:5],
+        "modifiable": modifiable[:5],
+        "inspiration": inspiration[:5],
+        "categories_matched": categories_hit,
+        "sih_themes_matched": list(sih_themes_hit),
+        "summary": _build_summary(reusable, modifiable, inspiration),
+    }
+
+
+def analyze_by_components(components: list[str], limit_per_component: int = 5) -> dict:
+    """
+    Component-by-component RAG search — takes the CEO's structured breakdown
+    and searches for each component separately, combining results.
+    """
+    all_matches = []
+    seen_ids = set()
+    component_results = {}
+
+    for component in components:
+        keywords = _extract_keywords(component)
+        if not keywords:
+            continue
+
+        matches = search_workflows(" ".join(keywords), limit=limit_per_component)
+        ai_matches = search_workflows(" ".join(keywords), limit=3, ai_only=True)
+
+        for w in ai_matches:
+            if w["id"] not in {m["id"] for m in matches}:
+                matches.append(w)
+
+        scored = []
+        for w in matches:
+            if w["id"] in seen_ids:
+                continue
+            w["relevance_score"] = _score_relevance(w, keywords)
+            w["matched_component"] = component
+            scored.append(w)
+            seen_ids.add(w["id"])
+            all_matches.append(w)
+
+        scored.sort(key=lambda x: x["relevance_score"], reverse=True)
+        component_results[component] = scored[:3]
+
+    reusable = [w for w in all_matches if w["relevance_score"] >= 0.7]
+    modifiable = [w for w in all_matches if 0.4 <= w["relevance_score"] < 0.7]
+    inspiration = [w for w in all_matches if w["relevance_score"] < 0.4]
+
+    reusable.sort(key=lambda x: x["relevance_score"], reverse=True)
+    modifiable.sort(key=lambda x: x["relevance_score"], reverse=True)
+
+    categories_hit = list(set(w["domain_category"] for w in all_matches))
+    sih_themes_hit = set()
+    for w in all_matches:
+        for t in w.get("sih_themes", "").split(","):
+            if t.strip():
+                sih_themes_hit.add(t.strip())
+
+    return {
+        "query": " | ".join(components),
+        "components_searched": components,
+        "component_results": {
+            comp: [{"name": w["name"], "category": w["domain_category"],
+                    "score": w["relevance_score"]}
+                   for w in results]
+            for comp, results in component_results.items()
+        },
+        "keywords_extracted": list(set(
+            kw for comp in components for kw in _extract_keywords(comp)
+        ))[:20],
+        "total_matches": len(all_matches),
         "reusable": reusable[:5],
         "modifiable": modifiable[:5],
         "inspiration": inspiration[:5],

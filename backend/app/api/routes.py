@@ -12,6 +12,7 @@ from app.services.orchestrator import orchestrator
 from app.services.file_generator import get_project_zip_path, get_generated_files_list
 from app.services.pptx_generator import get_pptx_path
 from app.services.docx_generator import get_docx_path
+from app.services.workflow_generator import get_workflow_json_path
 from app.services.webhook import send_share_request
 from app.services.demo_cache import save_demo, load_demo, has_demo, get_demo_deliverable
 from app.core.config import N8N_WEBHOOK_URL
@@ -183,6 +184,18 @@ async def download_docx(project_id: str):
         docx_path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=f"project-{project_id}-report.docx",
+    )
+
+
+@router.get("/projects/{project_id}/download/workflow")
+async def download_workflow(project_id: str):
+    wf_path = get_workflow_json_path(project_id)
+    if not wf_path:
+        raise HTTPException(404, "No workflow JSON found. Engineer must complete with deliverable_type 'workflow' or 'hybrid'.")
+    return FileResponse(
+        wf_path,
+        media_type="application/json",
+        filename=f"project-{project_id}-workflow.json",
     )
 
 

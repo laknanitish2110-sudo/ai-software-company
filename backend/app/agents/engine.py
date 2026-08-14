@@ -181,19 +181,35 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
                 label = ROLE_LABELS.get(AgentRole(role), role)
                 parts.append(f"## {label}'s Approved Output\n```json\n{json.dumps(output['content'], indent=2)}\n```")
 
+    deliverable_type = memory.pop("deliverable_type", "code")
+    if deliverable_type != "code":
+        parts.append(f"## Deliverable Type: {deliverable_type.upper()}\n{'Generate n8n workflow JSON (importable into n8n).' if deliverable_type == 'workflow' else 'Generate BOTH code project AND n8n workflow JSON.'}")
+
     workflow_recs = memory.pop("workflow_recommendations", None)
     if workflow_recs:
         try:
             recs = json.loads(workflow_recs) if isinstance(workflow_recs, str) else workflow_recs
             wf_parts = [f"## Existing n8n Workflow Library Analysis\n**{recs.get('summary', '')}**"]
+            if recs.get("components_searched"):
+                wf_parts.append(f"**Components analyzed:** {', '.join(recs['components_searched'])}")
+            if recs.get("component_results"):
+                wf_parts.append("### Per-Component Matches")
+                for comp, matches in recs["component_results"].items():
+                    if matches:
+                        match_str = ", ".join(f"{m['name']} ({m['score']:.0%})" for m in matches)
+                        wf_parts.append(f"- **{comp}**: {match_str}")
+                    else:
+                        wf_parts.append(f"- **{comp}**: No matches — build from scratch")
             if recs.get("reusable"):
                 wf_parts.append("### Reusable Workflows (use directly)")
                 for w in recs["reusable"]:
-                    wf_parts.append(f"- **{w['name']}** ({w['category']}) — integrations: {w['integrations']} | relevance: {w['score']:.0%}")
+                    comp_note = f" [for: {w['component']}]" if w.get("component") else ""
+                    wf_parts.append(f"- **{w['name']}** ({w['category']}) — integrations: {w['integrations']} | relevance: {w['score']:.0%}{comp_note}")
             if recs.get("modifiable"):
                 wf_parts.append("### Modifiable Workflows (adapt for this problem)")
                 for w in recs["modifiable"]:
-                    wf_parts.append(f"- **{w['name']}** ({w['category']}) — integrations: {w['integrations']} | relevance: {w['score']:.0%}")
+                    comp_note = f" [for: {w['component']}]" if w.get("component") else ""
+                    wf_parts.append(f"- **{w['name']}** ({w['category']}) — integrations: {w['integrations']} | relevance: {w['score']:.0%}{comp_note}")
             if recs.get("inspiration"):
                 wf_parts.append("### Inspiration Workflows (patterns to learn from)")
                 for w in recs["inspiration"]:
