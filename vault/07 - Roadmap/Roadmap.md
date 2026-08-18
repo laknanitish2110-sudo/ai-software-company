@@ -56,10 +56,10 @@
 **Status:** Complete
 
 ### What's new
-- [x] **RAG Workflow Agent** — searches 19,534 n8n workflows before pipeline starts
+- [x] **RAG Workflow Agent** — searches 19,870 n8n workflows before pipeline starts
   - Workflow indexer: parses JSONs into SQLite with FTS5 full-text search
   - 27 domain categories, SIH theme mapping
-  - 7,554 AI-powered workflows identified (39%)
+  - 7,806 AI-powered workflows identified (39%)
   - Three-tier classification: reusable / modifiable / inspiration
 - [x] **Auto-wired into pipeline** — runs before CEO, results in shared memory for all agents
 - [x] **5 new API endpoints** — `/workflows/analyze`, `/search`, `/categories`, etc.

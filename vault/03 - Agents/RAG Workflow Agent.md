@@ -2,13 +2,13 @@
 
 #agent #rag #search
 
-> Searches 19,534 indexed n8n workflows **per-component** after the CEO breaks down the problem, giving every agent targeted automation templates as context.
+> Searches 19,870 indexed n8n workflows **per-component** after the CEO breaks down the problem, giving every agent targeted automation templates as context.
 
 ## What It Does
 
 After the CEO breaks the problem into components and classifies the deliverable type, this agent:
 1. Takes the CEO's component breakdown (e.g., "IoT sensor data collection", "crop health analysis AI")
-2. Searches 19,534 workflows **per-component** using FTS5
+2. Searches 19,870 workflows **per-component** using FTS5
 3. Scores relevance and classifies matches into three tiers, tagged with which component they match
 4. Stores results in shared memory so all 6 agents see per-component matches
 
@@ -23,7 +23,7 @@ CEO (runs FIRST)
   |  → classifies deliverable_type: code / workflow / hybrid
   v
 RAG Agent (instant, <100ms)
-  |  → searches PER-COMPONENT across 19,534 workflows
+  |  → searches PER-COMPONENT across 19,870 workflows
   |  → tags each match with matched_component
   |  → stores recommendations in shared memory
   |  → fires "workflow_analysis" WebSocket event
@@ -44,8 +44,8 @@ Previously RAG searched on the raw problem statement (often just 5-10 words). No
 
 | Metric | Value |
 |--------|-------|
-| **Total workflows** | 19,534 |
-| **AI-powered** | 7,554 (39%) |
+| **Total workflows** | 19,870 |
+| **AI-powered** | 7,806 (39%) |
 | **With webhooks** | 3,394 |
 | **With databases** | 6,559 |
 | **Domain categories** | 27 |
@@ -62,6 +62,7 @@ Located at `C:\Users\rajes\Downloads\14000+ N8N WORKFLOWS-20260625T045947Z-3-001
 | **4000+ N8N Agents** | 2,294 | By tool (OpenAI, Telegram, Slack, etc.) |
 | **4000 Categorized Templates** | ~4,000 | By domain (Healthcare, Agriculture, etc.) |
 | **Part 1 + Part 2 Templates** | ~13,000 | Mixed, categorized by node analysis |
+| **awesome-n8n-templates** | 336 | GitHub curated (OpenAI, RAG, Telegram, etc.) |
 
 ### Top Categories
 
@@ -168,7 +169,7 @@ The CEO now classifies each problem's deliverable type:
 
 | File | Purpose |
 |------|---------|
-| `backend/app/services/workflow_indexer.py` | Parses 19,534 JSONs into SQLite + FTS5 |
+| `backend/app/services/workflow_indexer.py` | Parses 19,870 JSONs into SQLite + FTS5 |
 | `backend/app/services/workflow_search.py` | Search service + `analyze_for_problem()` + `analyze_by_components()` |
 | `backend/app/services/workflow_generator.py` | Generates downloadable n8n workflow JSON from Engineer output |
 | `backend/workflows.db` | SQLite database (gitignored, 43 MB) |

@@ -46,7 +46,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [[RAG Workflow Agent]] | Searches 19,534 n8n workflows for matches |
+| [[RAG Workflow Agent]] | Searches 19,870 n8n workflows for matches |
 | [[CEO Agent]] | Generates project brief from problem statement |
 | [[Engineer Agent]] | The critical agent — generates runnable code |
 | [[Agent Roster]] | Full roster with all 7 agents |

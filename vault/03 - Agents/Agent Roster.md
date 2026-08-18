@@ -14,7 +14,7 @@
 
 ## Individual Agents
 
-- [[RAG Workflow Agent]] — searches 19,534 n8n workflows before pipeline starts
+- [[RAG Workflow Agent]] — searches 19,870 n8n workflows before pipeline starts
 - [[CEO Agent]]
 - [[Business Analyst Agent]]
 - [[Researcher Agent]]
@@ -63,13 +63,13 @@ RAG then searches per-component using the CEO's breakdown, not the raw input.
 
 ## RAG Workflow Agent (v1.3)
 
-After CEO breaks the problem into components, the RAG agent searches **19,534 indexed n8n workflows** per-component. Results tagged with `matched_component` are stored in shared memory.
+After CEO breaks the problem into components, the RAG agent searches **19,870 indexed n8n workflows** per-component. Results tagged with `matched_component` are stored in shared memory.
 
 | Metric | Value |
 |--------|-------|
-| **Workflows indexed** | 19,534 |
+| **Workflows indexed** | 19,870 |
 | **Categories** | 27 domain categories |
-| **AI-powered workflows** | 7,554 (39%) |
+| **AI-powered workflows** | 7,806 (39%) |
 | **Search engine** | SQLite FTS5 full-text search |
 | **Search mode** | Per-component (from CEO breakdown) |
 | **Response time** | Instant (<100ms) |

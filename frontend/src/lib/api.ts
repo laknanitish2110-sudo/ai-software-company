@@ -109,6 +109,10 @@ export function downloadDocx(projectId: string) {
   window.open(`${API_BASE}/projects/${projectId}/download/docx`, "_blank");
 }
 
+export function downloadWorkflow(projectId: string) {
+  window.open(`${API_BASE}/projects/${projectId}/download/workflow`, "_blank");
+}
+
 export async function getIntegrationStatus(): Promise<{
   n8n_connected: boolean;
   webhook_url_set: boolean;

@@ -106,7 +106,7 @@ class Orchestrator:
                 "deliverable_type": deliverable_type,
             }), "rag_agent")
             await self._notify("workflow_analysis", project_id, {
-                "message": f"RAG searched {len(components)} components across 19,500+ workflows: {workflow_analysis['summary']}",
+                "message": f"RAG searched {len(components)} components across 19,800+ workflows: {workflow_analysis['summary']}",
                 "total_matches": workflow_analysis["total_matches"],
                 "categories": workflow_analysis["categories_matched"],
                 "deliverable_type": deliverable_type,

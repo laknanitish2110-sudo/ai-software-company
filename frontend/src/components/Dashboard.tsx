@@ -8,7 +8,7 @@ import AgentOutputCard from "./AgentOutput";
 import CallEmployee from "./CallEmployee";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
-import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, shareProject, getIntegrationStatus, saveDemoCache } from "@/lib/api";
+import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache } from "@/lib/api";
 import { STATUS_LABELS } from "@/lib/constants";
 
 interface Props {
@@ -139,6 +139,7 @@ export default function Dashboard({ projectId }: Props) {
   }
 
   const isCompleted = project.status === "completed";
+  const deliverableType = state.memory?.deliverable_type || "code";
 
   return (
     <div className="min-h-screen p-6 max-w-6xl mx-auto">
@@ -193,11 +194,20 @@ export default function Dashboard({ projectId }: Props) {
 
         {/* Download Buttons */}
         {isCompleted && (
-          <div className="flex gap-3 mt-5 animate-fade-in">
-            <button onClick={() => downloadCode(projectId)}
-                    className="btn-success text-sm py-2.5 px-5 flex items-center gap-2">
-              <span>📦</span> Download Code (.zip)
-            </button>
+          <div className="flex gap-3 mt-5 flex-wrap animate-fade-in">
+            {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
+              <button onClick={() => downloadCode(projectId)}
+                      className="btn-success text-sm py-2.5 px-5 flex items-center gap-2">
+                <span>📦</span> Download Code (.zip)
+              </button>
+            )}
+            {(deliverableType === "workflow" || deliverableType === "hybrid") && (
+              <button onClick={() => downloadWorkflow(projectId)}
+                      className="btn-success text-sm py-2.5 px-5 flex items-center gap-2"
+                      style={{ background: "var(--accent)", borderColor: "var(--accent-border)" }}>
+                <span>⚡</span> n8n Workflow (.json)
+              </button>
+            )}
             <button onClick={() => downloadPptx(projectId)}
                     className="btn-primary text-sm py-2.5 px-5 flex items-center gap-2">
               <span>📊</span> Presentation (.pptx)

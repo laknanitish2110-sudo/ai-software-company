@@ -43,7 +43,7 @@ Examples:
 Be honest about classification. Don't default to "hybrid" — most problems are one or the other.
 
 COMPONENT BREAKDOWN — CRITICAL:
-Break the problem into 3-7 distinct components. Each component should be a searchable concept that our workflow library can match against. These components will be used to find relevant existing workflows from our 19,534-workflow library.
+Break the problem into 3-7 distinct components. Each component should be a searchable concept that our workflow library can match against. These components will be used to find relevant existing workflows from our 19,870-workflow library.
 
 Example: "Smart agriculture monitoring using IoT"
 → components: ["IoT sensor data collection", "crop health analysis AI", "weather alert notifications", "farmer dashboard", "SMS/WhatsApp alerts for farmers"]
