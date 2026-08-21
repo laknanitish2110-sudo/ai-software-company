@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: ai-software-company
+    runtime: python
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: SMART_MODEL
+        value: google/gemma-3-27b-it:free
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: N8N_WEBHOOK_URL
+        sync: false
+      - key: MODEL_CEO
+        value: google/gemma-3-27b-it:free
+      - key: MODEL_BA
+        value: google/gemma-3-27b-it:free
+      - key: MODEL_RESEARCHER
+        value: google/gemma-3-27b-it:free
+      - key: MODEL_ARCHITECT
+        value: deepseek/deepseek-chat-v3-0324:free
+      - key: MODEL_ENGINEER
+        value: anthropic/claude-sonnet-4
+      - key: MODEL_PPT
+        value: google/gemma-3-27b-it:free
+      - key: MODEL_REVIEW
+        value: google/gemma-3-27b-it:free
+      - key: FRONTEND_URL
+        value: https://frontend-wheat-ten-gla6y29t60.vercel.app
