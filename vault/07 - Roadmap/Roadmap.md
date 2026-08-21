@@ -28,7 +28,7 @@
 **Status:** Complete
 
 ### What's new
-- [x] **Backend deployed on Railway** — live at `ai-software-company-production.up.railway.app`
+- [x] **Backend deployed** — originally Railway, migrating to Render for LaunchpadX
 - [x] **Frontend deployed on Vercel** — live at `frontend-wheat-ten-gla6y29t60.vercel.app`
 - [x] **SIH-optimized agent prompts** — all 6 agents tuned for ultra-short SIH inputs (median 72 chars)
   - CEO: 3 concrete expansion examples, Indian context (PM Kisan, DIKSHA, CSC centres)
@@ -82,6 +82,22 @@
 - [x] **Per-component context** — agents see which workflows match which component of the problem
 - [x] **26 API routes** (was 25)
 - [x] **4 deliverable types** (ZIP, PPTX, DOCX, n8n JSON)
+
+## V1.4 — LaunchpadX Prompt Tuning (DONE)
+**Completed:** 2026-08-21
+**Status:** Complete
+
+### What's new
+- [x] **All 6 agent prompts retuned for LaunchpadX** — theme: Agentic AI / GenAI / Agent Building
+  - CEO: Agentic AI expansion examples, agent design pattern context, framework references
+  - BA: AI agent ecosystem constraints (LLM cost, hallucination, latency), SNIST Hyderabad personas
+  - Researcher: Agent frameworks (LangChain, CrewAI, AutoGen), LLM providers, vector DBs, production tooling
+  - Architect: Agent pipeline design, RAG pipeline, tool calling, memory strategies, cost-per-query
+  - Engineer: Showcase agentic patterns, agent demo-ability, LLM error handling
+  - PPT: LaunchpadX judge criteria (agent innovation, technical depth, demo quality)
+- [x] **Cross-review criteria updated** — "SIH judges" → "LaunchpadX judges (Agentic AI theme)"
+- [x] **CORS updated** — added `*.onrender.com` regex for Render backend hosting
+- [x] **Deliverable type examples updated** — SIH examples → agentic AI examples
 
 ## V1.5 — Level 4 Engineer
 **Goal:** Engineer agent auto-deploys generated projects

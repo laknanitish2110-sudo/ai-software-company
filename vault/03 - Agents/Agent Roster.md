@@ -36,18 +36,18 @@ Each agent's output is reviewed by the most relevant teammate before the Founder
 
 Reviews include a **quality score (1-10)**, alignment check, and hackathon readiness assessment. See [[Cross Review System]] for details.
 
-## SIH-Optimized Prompts (v1.1)
+## LaunchpadX-Optimized Prompts (v1.4)
 
-All agent prompts were tuned for SIH hackathon context:
+All agent prompts tuned for LaunchpadX hackathon (theme: Agentic AI / GenAI / Agent Building):
 
-| Agent | SIH Optimization |
-|-------|-----------------|
-| CEO | 3 expansion examples for ultra-short inputs, Indian gov context (PM Kisan, DIKSHA) |
-| BA | Indian personas mandatory (e.g., "Priya, Gram Panchayat secretary in MP"), DPDP Act 2023, 24h scope |
-| Researcher | Bhashini API, IndiaAI, prior SIH winners, Indian sources (YourStory, Inc42) |
-| Architect | Indian scale (1.4B people, 500M smartphones), Railway/Render hosting, UPI payments |
-| Engineer | Indian locale (INR, IST, pincode), Indian sample data, 3-command setup |
-| PPT | SIH judge criteria, Indian statistics and examples |
+| Agent | LaunchpadX Optimization |
+|-------|------------------------|
+| CEO | Agentic AI expansion examples (code review agent, support chatbot, research assistant), agent design patterns context |
+| BA | AI agent ecosystem constraints (LLM cost, hallucination, latency), tech-focused Indian personas (SNIST Hyderabad) |
+| Researcher | Agent frameworks (LangChain, CrewAI, AutoGen), LLM providers, vector DBs, production AI tooling |
+| Architect | Agent pipeline design, LLM integration, RAG pipeline, tool calling, memory strategies, cost-per-query |
+| Engineer | Showcase agentic AI patterns, agent DOING something for demo, LLM error handling |
+| PPT | LaunchpadX judge criteria (agent innovation, technical depth, demo quality, agentic AI understanding) |
 
 ## Pipeline Order (v1.3)
 

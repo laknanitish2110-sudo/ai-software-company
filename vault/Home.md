@@ -8,10 +8,10 @@
 > | Metric | Value |
 > |--------|-------|
 > | **Version** | v1.3 (CEO-First Pipeline + Workflow JSON) |
-> | **SIH Hackathon** | Aug 18-19, 2026 (7 days) |
-> | **LaunchpadX** | Aug 22-23, 2026 (11 days) |
+> | **SIH Hackathon** | Aug 18-19, 2026 (done) |
+> | **LaunchpadX** | Aug 22-23, 2026 (TOMORROW) |
 > | **Frontend** | [Vercel](https://frontend-wheat-ten-gla6y29t60.vercel.app) — auto-deploy |
-> | **Backend** | [Railway](https://ai-software-company-production.up.railway.app) — live |
+> | **Backend** | Render (migrating from Railway) |
 > | **Pipeline Status** | Operational |
 > | **n8n Events** | 12/12 webhook events successful |
 

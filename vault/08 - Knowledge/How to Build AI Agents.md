@@ -21,13 +21,13 @@ No-Code ◄───────────────────────
 Build agents without writing any code. Visual interfaces, pre-built templates.
 
 ### Zapier AI Agents
-| Aspect | Details |
-|--------|---------|
-| **What** | AI automation on top of Zapier's 7,000+ app integrations |
-| **How** | Natural language instructions + Zapier workflow triggers |
-| **Best for** | Business users, connecting existing SaaS tools |
+| Aspect         | Details                                                  |
+| -------------- | -------------------------------------------------------- |
+| **What**       | AI automation on top of Zapier's 7,000+ app integrations |
+| **How**        | Natural language instructions + Zapier workflow triggers |
+| **Best for**   | Business users, connecting existing SaaS tools           |
 | **Limitation** | Limited reasoning, can't handle complex multi-step logic |
-| **Pricing** | From $20/month (includes AI features in paid plans) |
+| **Pricing**    | From $20/month (includes AI features in paid plans)      |
 
 ```
 Trigger (email arrives) → AI Agent (classify, decide) → Action (respond, tag, forward)
