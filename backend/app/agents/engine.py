@@ -31,10 +31,16 @@ from app.services.webhook import send_research_data
 
 logger = logging.getLogger(__name__)
 
-client = OpenAI(
-    base_url=OPENROUTER_BASE_URL,
-    api_key=OPENROUTER_API_KEY,
-)
+_client = None
+
+def get_client():
+    global _client
+    if _client is None:
+        _client = OpenAI(
+            base_url=OPENROUTER_BASE_URL,
+            api_key=OPENROUTER_API_KEY,
+        )
+    return _client
 
 SYSTEM_PROMPTS = {
     AgentRole.CEO: CEO_SYSTEM_PROMPT,
@@ -107,7 +113,7 @@ async def _llm_call_single(
 ) -> str:
     if stream_callback:
         collected = []
-        response = client.chat.completions.create(
+        response = get_client().chat.completions.create(
             model=model,
             max_tokens=max_tokens,
             messages=messages,
@@ -121,7 +127,7 @@ async def _llm_call_single(
                 await stream_callback(token)
         return "".join(collected)
     else:
-        response = client.chat.completions.create(
+        response = get_client().chat.completions.create(
             model=model,
             max_tokens=max_tokens,
             messages=messages,
