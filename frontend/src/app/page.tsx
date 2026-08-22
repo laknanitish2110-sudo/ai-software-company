@@ -43,7 +43,7 @@ export default function Home() {
       localStorage.setItem("lastProjectId", project.id);
       router.push(`/project/${project.id}`);
     } catch {
-      toast("error", "Failed to start project", "Could not connect to the backend. Make sure it's running on port 8000.");
+      toast("error", "Failed to start project", "Could not connect to the backend. Check deployment status.");
       setLoading(false);
     }
   }
