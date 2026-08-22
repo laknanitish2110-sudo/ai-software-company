@@ -44,6 +44,10 @@ async def save_demo(project_id: str) -> dict:
     if zip_src.exists():
         shutil.copy2(zip_src, DEMO_DIR / "demo.zip")
 
+    wf_src = Path(__file__).parent.parent.parent / "generated_projects" / f"{project_id}_workflow.json"
+    if wf_src.exists():
+        shutil.copy2(wf_src, DEMO_DIR / "demo_workflow.json")
+
     return {"status": "saved", "project_id": project_id, "path": str(cache_file)}
 
 
@@ -65,6 +69,7 @@ def get_demo_deliverable(file_type: str) -> str | None:
         "zip": DEMO_DIR / "demo.zip",
         "pptx": DEMO_DIR / "demo.pptx",
         "docx": DEMO_DIR / "demo.docx",
+        "workflow": DEMO_DIR / "demo_workflow.json",
     }
     path = paths.get(file_type)
     if path and path.exists():

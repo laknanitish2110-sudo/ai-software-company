@@ -207,23 +207,31 @@ export default function Dashboard({ projectId }: Props) {
         {isCompleted && (
           <div className="flex gap-3 mt-5 flex-wrap animate-fade-in">
             {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
-              <button onClick={() => downloadCode(projectId)}
+              <button onClick={async () => {
+                try { await downloadCode(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download code."); }
+              }}
                       className="btn-success text-sm py-2.5 px-5 flex items-center gap-2">
                 <span>📦</span> Download Code (.zip)
               </button>
             )}
             {(deliverableType === "workflow" || deliverableType === "hybrid") && (
-              <button onClick={() => downloadWorkflow(projectId)}
+              <button onClick={async () => {
+                try { await downloadWorkflow(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "Workflow not found."); }
+              }}
                       className="btn-success text-sm py-2.5 px-5 flex items-center gap-2"
                       style={{ background: "var(--accent)", borderColor: "var(--accent-border)" }}>
                 <span>⚡</span> n8n Workflow (.json)
               </button>
             )}
-            <button onClick={() => downloadPptx(projectId)}
+            <button onClick={async () => {
+              try { await downloadPptx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download presentation."); }
+            }}
                     className="btn-primary text-sm py-2.5 px-5 flex items-center gap-2">
               <span>📊</span> Presentation (.pptx)
             </button>
-            <button onClick={() => downloadDocx(projectId)}
+            <button onClick={async () => {
+              try { await downloadDocx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download report."); }
+            }}
                     className="btn-ghost text-sm py-2.5 px-5 flex items-center gap-2">
               <span>📄</span> Report (.docx)
             </button>

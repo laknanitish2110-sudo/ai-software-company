@@ -97,20 +97,41 @@ export async function getConversation(
   return res.json();
 }
 
+async function safeDownload(url: string, fallbackMsg: string) {
+  const res = await fetch(url, { method: "HEAD" });
+  if (res.ok) {
+    window.open(url, "_blank");
+  } else {
+    throw new Error(fallbackMsg);
+  }
+}
+
 export function downloadCode(projectId: string) {
-  window.open(`${API_BASE}/projects/${projectId}/download/code`, "_blank");
+  return safeDownload(
+    `${API_BASE}/projects/${projectId}/download/code`,
+    "No generated code found. Run the pipeline first."
+  );
 }
 
 export function downloadPptx(projectId: string) {
-  window.open(`${API_BASE}/projects/${projectId}/download/pptx`, "_blank");
+  return safeDownload(
+    `${API_BASE}/projects/${projectId}/download/pptx`,
+    "No presentation found. Pipeline must complete first."
+  );
 }
 
 export function downloadDocx(projectId: string) {
-  window.open(`${API_BASE}/projects/${projectId}/download/docx`, "_blank");
+  return safeDownload(
+    `${API_BASE}/projects/${projectId}/download/docx`,
+    "No report found. Pipeline must complete first."
+  );
 }
 
 export function downloadWorkflow(projectId: string) {
-  window.open(`${API_BASE}/projects/${projectId}/download/workflow`, "_blank");
+  return safeDownload(
+    `${API_BASE}/projects/${projectId}/download/workflow`,
+    "No workflow JSON found. Only available for workflow/hybrid deliverables."
+  );
 }
 
 export async function getIntegrationStatus(): Promise<{

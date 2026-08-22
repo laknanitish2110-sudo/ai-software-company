@@ -158,6 +158,8 @@ async def get_agent_introspection(project_id: str, role: str):
 async def download_code(project_id: str):
     zip_path = get_project_zip_path(project_id)
     if not zip_path:
+        zip_path = get_demo_deliverable("zip")
+    if not zip_path:
         raise HTTPException(404, "No generated files found. Engineer must complete first.")
     return FileResponse(
         zip_path,
@@ -169,6 +171,8 @@ async def download_code(project_id: str):
 @router.get("/projects/{project_id}/download/pptx")
 async def download_pptx(project_id: str):
     pptx_path = get_pptx_path(project_id)
+    if not pptx_path:
+        pptx_path = get_demo_deliverable("pptx")
     if not pptx_path:
         raise HTTPException(404, "No presentation found. PPT agent must complete first.")
     return FileResponse(
@@ -182,6 +186,8 @@ async def download_pptx(project_id: str):
 async def download_docx(project_id: str):
     docx_path = get_docx_path(project_id)
     if not docx_path:
+        docx_path = get_demo_deliverable("docx")
+    if not docx_path:
         raise HTTPException(404, "No report found. Project must complete first.")
     return FileResponse(
         docx_path,
@@ -193,6 +199,8 @@ async def download_docx(project_id: str):
 @router.get("/projects/{project_id}/download/workflow")
 async def download_workflow(project_id: str):
     wf_path = get_workflow_json_path(project_id)
+    if not wf_path:
+        wf_path = get_demo_deliverable("workflow")
     if not wf_path:
         raise HTTPException(404, "No workflow JSON found. Engineer must complete with deliverable_type 'workflow' or 'hybrid'.")
     return FileResponse(
