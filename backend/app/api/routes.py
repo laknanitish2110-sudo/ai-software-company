@@ -208,6 +208,13 @@ async def list_generated_files(project_id: str):
     return {"project_id": project_id, "files": files, "count": len(files)}
 
 
+@router.get("/projects/{project_id}/files/content")
+async def get_file_contents(project_id: str):
+    from app.services.file_generator import get_generated_file_contents
+    files = get_generated_file_contents(project_id)
+    return {"project_id": project_id, "files": files, "count": len(files)}
+
+
 class ShareRequest(BaseModel):
     share_type: str  # "drive", "sheets", "email", "all"
 

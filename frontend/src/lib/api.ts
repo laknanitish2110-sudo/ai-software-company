@@ -185,6 +185,21 @@ export async function getIntrospection(
   return res.json();
 }
 
+export interface GeneratedFile {
+  path: string;
+  size: number;
+  content: string;
+  language: string;
+}
+
+export async function getFileContents(
+  projectId: string
+): Promise<{ files: GeneratedFile[]; count: number }> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/files/content`);
+  if (!res.ok) return { files: [], count: 0 };
+  return res.json();
+}
+
 export function connectWebSocket(
   projectId: string,
   onMessage: (msg: WSMessage) => void

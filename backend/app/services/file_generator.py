@@ -101,3 +101,36 @@ def get_generated_files_list(project_id: str) -> list[dict]:
             size = file.stat().st_size
             files.append({"path": rel_path, "size": size})
     return files
+
+
+def get_generated_file_contents(project_id: str) -> list[dict]:
+    project_dir = PROJECTS_DIR / project_id
+    if not project_dir.exists():
+        return []
+
+    files = []
+    for file in sorted(project_dir.rglob("*")):
+        if file.is_file():
+            rel_path = str(file.relative_to(project_dir))
+            size = file.stat().st_size
+            content = ""
+            try:
+                content = file.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                content = "(binary file)"
+            ext = file.suffix.lstrip(".")
+            lang_map = {
+                "py": "python", "js": "javascript", "ts": "typescript",
+                "tsx": "tsx", "jsx": "jsx", "html": "html", "css": "css",
+                "json": "json", "md": "markdown", "yml": "yaml", "yaml": "yaml",
+                "toml": "toml", "sql": "sql", "sh": "bash", "env": "bash",
+                "txt": "text", "cfg": "ini", "ini": "ini", "dockerfile": "dockerfile",
+            }
+            language = lang_map.get(ext, ext or "text")
+            files.append({
+                "path": rel_path,
+                "size": size,
+                "content": content,
+                "language": language,
+            })
+    return files

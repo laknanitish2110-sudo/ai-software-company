@@ -6,6 +6,9 @@ import AgentCanvas from "./AgentCanvas";
 import AgentIntrospection from "./AgentIntrospection";
 import AgentOutputCard from "./AgentOutput";
 import CallEmployee from "./CallEmployee";
+import CodePreview from "./CodePreview";
+import ArchitectureDiagram from "./ArchitectureDiagram";
+import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
 import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache } from "@/lib/api";
@@ -28,6 +31,9 @@ export default function Dashboard({ projectId }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [inspectingAgent, setInspectingAgent] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(true);
+  const [showCodePreview, setShowCodePreview] = useState(false);
+  const [showArchDiagram, setShowArchDiagram] = useState(false);
+  const [streamText, setStreamText] = useState("");
   const { toast } = useToast();
 
   const refreshState = useCallback(async () => {
@@ -65,12 +71,16 @@ export default function Dashboard({ projectId }: Props) {
     const ws = connectWebSocket(projectId, (msg: WSMessage) => {
       if (msg.type === "agent_stream") {
         setStreamTokens(msg.data.token_count || 0);
+        if (msg.data.token) {
+          setStreamText((prev) => prev + msg.data.token);
+        }
         return;
       }
 
       if (msg.type === "agent_started") {
         setStreamingAgent(msg.data.role || null);
         setStreamTokens(0);
+        setStreamText("");
         setAgentStartTime(Date.now());
       }
 
@@ -81,6 +91,7 @@ export default function Dashboard({ projectId }: Props) {
       if (msg.type === "approval_needed" || msg.type === "agent_completed" || msg.type === "project_completed") {
         setStreamingAgent(null);
         setStreamTokens(0);
+        setStreamText("");
         setAgentStartTime(null);
       }
 
@@ -226,6 +237,20 @@ export default function Dashboard({ projectId }: Props) {
                     style={{ borderColor: "var(--warning-border)", color: "var(--warning)" }}>
               <span>💾</span> Save as Demo
             </button>
+            {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
+              <button onClick={() => setShowCodePreview(true)}
+                      className="btn-ghost text-sm py-2.5 px-5 flex items-center gap-2"
+                      style={{ borderColor: "var(--accent-border)", color: "var(--accent)" }}>
+                <span>👁️</span> View Code in Browser
+              </button>
+            )}
+            {outputs.find((o) => o.role === "architect") && (
+              <button onClick={() => setShowArchDiagram(true)}
+                      className="btn-ghost text-sm py-2.5 px-5 flex items-center gap-2"
+                      style={{ borderColor: "rgba(139,92,246,0.4)", color: "#8b5cf6" }}>
+                <span>🏗️</span> Architecture Diagram
+              </button>
+            )}
           </div>
         )}
 
@@ -291,6 +316,18 @@ export default function Dashboard({ projectId }: Props) {
           </div>
         )}
       </div>
+
+      {/* Live Stream Panel */}
+      {streamingAgent && (
+        <div className="mb-4 animate-fade-in">
+          <LiveStreamPanel
+            agentRole={streamingAgent}
+            streamText={streamText}
+            tokenCount={streamTokens}
+            elapsed={elapsed}
+          />
+        </div>
+      )}
 
       {/* Live Agent Canvas */}
       <div className="mb-6 animate-fade-in" style={{ animationDelay: "0.1s" }}>
@@ -421,6 +458,24 @@ export default function Dashboard({ projectId }: Props) {
           onClose={() => setInspectingAgent(null)}
         />
       )}
+
+      {showCodePreview && (
+        <CodePreview
+          projectId={projectId}
+          onClose={() => setShowCodePreview(false)}
+        />
+      )}
+
+      {showArchDiagram && (() => {
+        const archOutput = outputs.find((o) => o.role === "architect");
+        if (!archOutput) return null;
+        return (
+          <ArchitectureDiagram
+            architectOutput={archOutput.content as Record<string, unknown>}
+            onClose={() => setShowArchDiagram(false)}
+          />
+        );
+      })()}
     </div>
   );
 }
