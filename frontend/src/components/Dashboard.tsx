@@ -12,10 +12,39 @@ import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
 import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache } from "@/lib/api";
-import { STATUS_LABELS } from "@/lib/constants";
+import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER } from "@/lib/constants";
 
 interface Props {
   projectId: string;
+}
+
+function getStageInfo(status: string): { current: number; label: string } {
+  const map: Record<string, { current: number; label: string }> = {
+    created: { current: 1, label: "CEO Analysis" },
+    ba_working: { current: 2, label: "Business Analysis" },
+    ba_review: { current: 2, label: "BA Review" },
+    research_working: { current: 3, label: "Research" },
+    research_review: { current: 3, label: "Research Review" },
+    architect_working: { current: 4, label: "Architecture" },
+    architect_review: { current: 4, label: "Architecture Review" },
+    engineer_working: { current: 5, label: "Engineering" },
+    engineer_review: { current: 5, label: "Engineering Review" },
+    ppt_working: { current: 6, label: "Presentation" },
+    completed: { current: 7, label: "All Complete" },
+  };
+  return map[status] || { current: 0, label: status };
+}
+
+function formatPipelineTime(seconds: number): string {
+  if (seconds >= 3600) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export default function Dashboard({ projectId }: Props) {
@@ -34,6 +63,7 @@ export default function Dashboard({ projectId }: Props) {
   const [showCodePreview, setShowCodePreview] = useState(false);
   const [showArchDiagram, setShowArchDiagram] = useState(false);
   const [streamText, setStreamText] = useState("");
+  const [pipelineElapsed, setPipelineElapsed] = useState(0);
   const { toast } = useToast();
 
   const refreshState = useCallback(async () => {
@@ -130,6 +160,22 @@ export default function Dashboard({ projectId }: Props) {
     return () => clearInterval(interval);
   }, [agentStartTime]);
 
+  useEffect(() => {
+    if (!state?.project?.created_at) return;
+    const created = new Date(state.project.created_at).getTime();
+    if (isNaN(created)) return;
+    if (state.project.status === "completed") {
+      const end = state.project.updated_at ? new Date(state.project.updated_at).getTime() : Date.now();
+      setPipelineElapsed(Math.floor(((isNaN(end) ? Date.now() : end) - created) / 1000));
+      return;
+    }
+    setPipelineElapsed(Math.floor((Date.now() - created) / 1000));
+    const interval = setInterval(() => {
+      setPipelineElapsed(Math.floor((Date.now() - created) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [state?.project?.created_at, state?.project?.status, state?.project?.updated_at]);
+
   if (!state?.project) {
     return <DashboardSkeleton />;
   }
@@ -137,6 +183,8 @@ export default function Dashboard({ projectId }: Props) {
   const { project, outputs, memory } = state;
   const pendingOutput = outputs.find((o) => o.status === "pending");
   const statusLabel = STATUS_LABELS[project.status] || project.status;
+  const stageInfo = getStageInfo(project.status);
+  const isAutoPilot = memory?.auto_approve === "true";
 
   function getPeerReview(role: string) {
     const key = `peer_review_${role}`;
@@ -202,6 +250,117 @@ export default function Dashboard({ projectId }: Props) {
           </span>
         </div>
         <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{project.problem_statement}</p>
+
+        {/* Pipeline Progress */}
+        <div className="mt-4 animate-fade-in" style={{
+          background: "var(--bg-elevated)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          padding: "14px 20px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Pipeline
+              </span>
+              {isAutoPilot && (
+                <span style={{
+                  fontSize: 10,
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                  background: "rgba(99,91,255,0.12)",
+                  color: "#7a73ff",
+                  border: "1px solid rgba(99,91,255,0.25)",
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
+                }}>
+                  Auto-pilot
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>
+                {isCompleted ? "Complete" : stageInfo.label}
+              </span>
+              <span style={{
+                fontSize: 12, fontWeight: 700, fontFamily: "monospace",
+                color: isCompleted ? "var(--success)" : "var(--accent)",
+              }}>
+                {isCompleted ? "6/6" : `${stageInfo.current}/6`}
+              </span>
+              {pipelineElapsed > 0 && (
+                <span style={{
+                  fontSize: 11, fontFamily: "monospace",
+                  color: "var(--text-muted)",
+                  padding: "2px 8px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                }}>
+                  {formatPipelineTime(pipelineElapsed)}
+                </span>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            {PIPELINE_ORDER.flatMap((role, i) => {
+              const config = AGENT_CONFIG[role];
+              const isDone = stageInfo.current > i + 1;
+              const isActive = stageInfo.current === i + 1 && !isCompleted;
+              const isReview = isActive && project.status.includes("_review");
+              const dotBorder = isDone ? "#0bbf8c" : isReview ? "#f5a623" : isActive ? config.color : "var(--border)";
+              const dotBg = isDone ? "rgba(11,191,140,0.12)" : isReview ? "rgba(245,166,35,0.12)" : isActive ? `${config.color}15` : "transparent";
+
+              if (i > 0) {
+                return [
+                  <div key={`line-${i}`} style={{
+                    flex: 1, height: 2,
+                    background: isDone ? "#0bbf8c" : isActive ? `linear-gradient(90deg, #0bbf8c, ${dotBorder})` : "var(--border)",
+                    opacity: isDone || isActive ? 0.6 : 0.15,
+                    transition: "all 0.5s ease",
+                  }} />,
+                  <div key={role} title={config.label} style={{
+                    width: 30, height: 30, borderRadius: "50%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: dotBg, border: `2px solid ${dotBorder}`,
+                    transition: "all 0.3s ease", flexShrink: 0,
+                  }}>
+                    {isDone
+                      ? <span style={{ color: "#0bbf8c", fontSize: 11, fontWeight: 700 }}>✓</span>
+                      : <span style={{ fontSize: 14 }}>{config.icon}</span>}
+                  </div>,
+                ];
+              }
+              return [
+                <div key={role} title={config.label} style={{
+                  width: 30, height: 30, borderRadius: "50%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: dotBg, border: `2px solid ${dotBorder}`,
+                  transition: "all 0.3s ease", flexShrink: 0,
+                }}>
+                  {isDone
+                    ? <span style={{ color: "#0bbf8c", fontSize: 11, fontWeight: 700 }}>✓</span>
+                    : <span style={{ fontSize: 14 }}>{config.icon}</span>}
+                </div>,
+              ];
+            })}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, padding: "0 2px" }}>
+            {PIPELINE_ORDER.map((role) => {
+              const config = AGENT_CONFIG[role];
+              const isDone = stageInfo.current > PIPELINE_ORDER.indexOf(role) + 1;
+              const isActive = stageInfo.current === PIPELINE_ORDER.indexOf(role) + 1 && !isCompleted;
+              return (
+                <span key={role} style={{
+                  fontSize: 9, fontWeight: 500, width: 30, textAlign: "center",
+                  color: isDone ? "var(--success)" : isActive ? "var(--text-secondary)" : "var(--text-muted)",
+                  opacity: isDone || isActive ? 1 : 0.4,
+                }}>
+                  {config.label.split(" ")[0]}
+                </span>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Download Buttons */}
         {isCompleted && (
