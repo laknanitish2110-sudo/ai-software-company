@@ -49,6 +49,15 @@ export const PIPELINE_ORDER = [
   "ppt",
 ];
 
+export const MODEL_LABELS: Record<string, { model: string; provider: string; providerColor: string }> = {
+  ceo: { model: "Gemini Flash", provider: "Google", providerColor: "#4285f4" },
+  business_analyst: { model: "Claude Sonnet", provider: "Anthropic", providerColor: "#d4a27f" },
+  researcher: { model: "Gemini Flash", provider: "Google", providerColor: "#4285f4" },
+  architect: { model: "Claude Sonnet", provider: "Anthropic", providerColor: "#d4a27f" },
+  engineer: { model: "GPT-4o", provider: "OpenAI", providerColor: "#10a37f" },
+  ppt: { model: "Gemini Flash", provider: "Google", providerColor: "#4285f4" },
+};
+
 export const STATUS_LABELS: Record<string, string> = {
   created: "CEO is analyzing...",
   ba_working: "Business Analyst is working",

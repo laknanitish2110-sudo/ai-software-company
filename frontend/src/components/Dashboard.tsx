@@ -12,7 +12,7 @@ import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
 import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache } from "@/lib/api";
-import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER } from "@/lib/constants";
+import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS } from "@/lib/constants";
 
 interface Props {
   projectId: string;
@@ -344,19 +344,33 @@ export default function Dashboard({ projectId }: Props) {
               ];
             })}
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, padding: "0 2px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, padding: "0 2px" }}>
             {PIPELINE_ORDER.map((role) => {
               const config = AGENT_CONFIG[role];
-              const isDone = stageInfo.current > PIPELINE_ORDER.indexOf(role) + 1;
-              const isActive = stageInfo.current === PIPELINE_ORDER.indexOf(role) + 1 && !isCompleted;
+              const modelInfo = MODEL_LABELS[role];
+              const idx = PIPELINE_ORDER.indexOf(role);
+              const isDone = stageInfo.current > idx + 1;
+              const isActive = stageInfo.current === idx + 1 && !isCompleted;
               return (
-                <span key={role} style={{
-                  fontSize: 9, fontWeight: 500, width: 30, textAlign: "center",
-                  color: isDone ? "var(--success)" : isActive ? "var(--text-secondary)" : "var(--text-muted)",
-                  opacity: isDone || isActive ? 1 : 0.4,
-                }}>
-                  {config.label.split(" ")[0]}
-                </span>
+                <div key={role} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 56 }}>
+                  <span style={{
+                    fontSize: 9, fontWeight: 600,
+                    color: isDone ? "var(--success)" : isActive ? "var(--text-secondary)" : "var(--text-muted)",
+                    opacity: isDone || isActive ? 1 : 0.4,
+                  }}>
+                    {config.label.split(" ")[0]}
+                  </span>
+                  {modelInfo && (
+                    <span style={{
+                      fontSize: 8, fontWeight: 500, marginTop: 2,
+                      color: modelInfo.providerColor,
+                      opacity: isDone || isActive ? 0.8 : 0.3,
+                      whiteSpace: "nowrap",
+                    }}>
+                      {modelInfo.model}
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>

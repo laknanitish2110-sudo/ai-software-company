@@ -1,6 +1,6 @@
 "use client";
 
-import { AGENT_CONFIG, PIPELINE_ORDER } from "@/lib/constants";
+import { AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS } from "@/lib/constants";
 
 interface Props {
   status: string;
@@ -589,6 +589,21 @@ export default function AgentCanvas({
                       ? "Awaiting Review"
                       : "Standby"}
               </text>
+
+              {/* Model/Provider badge */}
+              {MODEL_LABELS[role] && (
+                <text
+                  x={x}
+                  y={y + R + 46}
+                  textAnchor="middle"
+                  fill={MODEL_LABELS[role].providerColor}
+                  fontSize="8"
+                  fontFamily="monospace"
+                  opacity={state === "waiting" ? 0.2 : 0.5}
+                >
+                  {MODEL_LABELS[role].model}
+                </text>
+              )}
 
               {/* Streaming metrics badge (above active node) */}
               {isStreaming && (
