@@ -10,8 +10,8 @@ from app.models.schemas import (
 )
 from app.services.orchestrator import orchestrator
 from app.services.file_generator import get_project_zip_path, get_generated_files_list, generate_project_files
-from app.services.pptx_generator import get_pptx_path
-from app.services.docx_generator import get_docx_path
+from app.services.pptx_generator import get_pptx_path, generate_pptx
+from app.services.docx_generator import get_docx_path, generate_docx
 from app.services.workflow_generator import get_workflow_json_path, generate_workflow_json
 from app.services.webhook import send_share_request
 from app.services.demo_cache import save_demo, load_demo, has_demo, get_demo_deliverable
@@ -329,6 +329,15 @@ async def load_demo_cache():
                     generate_workflow_json(pid, eng)
                 except Exception:
                     pass
+            if out.get("role") == "ppt" and isinstance(out.get("content"), dict):
+                try:
+                    generate_pptx(pid, out["content"])
+                except Exception:
+                    pass
+        try:
+            generate_docx(pid, project, data.get("outputs", []), data.get("memory", {}))
+        except Exception:
+            pass
 
     return data
 
