@@ -1,13 +1,14 @@
 """Full pipeline test - creates a project, auto-approves, checks n8n webhooks."""
 import asyncio
 import json
+import os
 import sys
 import time
 import httpx
 
-API = "http://localhost:8000/api"
-N8N_API = "https://n8n.srv1867770.hstgr.cloud/api/v1"
-N8N_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZDliMmJjNy0wMjI2LTQwYTItOWZhMS04OWY0MTY0NmQzNTciLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiMjJkOGU4MWEtNmU1MC00ODFjLWJkODgtNTdkMDYzOWI4OTlmIiwiaWF0IjoxNzg1NTA5OTY4fQ.5PgV6Oahn5eqYVO19dwqpEXyeOOwVWrLcdMHu0exT-s"
+API = os.getenv("TEST_API_URL", "http://localhost:8000/api")
+N8N_API = os.getenv("N8N_API_URL", "")
+N8N_KEY = os.getenv("N8N_API_KEY", "")
 
 PROBLEM = "Smart waste management system for Indian municipalities using IoT sensors and AI"
 
