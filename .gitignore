@@ -21,6 +21,7 @@ out/
 
 # Database
 *.db
+!backend/workflows.db
 *.sqlite
 *.sqlite3
 
