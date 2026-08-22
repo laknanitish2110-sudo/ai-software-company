@@ -111,10 +111,6 @@ export default function Dashboard({ projectId }: Props) {
     refreshState();
   }
 
-  if (!state?.project) {
-    return <DashboardSkeleton />;
-  }
-
   useEffect(() => {
     if (!agentStartTime) { setElapsed(0); return; }
     const interval = setInterval(() => {
@@ -122,6 +118,10 @@ export default function Dashboard({ projectId }: Props) {
     }, 1000);
     return () => clearInterval(interval);
   }, [agentStartTime]);
+
+  if (!state?.project) {
+    return <DashboardSkeleton />;
+  }
 
   const { project, outputs, memory } = state;
   const pendingOutput = outputs.find((o) => o.status === "pending");
