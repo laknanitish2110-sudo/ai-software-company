@@ -1,0 +1,303 @@
+{
+  "project": {
+    "id": "demo-sih-2026",
+    "problem_statement": "Build an AI-powered grievance redressal system for Indian rural citizens that uses NLP to categorize complaints, route them to appropriate government departments, and track resolution with SMS updates in local languages",
+    "status": "completed",
+    "created_at": "2026-08-22T10:00:00+05:30",
+    "updated_at": "2026-08-22T10:15:42+05:30"
+  },
+  "outputs": [
+    {
+      "id": "out-ceo-001",
+      "project_id": "demo-sih-2026",
+      "role": "ceo",
+      "content": {
+        "project_name": "JanSunwai AI — Intelligent Grievance Redressal",
+        "brief": "An AI-powered multilingual grievance platform for rural India. Citizens submit complaints via SMS, WhatsApp, or web in any Indian language. NLP categorizes and routes complaints to the correct department (PWD, Health, Education, Revenue). Real-time tracking with SMS updates in the citizen's language. Dashboard for district collectors to monitor resolution rates and identify systemic issues.",
+        "deliverable_type": "hybrid",
+        "components": [
+          "NLP complaint classifier with Indian language support",
+          "Department routing engine with escalation logic",
+          "SMS gateway integration for rural access",
+          "Multilingual chatbot for WhatsApp and web",
+          "Admin dashboard with analytics and heatmaps",
+          "Resolution tracking with SLA monitoring",
+          "n8n workflow for inter-department escalation"
+        ],
+        "target_users": "Rural citizens, Block Development Officers, District Collectors",
+        "hackathon_scope": "MVP with complaint submission, NLP classification, department routing, and SMS status updates. Dashboard with mock data for demo.",
+        "success_metrics": [
+          "Complaint classification accuracy > 85%",
+          "Average routing time < 30 seconds",
+          "Support for Hindi, Tamil, Telugu, Bengali, Marathi",
+          "SMS delivery confirmation rate > 95%"
+        ]
+      },
+      "status": "approved",
+      "created_at": "2026-08-22T10:00:15+05:30"
+    },
+    {
+      "id": "out-ba-001",
+      "project_id": "demo-sih-2026",
+      "role": "business_analyst",
+      "content": {
+        "requirements": {
+          "functional": [
+            "Citizens can submit grievances via SMS (missed call + USSD), WhatsApp, or web portal",
+            "NLP engine classifies complaints into 12 government department categories",
+            "Automatic routing to correct BDO/department with priority scoring",
+            "Real-time SMS updates in citizen's preferred language (Hindi, Tamil, Telugu, Bengali, Marathi)",
+            "Escalation triggers if SLA breached (7 days for normal, 3 days for urgent)",
+            "District Collector dashboard with resolution analytics, heatmaps, department performance",
+            "Citizen can check status via SMS shortcode or WhatsApp"
+          ],
+          "non_functional": [
+            "Response time < 2 seconds for classification",
+            "Support 10,000 concurrent users per district",
+            "99.5% uptime SLA",
+            "DPDP Act 2023 compliant — PII encrypted at rest, consent-based data collection",
+            "Works on 2G networks (SMS fallback)",
+            "Accessibility: WCAG 2.1 AA for web portal"
+          ]
+        },
+        "user_stories": [
+          {
+            "persona": "Priya, Gram Panchayat secretary in Madhya Pradesh",
+            "story": "As a GP secretary, I want to submit road repair complaints via SMS in Hindi so that the PWD department receives and acts on them without me visiting the district office",
+            "acceptance_criteria": ["SMS in Hindi accepted", "Auto-classified as 'Roads & Infrastructure'", "Routed to PWD within 30 seconds", "Confirmation SMS received with ticket number"]
+          },
+          {
+            "persona": "Rajesh, Block Development Officer in Tamil Nadu",
+            "story": "As a BDO, I want a dashboard showing all pending grievances in my block sorted by priority and SLA deadline so I can allocate resources effectively",
+            "acceptance_criteria": ["Dashboard shows grievances by category", "Priority scoring visible", "SLA countdown for each ticket", "Export to Excel for reporting"]
+          },
+          {
+            "persona": "Dr. Meera, District Collector in Telangana",
+            "story": "As a DC, I want weekly analytics showing department-wise resolution rates and geographic hotspots so I can identify systemic issues and hold reviews",
+            "acceptance_criteria": ["Heatmap of complaints by mandal", "Department-wise resolution time chart", "Trend analysis over 30/60/90 days", "Auto-generated weekly report PDF"]
+          }
+        ],
+        "scope": {
+          "in_scope": [
+            "Complaint submission (SMS, WhatsApp, web)",
+            "NLP classification (12 categories)",
+            "Department routing with priority",
+            "SMS status updates in 5 languages",
+            "Admin dashboard with analytics",
+            "SLA monitoring and escalation"
+          ],
+          "out_of_scope": [
+            "Payment processing",
+            "Video-based complaints",
+            "Integration with existing CPGRAMS (Phase 2)",
+            "Mobile app (Phase 2 — web PWA sufficient for v1)"
+          ],
+          "timeline": "24 hours (hackathon MVP)"
+        },
+        "data_model": {
+          "entities": ["Citizen", "Grievance", "Department", "Officer", "Resolution", "Escalation", "SMSLog"],
+          "key_relationships": "Citizen -> many Grievances -> one Department -> many Officers. Grievance -> one Resolution. Grievance -> many Escalations."
+        }
+      },
+      "status": "approved",
+      "created_at": "2026-08-22T10:02:30+05:30"
+    },
+    {
+      "id": "out-researcher-001",
+      "project_id": "demo-sih-2026",
+      "role": "researcher",
+      "content": {
+        "market_research": {
+          "existing_solutions": [
+            {
+              "name": "CPGRAMS (Centralized Public Grievance Redress and Monitoring System)",
+              "description": "Government of India's official grievance portal. Web-only, English-centric, no NLP classification.",
+              "limitations": "No SMS access, no local language support, manual routing causes 15-day average resolution time",
+              "our_advantage": "Multilingual NLP, SMS-first for rural access, auto-routing cuts resolution time to 3-5 days"
+            },
+            {
+              "name": "CM Helpline (various states)",
+              "description": "State-level call centers (181, 1076). Human operators classify and route.",
+              "limitations": "Expensive (₹50-80 per call), limited hours, language barriers with operators",
+              "our_advantage": "24/7 automated classification, zero marginal cost per complaint, native language support"
+            },
+            {
+              "name": "Janamaithri (Kerala Police)",
+              "description": "Community policing app with grievance submission",
+              "limitations": "Police-only, requires smartphone and internet",
+              "our_advantage": "SMS-based works on feature phones, covers all departments not just police"
+            }
+          ],
+          "technology_analysis": {
+            "nlp_options": [
+              {"name": "Bhashini API (MeitY)", "verdict": "Best for Indian languages — free, government-backed, supports 22 scheduled languages, translation + ASR + TTS", "use_for": "Translation layer"},
+              {"name": "IndicNLP / AI4Bharat models", "verdict": "Open-source NLP models specifically trained on Indian languages. IndicBERT for classification.", "use_for": "Complaint classification"},
+              {"name": "OpenAI / Claude API", "verdict": "Best reasoning but expensive at scale. Use for complex edge cases only.", "use_for": "Fallback classifier for ambiguous complaints"}
+            ],
+            "sms_gateways": [
+              {"name": "MSG91", "verdict": "Indian SMS gateway, DLT registered, ₹0.15/SMS, supports regional languages", "use_for": "Primary SMS gateway"},
+              {"name": "Twilio", "verdict": "Global but expensive for India (₹0.50/SMS), better WhatsApp API", "use_for": "WhatsApp Business API"}
+            ]
+          },
+          "indian_context": {
+            "statistics": [
+              "73% of India's grievances come from rural areas (DARPG 2025 report)",
+              "Only 38% of rural Indians have smartphone access — SMS is essential",
+              "CPGRAMS processes 2.1 million complaints/year with 43% resolution rate",
+              "Average resolution time: 27 days (our target: 5 days)"
+            ],
+            "government_schemes": ["Digital India", "CPGRAMS", "UMANG", "Bhashini"],
+            "prior_sih_winners": [
+              "SIH 2023: 'GramVaani' — voice-based citizen reporting (IIT Delhi)",
+              "SIH 2024: 'JanSeva AI' — chatbot for scheme eligibility (NIT Trichy)"
+            ]
+          },
+          "apis_and_integrations": [
+            {"name": "Bhashini API", "purpose": "Translation between Indian languages", "cost": "Free (government)"},
+            {"name": "MSG91", "purpose": "SMS gateway with DLT compliance", "cost": "₹0.15/SMS"},
+            {"name": "Twilio WhatsApp", "purpose": "WhatsApp Business messaging", "cost": "$0.005/message"},
+            {"name": "Mapbox / Leaflet", "purpose": "Complaint heatmaps", "cost": "Free tier sufficient"},
+            {"name": "OpenRouter (Claude/Gemma)", "purpose": "NLP classification fallback", "cost": "Free tier models available"}
+          ]
+        }
+      },
+      "status": "approved",
+      "created_at": "2026-08-22T10:05:00+05:30"
+    },
+    {
+      "id": "out-architect-001",
+      "project_id": "demo-sih-2026",
+      "role": "architect",
+      "content": {
+        "architecture": {
+          "system_overview": "Three-tier architecture: SMS/WhatsApp/Web ingestion layer → FastAPI backend with NLP pipeline → React dashboard. SQLite for hackathon, PostgreSQL-ready for production.",
+          "tech_stack": {
+            "backend": {"language": "Python 3.11", "framework": "FastAPI", "database": "SQLite (aiosqlite)", "nlp": "IndicBERT + Bhashini API", "sms": "MSG91 API"},
+            "frontend": {"framework": "Next.js 16", "styling": "CSS Variables (Light Theme)", "maps": "Leaflet.js", "charts": "Recharts"},
+            "infrastructure": {"hosting": "Railway (backend) + Vercel (frontend)", "ci_cd": "GitHub Actions"}
+          },
+          "api_design": [
+            {"endpoint": "POST /api/grievances", "purpose": "Submit new grievance (web/WhatsApp)"},
+            {"endpoint": "POST /api/grievances/sms", "purpose": "Receive SMS webhook from MSG91"},
+            {"endpoint": "GET /api/grievances/{id}/status", "purpose": "Check grievance status"},
+            {"endpoint": "GET /api/dashboard/analytics", "purpose": "Department-wise analytics"},
+            {"endpoint": "POST /api/grievances/{id}/resolve", "purpose": "Mark grievance resolved"},
+            {"endpoint": "GET /api/dashboard/heatmap", "purpose": "Geographic complaint distribution"},
+            {"endpoint": "POST /api/grievances/{id}/escalate", "purpose": "Trigger SLA escalation"}
+          ],
+          "database_schema": {
+            "tables": [
+              {"name": "grievances", "columns": "id, citizen_phone, citizen_name, complaint_text, original_language, translated_text, category, department_id, priority, status, sla_deadline, created_at, resolved_at"},
+              {"name": "departments", "columns": "id, name, code, district, contact_officer, email, sla_days"},
+              {"name": "officers", "columns": "id, name, department_id, designation, phone, email, block"},
+              {"name": "sms_logs", "columns": "id, grievance_id, phone, message, language, status, sent_at"},
+              {"name": "escalations", "columns": "id, grievance_id, from_level, to_level, reason, escalated_at"}
+            ]
+          },
+          "nlp_pipeline": {
+            "steps": [
+              "1. Language detection (Bhashini)",
+              "2. Translation to English (Bhashini API)",
+              "3. Category classification (IndicBERT fine-tuned on 12 categories)",
+              "4. Priority scoring (urgency keywords + category SLA)",
+              "5. Department routing (category → department mapping table)",
+              "6. Response generation in original language (Bhashini)"
+            ]
+          },
+          "scalability": {
+            "current": "SQLite handles 10K concurrent users per district",
+            "production": "PostgreSQL + Redis cache + load balancer for state-level deployment (50M+ citizens)"
+          }
+        },
+        "trade_offs": [
+          {"decision": "SQLite over PostgreSQL", "reason": "Zero-config for hackathon, migration path clear for production"},
+          {"decision": "IndicBERT over GPT-4", "reason": "Free, offline-capable, specifically trained on Indian languages. GPT-4 as fallback only."},
+          {"decision": "SMS-first over App-first", "reason": "62% of rural India uses feature phones. SMS works on 2G."},
+          {"decision": "Bhashini over Google Translate", "reason": "Government-backed, free, better accuracy for Indian languages, data sovereignty"}
+        ]
+      },
+      "status": "approved",
+      "created_at": "2026-08-22T10:07:30+05:30"
+    },
+    {
+      "id": "out-engineer-001",
+      "project_id": "demo-sih-2026",
+      "role": "engineer",
+      "content": {
+        "project_name": "jansunwai-ai",
+        "deliverable_type": "hybrid",
+        "setup_commands": [
+          "cd backend && pip install -r requirements.txt",
+          "cp .env.example .env  # Add your API keys",
+          "python -m uvicorn app.main:app --reload"
+        ],
+        "files": {
+          "backend/app/main.py": "from fastapi import FastAPI\\nfrom fastapi.middleware.cors import CORSMiddleware\\nfrom app.api.routes import router\\n\\napp = FastAPI(title='JanSunwai AI')\\napp.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])\\napp.include_router(router, prefix='/api')\\n\\n@app.get('/')\\ndef health(): return {'status': 'running', 'name': 'JanSunwai AI'}",
+          "backend/app/api/routes.py": "# 15 API endpoints for grievance management\\n# POST /grievances, GET /grievances/{id}, POST /sms-webhook\\n# GET /dashboard/analytics, GET /dashboard/heatmap\\n# ... (complete implementation in ZIP)",
+          "backend/app/services/nlp_classifier.py": "# IndicBERT-based complaint classifier\\n# 12 categories: Roads, Water, Health, Education, Revenue, Police,\\n# Agriculture, Electricity, Sanitation, Housing, Social Welfare, Other\\n# Accuracy: 87% on test dataset",
+          "backend/app/services/sms_gateway.py": "# MSG91 integration for SMS notifications\\n# Supports Hindi, Tamil, Telugu, Bengali, Marathi\\n# DLT-compliant templates registered",
+          "backend/requirements.txt": "fastapi==0.115.0\\nuvicorn==0.30.6\\naiosqlite==0.20.0\\nhttpx==0.28.1\\npython-dotenv==1.0.1\\ntransformers==4.44.0\\ntorch==2.4.0",
+          "frontend/src/app/page.tsx": "// Next.js 16 dashboard with grievance submission form,\\n// real-time status tracker, and admin analytics view",
+          "frontend/src/components/Dashboard.tsx": "// District Collector dashboard\\n// Complaint heatmap, department performance charts,\\n// SLA monitoring, resolution rate trends"
+        },
+        "file_count": 24,
+        "total_lines": 3847,
+        "test_commands": [
+          "pytest tests/ -v",
+          "curl http://localhost:8000/api/grievances -X POST -d '{\"complaint\": \"सड़क टूटी हुई है\", \"phone\": \"9876543210\"}'",
+          "curl http://localhost:8000/api/dashboard/analytics"
+        ],
+        "n8n_workflow": {
+          "name": "JanSunwai Escalation Workflow",
+          "description": "Automated escalation: checks SLA breaches every hour, notifies officers via SMS, escalates to DC after 2 missed deadlines",
+          "nodes": ["Schedule Trigger", "HTTP Request (check SLAs)", "IF (breached?)", "MSG91 (notify officer)", "IF (2nd breach?)", "MSG91 (notify DC)", "Webhook (status update)"],
+          "node_count": 7
+        }
+      },
+      "status": "approved",
+      "created_at": "2026-08-22T10:10:00+05:30"
+    },
+    {
+      "id": "out-ppt-001",
+      "project_id": "demo-sih-2026",
+      "role": "ppt",
+      "content": {
+        "title": "JanSunwai AI — Intelligent Grievance Redressal for Rural India",
+        "slides": [
+          {"title": "JanSunwai AI", "content": "Intelligent Grievance Redressal for Rural India | SIH 2026", "type": "title"},
+          {"title": "The Problem", "content": "73% of grievances from rural India. 27-day average resolution. Only 43% resolved. Language barriers. No SMS access to CPGRAMS.", "type": "content"},
+          {"title": "Our Solution", "content": "AI-powered multilingual grievance platform. SMS-first for feature phones. NLP classifies into 12 departments. Auto-routes with priority scoring. Target: 5-day resolution.", "type": "content"},
+          {"title": "How It Works", "content": "Citizen sends SMS/WhatsApp → NLP classifies (IndicBERT) → Routes to department → Officer resolves → SMS update in citizen's language", "type": "content"},
+          {"title": "Technology Stack", "content": "Backend: FastAPI + IndicBERT | Frontend: Next.js 16 | NLP: Bhashini API + IndicBERT | SMS: MSG91 | Deploy: Railway + Vercel", "type": "content"},
+          {"title": "Key Features", "content": "12-category NLP classifier (87% accuracy) | 5 Indian languages | SMS works on 2G | SLA monitoring | District Collector dashboard | n8n escalation workflow", "type": "content"},
+          {"title": "Impact & Metrics", "content": "Resolution time: 27 days → 5 days | Coverage: 38% smartphone → 95% SMS | Cost: ₹60/complaint → ₹2/complaint | Languages: 1 → 5", "type": "content"},
+          {"title": "Demo", "content": "Live demonstration of complaint submission, NLP classification, routing, and dashboard analytics", "type": "content"},
+          {"title": "Roadmap", "content": "Phase 1: MVP (24h hackathon) | Phase 2: CPGRAMS integration + mobile app | Phase 3: State-level deployment | Phase 4: National rollout", "type": "content"},
+          {"title": "Thank You", "content": "Team AI Software Company | Built with multi-agent AI pipeline | JanSunwai AI — Every voice heard, every grievance resolved", "type": "closing"}
+        ],
+        "slide_count": 10,
+        "theme": "professional_dark",
+        "has_charts": true,
+        "has_diagrams": true
+      },
+      "status": "approved",
+      "created_at": "2026-08-22T10:12:00+05:30"
+    }
+  ],
+  "memory": {
+    "problem_statement": "Build an AI-powered grievance redressal system for Indian rural citizens that uses NLP to categorize complaints, route them to appropriate government departments, and track resolution with SMS updates in local languages",
+    "ceo_brief": "JanSunwai AI — Intelligent Grievance Redressal. Hybrid deliverable (code + n8n workflow). 7 components: NLP classifier, routing engine, SMS gateway, WhatsApp chatbot, admin dashboard, resolution tracker, escalation workflow.",
+    "deliverable_type": "hybrid",
+    "ba_summary": "Requirements complete: 7 functional + 6 non-functional requirements. 3 user personas (GP Secretary, BDO, District Collector). 7 entities in data model. DPDP Act 2023 compliant.",
+    "researcher_summary": "Market gap confirmed: CPGRAMS is web-only English, 27-day resolution. Our advantage: SMS-first, multilingual NLP (Bhashini + IndicBERT), auto-routing. Key APIs: Bhashini (free, govt), MSG91 (₹0.15/SMS).",
+    "architect_summary": "Three-tier arch: FastAPI + IndicBERT + Next.js. SQLite for hackathon, PostgreSQL-ready. 7 API endpoints. NLP pipeline: detect language → translate → classify → route → respond. SMS-first design.",
+    "engineer_summary": "24 files, 3,847 lines. Full-stack implementation with NLP classifier (87% accuracy), SMS gateway, admin dashboard. 3-command setup. Includes n8n escalation workflow.",
+    "ppt_summary": "10-slide presentation covering problem, solution, architecture, demo, impact metrics, and roadmap.",
+    "workflow_recommendations": "{\"total_matches\": 12, \"keywords_extracted\": [\"grievance\", \"nlp\", \"sms\", \"chatbot\", \"dashboard\"], \"reusable\": [{\"name\": \"WhatsApp Business Chatbot\", \"category\": \"Communication\", \"score\": 0.82}], \"modifiable\": [{\"name\": \"SMS Notification Workflow\", \"category\": \"Communication\", \"score\": 0.65}]}",
+    "peer_review_business_analyst": "{\"reviewer\": \"ceo\", \"score\": 9, \"alignment\": \"Excellent\", \"feedback\": \"Comprehensive requirements with strong Indian context. DPDP compliance is crucial.\", \"hackathon_ready\": true}",
+    "peer_review_researcher": "{\"reviewer\": \"business_analyst\", \"score\": 8, \"alignment\": \"Good\", \"feedback\": \"Strong competitive analysis. Bhashini API recommendation is spot-on for government deployment.\", \"hackathon_ready\": true}",
+    "peer_review_architect": "{\"reviewer\": \"researcher\", \"score\": 9, \"alignment\": \"Excellent\", \"feedback\": \"Tech choices are research-backed. IndicBERT over GPT-4 is the right call for cost and data sovereignty.\", \"hackathon_ready\": true}",
+    "peer_review_engineer": "{\"reviewer\": \"architect\", \"score\": 8, \"alignment\": \"Good\", \"feedback\": \"Code follows architecture. Clean separation of NLP pipeline. Good test coverage.\", \"hackathon_ready\": true}",
+    "peer_review_ppt": "{\"reviewer\": \"engineer\", \"score\": 9, \"alignment\": \"Excellent\", \"feedback\": \"Presentation accurately reflects implementation. Impact metrics are compelling.\", \"hackathon_ready\": true}"
+  }
+}
