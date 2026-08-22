@@ -113,7 +113,7 @@ async def get_employee_conversation(project_id: str, role: str):
 @router.get("/projects/{project_id}/introspection/{role}")
 async def get_agent_introspection(project_id: str, role: str):
     from app.agents.engine import SYSTEM_PROMPTS, ROLE_LABELS, AGENT_TIMEOUTS
-    from app.core.config import MODEL_MAP, SMART_MODEL
+    from app.core.config import MODEL_MAP, SMART_MODEL, PROVIDER_MAP
 
     try:
         agent_role = AgentRole(role)
@@ -145,6 +145,7 @@ async def get_agent_introspection(project_id: str, role: str):
         "role": role,
         "label": ROLE_LABELS.get(agent_role, role),
         "model": MODEL_MAP.get(role, SMART_MODEL),
+        "provider": PROVIDER_MAP.get(role, "openrouter"),
         "system_prompt": SYSTEM_PROMPTS.get(agent_role, ""),
         "max_tokens": 16000 if agent_role == AgentRole.ENGINEER else 4096,
         "timeout": AGENT_TIMEOUTS.get(agent_role, 120),

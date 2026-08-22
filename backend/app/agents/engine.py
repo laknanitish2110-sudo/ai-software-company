@@ -5,7 +5,13 @@ import time
 import logging
 from openai import OpenAI
 
-from app.core.config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, SMART_MODEL, MODEL_MAP, FALLBACK_MAP
+from app.core.config import (
+    OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
+    OPENAI_API_KEY, OPENAI_BASE_URL,
+    GEMINI_API_KEY, GEMINI_BASE_URL,
+    SMART_MODEL, MODEL_MAP, FALLBACK_MAP,
+    PROVIDER_MAP, FALLBACK_PROVIDER_MAP,
+)
 from app.core.database import (
     get_project,
     get_project_outputs,
@@ -31,16 +37,18 @@ from app.services.webhook import send_research_data
 
 logger = logging.getLogger(__name__)
 
-_client = None
+_clients: dict[str, OpenAI] = {}
 
-def get_client():
-    global _client
-    if _client is None:
-        _client = OpenAI(
-            base_url=OPENROUTER_BASE_URL,
-            api_key=OPENROUTER_API_KEY,
-        )
-    return _client
+def get_client(provider: str = "openrouter") -> OpenAI:
+    if provider not in _clients:
+        if provider == "openai" and OPENAI_API_KEY:
+            _clients[provider] = OpenAI(api_key=OPENAI_API_KEY)
+        elif provider == "gemini" and GEMINI_API_KEY:
+            _clients[provider] = OpenAI(base_url=GEMINI_BASE_URL, api_key=GEMINI_API_KEY)
+        else:
+            _clients["openrouter"] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
+            provider = "openrouter"
+    return _clients.get(provider, _clients.get("openrouter"))
 
 SYSTEM_PROMPTS = {
     AgentRole.CEO: CEO_SYSTEM_PROMPT,
@@ -110,10 +118,12 @@ async def _llm_call_single(
     max_tokens: int,
     timeout: int,
     stream_callback=None,
+    provider: str = "openrouter",
 ) -> str:
+    client = get_client(provider)
     if stream_callback:
         collected = []
-        response = get_client().chat.completions.create(
+        response = client.chat.completions.create(
             model=model,
             max_tokens=max_tokens,
             messages=messages,
@@ -127,7 +137,7 @@ async def _llm_call_single(
                 await stream_callback(token)
         return "".join(collected)
     else:
-        response = get_client().chat.completions.create(
+        response = client.chat.completions.create(
             model=model,
             max_tokens=max_tokens,
             messages=messages,
@@ -143,36 +153,38 @@ async def _llm_call_with_retry(
     timeout: int,
     stream_callback=None,
     fallback_model: str | None = None,
+    provider: str = "openrouter",
+    fallback_provider: str = "openrouter",
 ) -> tuple[str, str]:
     """Returns (response_text, model_used)."""
     last_error = None
 
     for attempt in range(MAX_RETRIES):
         try:
-            text = await _llm_call_single(model, messages, max_tokens, timeout, stream_callback)
-            return text, model
+            text = await _llm_call_single(model, messages, max_tokens, timeout, stream_callback, provider=provider)
+            return text, f"{provider}/{model}"
         except Exception as e:
             last_error = e
-            logger.warning(f"LLM call attempt {attempt + 1}/{MAX_RETRIES} failed ({model}): {e}")
+            logger.warning(f"LLM call attempt {attempt + 1}/{MAX_RETRIES} failed ({provider}:{model}): {e}")
             if attempt < MAX_RETRIES - 1:
                 delay = RETRY_DELAYS[attempt]
                 logger.info(f"Retrying in {delay}s...")
                 await asyncio.sleep(delay)
 
-    if fallback_model and fallback_model != model:
-        logger.warning(f"Primary model {model} exhausted — failing over to {fallback_model}")
+    if fallback_model and (fallback_model != model or fallback_provider != provider):
+        logger.warning(f"Primary {provider}:{model} exhausted — failing over to {fallback_provider}:{fallback_model}")
         for attempt in range(MAX_RETRIES):
             try:
-                text = await _llm_call_single(fallback_model, messages, max_tokens, timeout, stream_callback)
-                return text, fallback_model
+                text = await _llm_call_single(fallback_model, messages, max_tokens, timeout, stream_callback, provider=fallback_provider)
+                return text, f"{fallback_provider}/{fallback_model}"
             except Exception as e:
                 last_error = e
-                logger.warning(f"Fallback attempt {attempt + 1}/{MAX_RETRIES} failed ({fallback_model}): {e}")
+                logger.warning(f"Fallback attempt {attempt + 1}/{MAX_RETRIES} failed ({fallback_provider}:{fallback_model}): {e}")
                 if attempt < MAX_RETRIES - 1:
                     delay = RETRY_DELAYS[attempt]
                     await asyncio.sleep(delay)
 
-    raise RuntimeError(f"LLM call failed after all retries (primary: {model}, fallback: {fallback_model}): {last_error}")
+    raise RuntimeError(f"LLM call failed after all retries (primary: {provider}:{model}, fallback: {fallback_provider}:{fallback_model}): {last_error}")
 
 
 def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
@@ -274,7 +286,9 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
 
     max_tokens = 16000 if role == AgentRole.ENGINEER else 4096
     agent_model = MODEL_MAP.get(role.value, SMART_MODEL)
+    agent_provider = PROVIDER_MAP.get(role.value, "openrouter")
     fallback = FALLBACK_MAP.get(role.value)
+    fallback_provider = FALLBACK_PROVIDER_MAP.get(role.value, "openrouter")
     timeout = AGENT_TIMEOUTS.get(role, 120)
 
     start_time = time.time()
@@ -289,12 +303,15 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
         timeout=timeout,
         stream_callback=stream_callback,
         fallback_model=fallback,
+        provider=agent_provider,
+        fallback_provider=fallback_provider,
     )
 
     elapsed = round(time.time() - start_time, 1)
-    used_fallback = model_used != agent_model
+    expected_key = f"{agent_provider}/{agent_model}"
+    used_fallback = model_used != expected_key
     if used_fallback:
-        logger.warning(f"{ROLE_LABELS[role]} used FALLBACK model {model_used} (primary {agent_model} failed)")
+        logger.warning(f"{ROLE_LABELS[role]} used FALLBACK {model_used} (primary {expected_key} failed)")
     logger.info(f"{ROLE_LABELS[role]} completed in {elapsed}s using {model_used}")
 
     await set_memory(project_id, f"introspection_{role.value}", json.dumps({
@@ -360,6 +377,8 @@ async def cross_review(project_id: str, reviewed_role: AgentRole, output_content
 
     review_model = MODEL_MAP.get("cross_review", SMART_MODEL)
     review_fallback = FALLBACK_MAP.get("cross_review")
+    review_provider = PROVIDER_MAP.get("cross_review", "openrouter")
+    review_fb_provider = FALLBACK_PROVIDER_MAP.get("cross_review", "openrouter")
 
     try:
         raw_text, _ = await _llm_call_with_retry(
@@ -371,6 +390,8 @@ async def cross_review(project_id: str, reviewed_role: AgentRole, output_content
             max_tokens=1024,
             timeout=60,
             fallback_model=review_fallback,
+            provider=review_provider,
+            fallback_provider=review_fb_provider,
         )
     except Exception as e:
         logger.warning(f"Cross-review failed (non-critical), skipping: {e}")
@@ -438,6 +459,8 @@ Be specific, helpful, and concise. You have full access to the project state.
 
     chat_model = MODEL_MAP.get(role.value, SMART_MODEL)
     chat_fallback = FALLBACK_MAP.get(role.value)
+    chat_provider = PROVIDER_MAP.get(role.value, "openrouter")
+    chat_fb_provider = FALLBACK_PROVIDER_MAP.get(role.value, "openrouter")
 
     raw_text, _ = await _llm_call_with_retry(
         model=chat_model,
@@ -445,6 +468,8 @@ Be specific, helpful, and concise. You have full access to the project state.
         max_tokens=4096,
         timeout=AGENT_TIMEOUTS.get(role, 120),
         fallback_model=chat_fallback,
+        provider=chat_provider,
+        fallback_provider=chat_fb_provider,
     )
 
     conversation.append({"role": "assistant", "content": raw_text})
