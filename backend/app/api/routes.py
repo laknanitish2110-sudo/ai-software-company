@@ -22,6 +22,9 @@ from app.core.database import (
     get_memory,
     list_projects,
     get_conversation,
+    get_db,
+    new_id,
+    now_iso,
 )
 from app.agents.engine import call_employee
 from app.services.workflow_search import (
@@ -271,6 +274,32 @@ async def load_demo_cache():
     data = load_demo()
     if not data:
         raise HTTPException(404, "No demo cache found. Run a successful pipeline first, then save it.")
+
+    project = data.get("project", {})
+    pid = project.get("id", "")
+    existing = await get_project(pid)
+    if not existing:
+        db = await get_db()
+        try:
+            ts = project.get("created_at", now_iso())
+            await db.execute(
+                "INSERT INTO projects (id, problem_statement, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (pid, project.get("problem_statement", ""), project.get("status", "completed"), ts, project.get("updated_at", ts)),
+            )
+            for out in data.get("outputs", []):
+                await db.execute(
+                    "INSERT OR IGNORE INTO agent_outputs (id, project_id, role, content, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (out.get("id", new_id()), pid, out.get("role", ""), json.dumps(out.get("content", {})) if isinstance(out.get("content"), dict) else out.get("content", "{}"), out.get("status", "approved"), out.get("created_at", ts)),
+                )
+            for key, value in data.get("memory", {}).items():
+                await db.execute(
+                    "INSERT OR IGNORE INTO shared_memory (id, project_id, key, value, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (new_id(), pid, key, value if isinstance(value, str) else json.dumps(value), "demo", ts),
+                )
+            await db.commit()
+        finally:
+            await db.close()
+
     return data
 
 
