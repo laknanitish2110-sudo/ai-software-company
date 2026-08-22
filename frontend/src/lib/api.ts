@@ -192,8 +192,11 @@ export function connectWebSocket(
   const wsBase = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/api";
   const ws = new WebSocket(`${wsBase}/ws/${projectId}`);
   ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    onMessage(data);
+    try {
+      const data = JSON.parse(event.data);
+      onMessage(data);
+    } catch { /* ignore malformed messages */ }
   };
+  ws.onerror = () => { /* handled by close event */ };
   return ws;
 }
