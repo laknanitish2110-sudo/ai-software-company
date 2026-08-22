@@ -17,24 +17,29 @@ FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash")
 
 # Per-agent provider + model routing
 # Provider: "openrouter" | "openai" | "gemini"
+_gemini_or_openrouter = "gemini" if GEMINI_API_KEY else "openrouter"
+
 PROVIDER_MAP = {
-    "ceo": os.getenv("PROVIDER_CEO", "openrouter"),
+    "ceo": os.getenv("PROVIDER_CEO", _gemini_or_openrouter),
     "business_analyst": os.getenv("PROVIDER_BA", "openrouter"),
-    "researcher": os.getenv("PROVIDER_RESEARCHER", "openrouter"),
+    "researcher": os.getenv("PROVIDER_RESEARCHER", _gemini_or_openrouter),
     "architect": os.getenv("PROVIDER_ARCHITECT", "openrouter"),
     "engineer": os.getenv("PROVIDER_ENGINEER", "openai" if OPENAI_API_KEY else "openrouter"),
-    "ppt": os.getenv("PROVIDER_PPT", "openrouter"),
-    "cross_review": os.getenv("PROVIDER_REVIEW", "openrouter"),
+    "ppt": os.getenv("PROVIDER_PPT", _gemini_or_openrouter),
+    "cross_review": os.getenv("PROVIDER_REVIEW", _gemini_or_openrouter),
 }
 
+# Gemini direct API uses model names without "google/" prefix
+_gemini_flash = "gemini-2.5-flash" if GEMINI_API_KEY else "google/gemini-2.5-flash"
+
 MODEL_MAP = {
-    "ceo": os.getenv("MODEL_CEO", "google/gemini-2.5-flash"),
+    "ceo": os.getenv("MODEL_CEO", _gemini_flash),
     "business_analyst": os.getenv("MODEL_BA", SMART_MODEL),
-    "researcher": os.getenv("MODEL_RESEARCHER", "google/gemini-2.5-flash"),
+    "researcher": os.getenv("MODEL_RESEARCHER", _gemini_flash),
     "architect": os.getenv("MODEL_ARCHITECT", SMART_MODEL),
     "engineer": os.getenv("MODEL_ENGINEER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
-    "ppt": os.getenv("MODEL_PPT", "google/gemini-2.5-flash"),
-    "cross_review": os.getenv("MODEL_REVIEW", "google/gemini-2.5-flash"),
+    "ppt": os.getenv("MODEL_PPT", _gemini_flash),
+    "cross_review": os.getenv("MODEL_REVIEW", _gemini_flash),
 }
 
 FALLBACK_MAP = {
