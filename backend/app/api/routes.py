@@ -9,10 +9,10 @@ from app.models.schemas import (
     AgentRole,
 )
 from app.services.orchestrator import orchestrator
-from app.services.file_generator import get_project_zip_path, get_generated_files_list
+from app.services.file_generator import get_project_zip_path, get_generated_files_list, generate_project_files
 from app.services.pptx_generator import get_pptx_path
 from app.services.docx_generator import get_docx_path
-from app.services.workflow_generator import get_workflow_json_path
+from app.services.workflow_generator import get_workflow_json_path, generate_workflow_json
 from app.services.webhook import send_share_request
 from app.services.demo_cache import save_demo, load_demo, has_demo, get_demo_deliverable
 from app.core.config import N8N_WEBHOOK_URL
@@ -314,6 +314,21 @@ async def load_demo_cache():
             await db.commit()
         finally:
             await db.close()
+
+        for out in data.get("outputs", []):
+            if out.get("role") == "engineer" and isinstance(out.get("content"), dict):
+                eng = out["content"]
+                raw_files = eng.get("files", {})
+                if isinstance(raw_files, dict):
+                    eng["files"] = [{"path": p, "content": c} for p, c in raw_files.items() if isinstance(c, str)]
+                try:
+                    generate_project_files(pid, eng)
+                except Exception:
+                    pass
+                try:
+                    generate_workflow_json(pid, eng)
+                except Exception:
+                    pass
 
     return data
 

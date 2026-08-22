@@ -464,8 +464,8 @@
   ],
   "memory": {
     "problem_statement": "Build an AI-powered grievance redressal system for Indian rural citizens that uses NLP to categorize complaints, route them to appropriate government departments, and track resolution with SMS updates in local languages",
-    "ceo_brief": "JanSunwai AI \u2014 Intelligent Grievance Redressal. Code deliverable. 7 components: NLP classifier, routing engine, SMS gateway, WhatsApp chatbot, admin dashboard, resolution tracker, escalation workflow.",
-    "deliverable_type": "code",
+    "ceo_brief": "JanSunwai AI \u2014 Intelligent Grievance Redressal. Hybrid deliverable (code + n8n workflow). 7 components: NLP classifier, routing engine, SMS gateway, WhatsApp chatbot, admin dashboard, resolution tracker, escalation workflow.",
+    "deliverable_type": "hybrid",
     "ba_summary": "Requirements complete: 7 functional + 6 non-functional requirements. 3 user personas (GP Secretary, BDO, District Collector). 7 entities in data model. DPDP Act 2023 compliant.",
     "researcher_summary": "Market gap confirmed: CPGRAMS is web-only English, 27-day resolution. Our advantage: SMS-first, multilingual NLP (Bhashini + IndicBERT), auto-routing. Key APIs: Bhashini (free, govt), MSG91 (\u20b90.15/SMS).",
     "architect_summary": "Three-tier arch: FastAPI + IndicBERT + Next.js. SQLite for hackathon, PostgreSQL-ready. 7 API endpoints. NLP pipeline: detect language \u2192 translate \u2192 classify \u2192 route \u2192 respond. SMS-first design.",
