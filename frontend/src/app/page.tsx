@@ -36,10 +36,10 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  async function handleStart(problem: string) {
+  async function handleStart(problem: string, autoApprove: boolean = false) {
     setLoading(true);
     try {
-      const project = await createProject(problem);
+      const project = await createProject(problem, autoApprove);
       localStorage.setItem("lastProjectId", project.id);
       router.push(`/project/${project.id}`);
     } catch {

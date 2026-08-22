@@ -46,76 +46,88 @@ class Orchestrator:
         if self._ws_callback:
             await self._ws_callback(msg_type, project_id, data)
 
-    async def start_project(self, problem_statement: str) -> dict:
+    async def start_project(self, problem_statement: str, auto_approve: bool = False) -> dict:
         project = await create_project(problem_statement)
         project_id = project["id"]
 
         await set_memory(project_id, "problem_statement", problem_statement, "founder")
 
-        # Step 1: CEO runs FIRST — breaks problem into components and classifies deliverable type
-        await self._notify("agent_started", project_id, {
-            "role": "ceo",
-            "message": "CEO is analyzing the problem statement..."
-        })
+        if auto_approve:
+            await set_memory(project_id, "auto_approve", "true", "founder")
 
-        ceo_output = await run_agent(project_id, AgentRole.CEO)
-        await update_output_status(ceo_output["id"], "approved")
-        await set_memory(project_id, "ceo_brief", str(ceo_output["content"]), "ceo")
+        async def _run_pipeline():
+            try:
+                # Step 1: CEO analyzes problem
+                await self._notify("agent_started", project_id, {
+                    "role": "ceo",
+                    "message": "CEO is analyzing the problem statement..."
+                })
 
-        ceo_content = ceo_output.get("content", {})
-        deliverable_type = "code"
-        components = []
-        if isinstance(ceo_content, dict):
-            deliverable_type = ceo_content.get("deliverable_type", "code")
-            components = ceo_content.get("components", [])
+                ceo_output = await run_agent(project_id, AgentRole.CEO)
+                await update_output_status(ceo_output["id"], "approved")
+                await set_memory(project_id, "ceo_brief", str(ceo_output["content"]), "ceo")
 
-        await set_memory(project_id, "deliverable_type", deliverable_type, "ceo")
+                ceo_content = ceo_output.get("content", {})
+                deliverable_type = "code"
+                components = []
+                if isinstance(ceo_content, dict):
+                    deliverable_type = ceo_content.get("deliverable_type", "code")
+                    components = ceo_content.get("components", [])
 
-        await self._notify("agent_completed", project_id, {
-            "role": "ceo",
-            "message": f"CEO classified deliverable as '{deliverable_type}' with {len(components)} components."
-        })
+                await set_memory(project_id, "deliverable_type", deliverable_type, "ceo")
 
-        # Step 2: RAG searches PER-COMPONENT using CEO's breakdown
-        try:
-            if components:
-                workflow_analysis = analyze_by_components(components, limit_per_component=5)
-            else:
-                workflow_analysis = analyze_for_problem(problem_statement, limit=10)
+                await self._notify("agent_completed", project_id, {
+                    "role": "ceo",
+                    "message": f"CEO classified deliverable as '{deliverable_type}' with {len(components)} components."
+                })
 
-            await set_memory(project_id, "workflow_recommendations", json.dumps({
-                "total_matches": workflow_analysis["total_matches"],
-                "keywords": workflow_analysis.get("keywords_extracted", []),
-                "components_searched": workflow_analysis.get("components_searched", []),
-                "component_results": workflow_analysis.get("component_results", {}),
-                "reusable": [{"name": w["name"], "category": w["domain_category"],
-                              "integrations": w.get("integrations", ""), "ai": w.get("has_ai_nodes", False),
-                              "score": w["relevance_score"],
-                              "component": w.get("matched_component", "")}
-                             for w in workflow_analysis.get("reusable", [])[:5]],
-                "modifiable": [{"name": w["name"], "category": w["domain_category"],
-                                "integrations": w.get("integrations", ""), "ai": w.get("has_ai_nodes", False),
-                                "score": w["relevance_score"],
-                                "component": w.get("matched_component", "")}
-                               for w in workflow_analysis.get("modifiable", [])[:5]],
-                "inspiration": [{"name": w["name"], "category": w["domain_category"]}
-                                for w in workflow_analysis.get("inspiration", [])[:3]],
-                "categories_matched": workflow_analysis["categories_matched"],
-                "sih_themes_matched": workflow_analysis["sih_themes_matched"],
-                "summary": workflow_analysis["summary"],
-                "deliverable_type": deliverable_type,
-            }), "rag_agent")
-            await self._notify("workflow_analysis", project_id, {
-                "message": f"RAG searched {len(components)} components across 19,800+ workflows: {workflow_analysis['summary']}",
-                "total_matches": workflow_analysis["total_matches"],
-                "categories": workflow_analysis["categories_matched"],
-                "deliverable_type": deliverable_type,
-            })
-        except Exception as e:
-            logger.warning(f"Workflow analysis failed (non-critical): {e}")
+                # Step 2: RAG searches PER-COMPONENT using CEO's breakdown
+                try:
+                    if components:
+                        workflow_analysis = analyze_by_components(components, limit_per_component=5)
+                    else:
+                        workflow_analysis = analyze_for_problem(problem_statement, limit=10)
 
-        await self._start_next_agent(project_id, AgentRole.BUSINESS_ANALYST)
+                    await set_memory(project_id, "workflow_recommendations", json.dumps({
+                        "total_matches": workflow_analysis["total_matches"],
+                        "keywords": workflow_analysis.get("keywords_extracted", []),
+                        "components_searched": workflow_analysis.get("components_searched", []),
+                        "component_results": workflow_analysis.get("component_results", {}),
+                        "reusable": [{"name": w["name"], "category": w["domain_category"],
+                                      "integrations": w.get("integrations", ""), "ai": w.get("has_ai_nodes", False),
+                                      "score": w["relevance_score"],
+                                      "component": w.get("matched_component", "")}
+                                     for w in workflow_analysis.get("reusable", [])[:5]],
+                        "modifiable": [{"name": w["name"], "category": w["domain_category"],
+                                        "integrations": w.get("integrations", ""), "ai": w.get("has_ai_nodes", False),
+                                        "score": w["relevance_score"],
+                                        "component": w.get("matched_component", "")}
+                                       for w in workflow_analysis.get("modifiable", [])[:5]],
+                        "inspiration": [{"name": w["name"], "category": w["domain_category"]}
+                                        for w in workflow_analysis.get("inspiration", [])[:3]],
+                        "categories_matched": workflow_analysis["categories_matched"],
+                        "sih_themes_matched": workflow_analysis["sih_themes_matched"],
+                        "summary": workflow_analysis["summary"],
+                        "deliverable_type": deliverable_type,
+                    }), "rag_agent")
+                    await self._notify("workflow_analysis", project_id, {
+                        "message": f"RAG searched {len(components)} components across 19,800+ workflows: {workflow_analysis['summary']}",
+                        "total_matches": workflow_analysis["total_matches"],
+                        "categories": workflow_analysis["categories_matched"],
+                        "deliverable_type": deliverable_type,
+                    })
+                except Exception as e:
+                    logger.warning(f"Workflow analysis failed (non-critical): {e}")
 
+                await self._start_next_agent(project_id, AgentRole.BUSINESS_ANALYST)
+            except Exception as e:
+                logger.error(f"Pipeline startup failed: {e}")
+                await self._notify("error", project_id, {
+                    "role": "ceo",
+                    "message": f"Pipeline startup error: {str(e)}"
+                })
+
+        asyncio.create_task(_run_pipeline())
         return project
 
     async def _start_next_agent(self, project_id: str, role: AgentRole):
@@ -167,12 +179,23 @@ class Orchestrator:
                             "message": f"{review_data.get('reviewer_label', 'A teammate')} reviewed this work: \"{review_data.get('team_note', '')}\""
                         })
 
-                    await self._notify("approval_needed", project_id, {
-                        "role": role.value,
-                        "output_id": output["id"],
-                        "content": output["content"],
-                        "message": f"{role.value.replace('_', ' ').title()} has completed their work. Please review and approve."
-                    })
+                    mem = await get_memory(project_id)
+                    if mem.get("auto_approve") == "true":
+                        await self._notify("approval_needed", project_id, {
+                            "role": role.value,
+                            "output_id": output["id"],
+                            "content": output["content"],
+                            "message": f"{role.value.replace('_', ' ').title()} completed. Auto-approving..."
+                        })
+                        await asyncio.sleep(1)
+                        await self.handle_approval(project_id, output["id"], True)
+                    else:
+                        await self._notify("approval_needed", project_id, {
+                            "role": role.value,
+                            "output_id": output["id"],
+                            "content": output["content"],
+                            "message": f"{role.value.replace('_', ' ').title()} has completed their work. Please review and approve."
+                        })
                 elif role == AgentRole.PPT:
                     if isinstance(output["content"], dict):
                         try:

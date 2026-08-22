@@ -50,7 +50,7 @@ export const PIPELINE_ORDER = [
 ];
 
 export const STATUS_LABELS: Record<string, string> = {
-  created: "Starting up...",
+  created: "CEO is analyzing...",
   ba_working: "Business Analyst is working",
   ba_review: "Review: Business Analysis",
   research_working: "Researcher is working",

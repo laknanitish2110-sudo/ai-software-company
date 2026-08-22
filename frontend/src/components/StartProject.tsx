@@ -10,7 +10,7 @@ interface RecentProject {
 }
 
 interface Props {
-  onStart: (problem: string) => void;
+  onStart: (problem: string, autoApprove: boolean) => void;
   loading: boolean;
   recentProjects?: RecentProject[];
   hasDemo?: boolean;
@@ -42,6 +42,7 @@ const STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
 
 export default function StartProject({ onStart, loading, recentProjects, hasDemo, onLoadDemo }: Props) {
   const [problem, setProblem] = useState("");
+  const [autoApprove, setAutoApprove] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -81,9 +82,20 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
               onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
             />
 
-            <div className="flex gap-3 mt-4">
+            <div className="flex items-center gap-3 mt-4">
+              <label className="flex items-center gap-2 cursor-pointer select-none shrink-0"
+                     style={{ color: "var(--text-muted)" }}>
+                <input
+                  type="checkbox"
+                  checked={autoApprove}
+                  onChange={(e) => setAutoApprove(e.target.checked)}
+                  className="rounded"
+                  style={{ accentColor: "var(--accent)", width: 16, height: 16 }}
+                />
+                <span className="text-xs font-medium">Auto-pilot</span>
+              </label>
               <button
-                onClick={() => onStart(problem)}
+                onClick={() => onStart(problem, autoApprove)}
                 disabled={!problem.trim() || loading}
                 className="btn-primary flex-1 text-[15px]"
               >
@@ -92,6 +104,8 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
                     <span className="spinner" style={{ borderTopColor: "white", borderColor: "rgba(255,255,255,0.3)" }} />
                     Starting your AI team...
                   </span>
+                ) : autoApprove ? (
+                  "Start Company (Auto-pilot)"
                 ) : (
                   "Start Company"
                 )}

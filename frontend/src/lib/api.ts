@@ -39,12 +39,13 @@ export interface WSMessage {
 }
 
 export async function createProject(
-  problemStatement: string
+  problemStatement: string,
+  autoApprove: boolean = false
 ): Promise<Project> {
   const res = await fetch(`${API_BASE}/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ problem_statement: problemStatement }),
+    body: JSON.stringify({ problem_statement: problemStatement, auto_approve: autoApprove }),
   });
   return res.json();
 }

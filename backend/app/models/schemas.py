@@ -54,6 +54,7 @@ WORKING_STAGES = {
 
 class CreateProjectRequest(BaseModel):
     problem_statement: str
+    auto_approve: bool = False
 
 
 class ApprovalRequest(BaseModel):

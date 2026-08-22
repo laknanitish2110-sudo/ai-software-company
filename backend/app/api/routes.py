@@ -58,7 +58,7 @@ orchestrator.set_ws_callback(ws_broadcast)
 
 @router.post("/projects")
 async def create_project(req: CreateProjectRequest):
-    project = await orchestrator.start_project(req.problem_statement)
+    project = await orchestrator.start_project(req.problem_statement, auto_approve=req.auto_approve)
     return project
 
 
