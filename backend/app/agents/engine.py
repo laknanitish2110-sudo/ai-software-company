@@ -3,7 +3,7 @@ import re
 import asyncio
 import time
 import logging
-from openai import OpenAI
+from openai import OpenAI, RateLimitError, AuthenticationError, APIStatusError
 
 from app.core.config import (
     OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
@@ -159,6 +159,13 @@ async def _llm_call_with_retry(
     """Returns (response_text, model_used)."""
     last_error = None
 
+    def _is_fatal(e: Exception) -> bool:
+        if isinstance(e, (RateLimitError, AuthenticationError)):
+            return True
+        if isinstance(e, APIStatusError) and e.status_code in (401, 403, 429):
+            return True
+        return False
+
     for attempt in range(MAX_RETRIES):
         try:
             text = await _llm_call_single(model, messages, max_tokens, timeout, stream_callback, provider=provider)
@@ -166,6 +173,9 @@ async def _llm_call_with_retry(
         except Exception as e:
             last_error = e
             logger.warning(f"LLM call attempt {attempt + 1}/{MAX_RETRIES} failed ({provider}:{model}): {e}")
+            if _is_fatal(e):
+                logger.warning(f"Fatal error (quota/auth) — skipping remaining retries for {provider}:{model}")
+                break
             if attempt < MAX_RETRIES - 1:
                 delay = RETRY_DELAYS[attempt]
                 logger.info(f"Retrying in {delay}s...")
@@ -180,6 +190,9 @@ async def _llm_call_with_retry(
             except Exception as e:
                 last_error = e
                 logger.warning(f"Fallback attempt {attempt + 1}/{MAX_RETRIES} failed ({fallback_provider}:{fallback_model}): {e}")
+                if _is_fatal(e):
+                    logger.warning(f"Fatal error on fallback — skipping remaining retries")
+                    break
                 if attempt < MAX_RETRIES - 1:
                     delay = RETRY_DELAYS[attempt]
                     await asyncio.sleep(delay)

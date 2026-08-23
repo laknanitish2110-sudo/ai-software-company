@@ -38,6 +38,18 @@ export interface WSMessage {
   };
 }
 
+async function checkedJson<T>(res: Response, fallbackMsg: string): Promise<T> {
+  if (!res.ok) {
+    let detail = fallbackMsg;
+    try {
+      const err = await res.json();
+      detail = err.detail || err.message || fallbackMsg;
+    } catch { /* ignore parse errors */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export async function createProject(
   problemStatement: string,
   autoApprove: boolean = false
@@ -47,19 +59,19 @@ export async function createProject(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ problem_statement: problemStatement, auto_approve: autoApprove }),
   });
-  return res.json();
+  return checkedJson(res, "Failed to create project");
 }
 
 export async function getProjects(): Promise<Project[]> {
   const res = await fetch(`${API_BASE}/projects`);
-  return res.json();
+  return checkedJson(res, "Failed to load projects");
 }
 
 export async function getProjectState(
   projectId: string
 ): Promise<ProjectState> {
   const res = await fetch(`${API_BASE}/projects/${projectId}`);
-  return res.json();
+  return checkedJson(res, "Failed to load project state");
 }
 
 export async function approveOutput(
@@ -85,7 +97,7 @@ export async function callEmployee(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ role, message }),
   });
-  return res.json();
+  return checkedJson(res, "Failed to call employee");
 }
 
 export async function getConversation(
@@ -95,7 +107,7 @@ export async function getConversation(
   const res = await fetch(
     `${API_BASE}/projects/${projectId}/conversation/${role}`
   );
-  return res.json();
+  return checkedJson(res, "Failed to load conversation");
 }
 
 async function safeDownload(url: string, fallbackMsg: string) {
@@ -140,7 +152,7 @@ export async function getIntegrationStatus(): Promise<{
   webhook_url_set: boolean;
 }> {
   const res = await fetch(`${API_BASE}/integrations/status`);
-  return res.json();
+  return checkedJson(res, "Failed to check integration status");
 }
 
 export async function shareProject(
@@ -161,7 +173,7 @@ export async function shareProject(
 
 export async function saveDemoCache(projectId: string): Promise<{ status: string }> {
   const res = await fetch(`${API_BASE}/demo/save/${projectId}`, { method: "POST" });
-  return res.json();
+  return checkedJson(res, "Failed to save demo cache");
 }
 
 export async function loadDemoCache(): Promise<ProjectState | null> {
@@ -172,7 +184,7 @@ export async function loadDemoCache(): Promise<ProjectState | null> {
 
 export async function getDemoStatus(): Promise<{ has_demo: boolean }> {
   const res = await fetch(`${API_BASE}/demo/status`);
-  return res.json();
+  return checkedJson(res, "Failed to check demo status");
 }
 
 export function downloadDemoDeliverable(fileType: string) {
@@ -204,7 +216,7 @@ export async function getIntrospection(
   role: string
 ): Promise<IntrospectionData> {
   const res = await fetch(`${API_BASE}/projects/${projectId}/introspection/${role}`);
-  return res.json();
+  return checkedJson(res, "Failed to load agent introspection");
 }
 
 export interface GeneratedFile {
