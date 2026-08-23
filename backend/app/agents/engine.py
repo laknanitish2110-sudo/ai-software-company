@@ -154,6 +154,12 @@ async def _llm_call_single(
         return response.choices[0].message.content.strip()
 
 
+def _all_or_providers(exclude: str) -> list[str]:
+    """Return all available OpenRouter provider names except the excluded one."""
+    all_names = ["openrouter", "openrouter2", "openrouter3", "openrouter4", "openrouter5", "openrouter6"]
+    return [name for i, name in enumerate(all_names) if name != exclude and i < len(OPENROUTER_KEYS)]
+
+
 async def _llm_call_with_retry(
     model: str,
     messages: list[dict],
@@ -170,7 +176,7 @@ async def _llm_call_with_retry(
     def _is_fatal(e: Exception) -> bool:
         if isinstance(e, (RateLimitError, AuthenticationError)):
             return True
-        if isinstance(e, APIStatusError) and e.status_code in (401, 403, 429):
+        if isinstance(e, APIStatusError) and e.status_code in (401, 402, 403, 429):
             return True
         return False
 
@@ -189,23 +195,24 @@ async def _llm_call_with_retry(
                 logger.info(f"Retrying in {delay}s...")
                 await asyncio.sleep(delay)
 
-    if fallback_model and (fallback_model != model or fallback_provider != provider):
-        logger.warning(f"Primary {provider}:{model} exhausted — failing over to {fallback_provider}:{fallback_model}")
-        for attempt in range(MAX_RETRIES):
-            try:
-                text = await _llm_call_single(fallback_model, messages, max_tokens, timeout, stream_callback, provider=fallback_provider)
-                return text, f"{fallback_provider}/{fallback_model}"
-            except Exception as e:
-                last_error = e
-                logger.warning(f"Fallback attempt {attempt + 1}/{MAX_RETRIES} failed ({fallback_provider}:{fallback_model}): {e}")
-                if _is_fatal(e):
-                    logger.warning(f"Fatal error on fallback — skipping remaining retries")
-                    break
-                if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_DELAYS[attempt]
-                    await asyncio.sleep(delay)
+    fb_model = fallback_model or model
+    tried = {provider}
+    candidates = [fallback_provider] + _all_or_providers(provider)
+    for fb_prov in candidates:
+        if fb_prov in tried:
+            continue
+        tried.add(fb_prov)
+        logger.warning(f"Trying key {fb_prov} with model {fb_model}")
+        try:
+            text = await _llm_call_single(fb_model, messages, max_tokens, timeout, stream_callback, provider=fb_prov)
+            return text, f"{fb_prov}/{fb_model}"
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Key {fb_prov} failed: {e}")
+            if not _is_fatal(e):
+                break
 
-    raise RuntimeError(f"LLM call failed after all retries (primary: {provider}:{model}, fallback: {fallback_provider}:{fallback_model}): {last_error}")
+    raise RuntimeError(f"LLM call failed on all keys (tried {len(tried)}): {last_error}")
 
 
 def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
