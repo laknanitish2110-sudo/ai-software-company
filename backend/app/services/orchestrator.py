@@ -147,7 +147,7 @@ class Orchestrator:
                 async def _stream_to_ws(token: str):
                     nonlocal token_count
                     token_count += 1
-                    if token_count % 3 == 0:
+                    if token_count % 8 == 0:
                         await self._notify("agent_stream", project_id, {
                             "role": role.value,
                             "token": token,

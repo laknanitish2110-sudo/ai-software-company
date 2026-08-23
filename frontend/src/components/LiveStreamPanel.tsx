@@ -106,7 +106,7 @@ export default function LiveStreamPanel({ agentRole, streamText, tokenCount, ela
       >
         {streamText ? (
           <span>
-            {streamText}
+            {streamText.length > 4000 ? "..." + streamText.slice(-3500) : streamText}
             <span
               style={{
                 display: "inline-block",

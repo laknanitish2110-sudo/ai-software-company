@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import AgentCanvas from "./AgentCanvas";
 import AgentIntrospection from "./AgentIntrospection";
@@ -75,6 +75,15 @@ export default function Dashboard({ projectId }: Props) {
     }
   }, [projectId]);
 
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedRefresh = useCallback(() => {
+    if (refreshTimer.current) return;
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      refreshState();
+    }, 1000);
+  }, [refreshState]);
+
   useEffect(() => {
     getIntegrationStatus()
       .then((s) => setN8nConnected(s.n8n_connected))
@@ -102,7 +111,10 @@ export default function Dashboard({ projectId }: Props) {
       if (msg.type === "agent_stream") {
         setStreamTokens(msg.data.token_count || 0);
         if (msg.data.token) {
-          setStreamText((prev) => prev + msg.data.token);
+          setStreamText((prev) => {
+            if (prev.length > 30000) return prev.slice(-20000) + msg.data.token;
+            return prev + msg.data.token;
+          });
         }
         return;
       }
@@ -125,15 +137,18 @@ export default function Dashboard({ projectId }: Props) {
         setAgentStartTime(null);
       }
 
-      setEvents((prev) => [
-        ...prev,
-        {
-          type: msg.type,
-          message: msg.data.message || msg.type,
-          time: new Date().toLocaleTimeString(),
-        },
-      ]);
-      refreshState();
+      setEvents((prev) => {
+        const next = [
+          ...prev,
+          {
+            type: msg.type,
+            message: msg.data.message || msg.type,
+            time: new Date().toLocaleTimeString(),
+          },
+        ];
+        return next.length > 100 ? next.slice(-80) : next;
+      });
+      debouncedRefresh();
     }, (connected) => setWsConnected(connected));
 
     const pollInterval = setInterval(() => {
@@ -143,8 +158,9 @@ export default function Dashboard({ projectId }: Props) {
     return () => {
       ws.close();
       clearInterval(pollInterval);
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
     };
-  }, [projectId, refreshState]);
+  }, [projectId, refreshState, debouncedRefresh]);
 
   async function handleApprove(outputId: string) {
     try {
