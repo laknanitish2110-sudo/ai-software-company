@@ -11,7 +11,7 @@ import ArchitectureDiagram from "./ArchitectureDiagram";
 import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
-import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache } from "@/lib/api";
+import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache, ReconnectingWebSocket } from "@/lib/api";
 import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS } from "@/lib/constants";
 
 interface Props {
@@ -134,22 +134,34 @@ export default function Dashboard({ projectId }: Props) {
         },
       ]);
       refreshState();
-    });
+    }, (connected) => setWsConnected(connected));
 
-    ws.addEventListener("open", () => setWsConnected(true));
-    ws.addEventListener("close", () => setWsConnected(false));
+    const pollInterval = setInterval(() => {
+      refreshState();
+    }, 8000);
 
-    return () => ws.close();
+    return () => {
+      ws.close();
+      clearInterval(pollInterval);
+    };
   }, [projectId, refreshState]);
 
   async function handleApprove(outputId: string) {
-    await approveOutput(projectId, outputId, true);
-    refreshState();
+    try {
+      await approveOutput(projectId, outputId, true);
+      refreshState();
+    } catch {
+      toast("error", "Approval failed", "Could not approve — backend may be restarting. Try again.");
+    }
   }
 
   async function handleReject(outputId: string, feedback: string) {
-    await approveOutput(projectId, outputId, false, feedback);
-    refreshState();
+    try {
+      await approveOutput(projectId, outputId, false, feedback);
+      refreshState();
+    } catch {
+      toast("error", "Rejection failed", "Could not send feedback — backend may be restarting. Try again.");
+    }
   }
 
   useEffect(() => {

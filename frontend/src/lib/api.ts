@@ -234,18 +234,60 @@ export async function getFileContents(
   return res.json();
 }
 
+export interface ReconnectingWebSocket {
+  close(): void;
+  addEventListener(event: string, handler: () => void): void;
+}
+
 export function connectWebSocket(
   projectId: string,
-  onMessage: (msg: WSMessage) => void
-): WebSocket {
+  onMessage: (msg: WSMessage) => void,
+  onStatusChange?: (connected: boolean) => void
+): ReconnectingWebSocket {
   const wsBase = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/api";
-  const ws = new WebSocket(`${wsBase}/ws/${projectId}`);
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      onMessage(data);
-    } catch { /* ignore malformed messages */ }
+  let ws: WebSocket | null = null;
+  let attempt = 0;
+  let closed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  const listeners: Record<string, (() => void)[]> = {};
+
+  function connect() {
+    if (closed) return;
+    ws = new WebSocket(`${wsBase}/ws/${projectId}`);
+    ws.onopen = () => {
+      attempt = 0;
+      onStatusChange?.(true);
+      listeners["open"]?.forEach((fn) => fn());
+    };
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onMessage(data);
+      } catch { /* ignore malformed messages */ }
+    };
+    ws.onclose = () => {
+      onStatusChange?.(false);
+      listeners["close"]?.forEach((fn) => fn());
+      if (!closed) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+        attempt++;
+        reconnectTimer = setTimeout(connect, delay);
+      }
+    };
+    ws.onerror = () => { /* handled by close event */ };
+  }
+
+  connect();
+
+  return {
+    close() {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    },
+    addEventListener(event: string, handler: () => void) {
+      if (!listeners[event]) listeners[event] = [];
+      listeners[event].push(handler);
+    },
   };
-  ws.onerror = () => { /* handled by close event */ };
-  return ws;
 }
