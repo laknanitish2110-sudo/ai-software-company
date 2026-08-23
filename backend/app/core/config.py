@@ -27,18 +27,24 @@ FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash")
 
 def _or(n: int) -> str:
     """Return provider name for OpenRouter key N (1-4), falling back to 'openrouter'."""
-    if n == 1 or not OPENROUTER_KEYS[min(n - 1, len(OPENROUTER_KEYS) - 1)]:
+    if n <= 1 or len(OPENROUTER_KEYS) < n:
         return "openrouter"
-    return f"openrouter{n}" if n > 1 and len(OPENROUTER_KEYS) >= n else "openrouter"
+    return f"openrouter{n}"
 
+# Distribute agents across 4 keys — heaviest agents get their own key
+# Key 1: CEO (light, first to run)
+# Key 2: BA + cross_review (BA is medium, reviews are small 1K tokens)
+# Key 3: Researcher + PPT (both Gemini Flash, run at different times)
+# Key 4: Architect (Claude Sonnet, heavy context)
+# Engineer: OpenAI direct (GPT-4o), falls back to Key 1
 PROVIDER_MAP = {
     "ceo": os.getenv("PROVIDER_CEO", _or(1)),
     "business_analyst": os.getenv("PROVIDER_BA", _or(2)),
     "researcher": os.getenv("PROVIDER_RESEARCHER", _or(3)),
     "architect": os.getenv("PROVIDER_ARCHITECT", _or(4)),
     "engineer": os.getenv("PROVIDER_ENGINEER", "openai" if OPENAI_API_KEY else _or(1)),
-    "ppt": os.getenv("PROVIDER_PPT", _or(2)),
-    "cross_review": os.getenv("PROVIDER_REVIEW", _or(3)),
+    "ppt": os.getenv("PROVIDER_PPT", _or(3)),
+    "cross_review": os.getenv("PROVIDER_REVIEW", _or(2)),
 }
 
 MODEL_MAP = {
@@ -61,13 +67,13 @@ FALLBACK_MAP = {
     "cross_review": os.getenv("FALLBACK_REVIEW", FALLBACK_MODEL),
 }
 
-# Fallback provider: use a DIFFERENT key so if one hits quota, another takes over
+# Fallback provider: each agent falls back to a DIFFERENT key
 FALLBACK_PROVIDER_MAP = {
-    "ceo": _or(3),
-    "business_analyst": _or(4),
-    "researcher": _or(1),
-    "architect": _or(2),
-    "engineer": _or(3),
-    "ppt": _or(4),
-    "cross_review": _or(1),
+    "ceo": _or(4),
+    "business_analyst": _or(1),
+    "researcher": _or(2),
+    "architect": _or(3),
+    "engineer": _or(2),
+    "ppt": _or(1),
+    "cross_review": _or(4),
 }

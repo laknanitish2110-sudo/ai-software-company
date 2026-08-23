@@ -147,7 +147,7 @@ async def get_agent_introspection(project_id: str, role: str):
         "model": MODEL_MAP.get(role, SMART_MODEL),
         "provider": PROVIDER_MAP.get(role, "openrouter"),
         "system_prompt": SYSTEM_PROMPTS.get(agent_role, ""),
-        "max_tokens": 16000 if agent_role == AgentRole.ENGINEER else 4096,
+        "max_tokens": {AgentRole.CEO: 8192, AgentRole.BUSINESS_ANALYST: 16384, AgentRole.RESEARCHER: 8192, AgentRole.ARCHITECT: 16384, AgentRole.ENGINEER: 32000, AgentRole.PPT: 8192}.get(agent_role, 8192),
         "timeout": AGENT_TIMEOUTS.get(agent_role, 120),
         "timing": timing,
         "output": output,

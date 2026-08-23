@@ -77,12 +77,12 @@ ROLE_LABELS = {
 }
 
 AGENT_TIMEOUTS = {
-    AgentRole.CEO: 90,
-    AgentRole.BUSINESS_ANALYST: 150,
+    AgentRole.CEO: 120,
+    AgentRole.BUSINESS_ANALYST: 240,
     AgentRole.RESEARCHER: 180,
-    AgentRole.ARCHITECT: 120,
-    AgentRole.ENGINEER: 360,
-    AgentRole.PPT: 150,
+    AgentRole.ARCHITECT: 240,
+    AgentRole.ENGINEER: 480,
+    AgentRole.PPT: 180,
 }
 
 MAX_RETRIES = 3
@@ -305,7 +305,15 @@ async def run_agent(project_id: str, role: AgentRole, progress_callback=None, st
 
 Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, no explanation outside the JSON."""
 
-    max_tokens = 16000 if role == AgentRole.ENGINEER else 4096
+    MAX_TOKENS_PER_ROLE = {
+        AgentRole.CEO: 8192,
+        AgentRole.BUSINESS_ANALYST: 16384,
+        AgentRole.RESEARCHER: 8192,
+        AgentRole.ARCHITECT: 16384,
+        AgentRole.ENGINEER: 32000,
+        AgentRole.PPT: 8192,
+    }
+    max_tokens = MAX_TOKENS_PER_ROLE.get(role, 8192)
     agent_model = MODEL_MAP.get(role.value, SMART_MODEL)
     agent_provider = PROVIDER_MAP.get(role.value, "openrouter")
     fallback = FALLBACK_MAP.get(role.value)
