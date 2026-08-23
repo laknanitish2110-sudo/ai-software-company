@@ -6,7 +6,7 @@ import logging
 from openai import OpenAI, RateLimitError, AuthenticationError, APIStatusError
 
 from app.core.config import (
-    OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
+    OPENROUTER_API_KEY, OPENROUTER_API_KEY_2, OPENROUTER_BASE_URL,
     OPENAI_API_KEY, OPENAI_BASE_URL,
     GEMINI_API_KEY, GEMINI_BASE_URL,
     SMART_MODEL, MODEL_MAP, FALLBACK_MAP,
@@ -45,9 +45,12 @@ def get_client(provider: str = "openrouter") -> OpenAI:
             _clients[provider] = OpenAI(api_key=OPENAI_API_KEY)
         elif provider == "gemini" and GEMINI_API_KEY:
             _clients[provider] = OpenAI(base_url=GEMINI_BASE_URL, api_key=GEMINI_API_KEY)
+        elif provider == "openrouter2" and OPENROUTER_API_KEY_2:
+            _clients["openrouter2"] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY_2)
         else:
             _clients["openrouter"] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
-            provider = "openrouter"
+            if provider not in ("openrouter", "openrouter2"):
+                provider = "openrouter"
     return _clients.get(provider, _clients.get("openrouter"))
 
 SYSTEM_PROMPTS = {

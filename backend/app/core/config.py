@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_API_KEY_2 = os.getenv("OPENROUTER_API_KEY_2", "").strip()
 OPENROUTER_BASE_URL = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -20,14 +21,16 @@ FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash")
 # Route everything through OpenRouter — it proxies all models reliably.
 # OpenAI direct only for engineer when key is available.
 
+_or2 = "openrouter2" if OPENROUTER_API_KEY_2 else "openrouter"
+
 PROVIDER_MAP = {
     "ceo": os.getenv("PROVIDER_CEO", "openrouter"),
-    "business_analyst": os.getenv("PROVIDER_BA", "openrouter"),
+    "business_analyst": os.getenv("PROVIDER_BA", _or2),
     "researcher": os.getenv("PROVIDER_RESEARCHER", "openrouter"),
-    "architect": os.getenv("PROVIDER_ARCHITECT", "openrouter"),
+    "architect": os.getenv("PROVIDER_ARCHITECT", _or2),
     "engineer": os.getenv("PROVIDER_ENGINEER", "openai" if OPENAI_API_KEY else "openrouter"),
     "ppt": os.getenv("PROVIDER_PPT", "openrouter"),
-    "cross_review": os.getenv("PROVIDER_REVIEW", "openrouter"),
+    "cross_review": os.getenv("PROVIDER_REVIEW", _or2),
 }
 
 MODEL_MAP = {
@@ -50,13 +53,13 @@ FALLBACK_MAP = {
     "cross_review": os.getenv("FALLBACK_REVIEW", FALLBACK_MODEL),
 }
 
-# Fallback provider: which provider to use for the fallback model
+# Fallback provider: use the OTHER OpenRouter key so if one hits quota, the other takes over
 FALLBACK_PROVIDER_MAP = {
-    "ceo": "openrouter",
+    "ceo": _or2,
     "business_analyst": "openrouter",
-    "researcher": "openrouter",
+    "researcher": _or2,
     "architect": "openrouter",
-    "engineer": "openrouter",
-    "ppt": "openrouter",
+    "engineer": _or2,
+    "ppt": _or2,
     "cross_review": "openrouter",
 }
