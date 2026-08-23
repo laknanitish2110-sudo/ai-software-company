@@ -6,7 +6,7 @@ import logging
 from openai import OpenAI, RateLimitError, AuthenticationError, APIStatusError
 
 from app.core.config import (
-    OPENROUTER_API_KEY, OPENROUTER_API_KEY_2, OPENROUTER_BASE_URL,
+    OPENROUTER_API_KEY, OPENROUTER_KEYS, OPENROUTER_BASE_URL,
     OPENAI_API_KEY, OPENAI_BASE_URL,
     GEMINI_API_KEY, GEMINI_BASE_URL,
     SMART_MODEL, MODEL_MAP, FALLBACK_MAP,
@@ -39,18 +39,23 @@ logger = logging.getLogger(__name__)
 
 _clients: dict[str, OpenAI] = {}
 
+_OR_KEY_MAP = {"openrouter": 0, "openrouter2": 1, "openrouter3": 2, "openrouter4": 3}
+
 def get_client(provider: str = "openrouter") -> OpenAI:
     if provider not in _clients:
         if provider == "openai" and OPENAI_API_KEY:
             _clients[provider] = OpenAI(api_key=OPENAI_API_KEY)
         elif provider == "gemini" and GEMINI_API_KEY:
             _clients[provider] = OpenAI(base_url=GEMINI_BASE_URL, api_key=GEMINI_API_KEY)
-        elif provider == "openrouter2" and OPENROUTER_API_KEY_2:
-            _clients["openrouter2"] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY_2)
+        elif provider in _OR_KEY_MAP:
+            idx = _OR_KEY_MAP[provider]
+            if idx < len(OPENROUTER_KEYS) and OPENROUTER_KEYS[idx]:
+                _clients[provider] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_KEYS[idx])
+            else:
+                _clients[provider] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_KEYS[0])
         else:
             _clients["openrouter"] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
-            if provider not in ("openrouter", "openrouter2"):
-                provider = "openrouter"
+            provider = "openrouter"
     return _clients.get(provider, _clients.get("openrouter"))
 
 SYSTEM_PROMPTS = {

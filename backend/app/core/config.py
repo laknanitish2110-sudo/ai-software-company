@@ -5,7 +5,11 @@ load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_API_KEY_2 = os.getenv("OPENROUTER_API_KEY_2", "").strip()
+OPENROUTER_API_KEY_3 = os.getenv("OPENROUTER_API_KEY_3", "").strip()
+OPENROUTER_API_KEY_4 = os.getenv("OPENROUTER_API_KEY_4", "").strip()
 OPENROUTER_BASE_URL = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1").strip()
+
+OPENROUTER_KEYS = [k for k in [OPENROUTER_API_KEY, OPENROUTER_API_KEY_2, OPENROUTER_API_KEY_3, OPENROUTER_API_KEY_4] if k]
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
@@ -21,16 +25,20 @@ FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash")
 # Route everything through OpenRouter — it proxies all models reliably.
 # OpenAI direct only for engineer when key is available.
 
-_or2 = "openrouter2" if OPENROUTER_API_KEY_2 else "openrouter"
+def _or(n: int) -> str:
+    """Return provider name for OpenRouter key N (1-4), falling back to 'openrouter'."""
+    if n == 1 or not OPENROUTER_KEYS[min(n - 1, len(OPENROUTER_KEYS) - 1)]:
+        return "openrouter"
+    return f"openrouter{n}" if n > 1 and len(OPENROUTER_KEYS) >= n else "openrouter"
 
 PROVIDER_MAP = {
-    "ceo": os.getenv("PROVIDER_CEO", "openrouter"),
-    "business_analyst": os.getenv("PROVIDER_BA", _or2),
-    "researcher": os.getenv("PROVIDER_RESEARCHER", "openrouter"),
-    "architect": os.getenv("PROVIDER_ARCHITECT", _or2),
-    "engineer": os.getenv("PROVIDER_ENGINEER", "openai" if OPENAI_API_KEY else "openrouter"),
-    "ppt": os.getenv("PROVIDER_PPT", "openrouter"),
-    "cross_review": os.getenv("PROVIDER_REVIEW", _or2),
+    "ceo": os.getenv("PROVIDER_CEO", _or(1)),
+    "business_analyst": os.getenv("PROVIDER_BA", _or(2)),
+    "researcher": os.getenv("PROVIDER_RESEARCHER", _or(3)),
+    "architect": os.getenv("PROVIDER_ARCHITECT", _or(4)),
+    "engineer": os.getenv("PROVIDER_ENGINEER", "openai" if OPENAI_API_KEY else _or(1)),
+    "ppt": os.getenv("PROVIDER_PPT", _or(2)),
+    "cross_review": os.getenv("PROVIDER_REVIEW", _or(3)),
 }
 
 MODEL_MAP = {
@@ -53,13 +61,13 @@ FALLBACK_MAP = {
     "cross_review": os.getenv("FALLBACK_REVIEW", FALLBACK_MODEL),
 }
 
-# Fallback provider: use the OTHER OpenRouter key so if one hits quota, the other takes over
+# Fallback provider: use a DIFFERENT key so if one hits quota, another takes over
 FALLBACK_PROVIDER_MAP = {
-    "ceo": _or2,
-    "business_analyst": "openrouter",
-    "researcher": _or2,
-    "architect": "openrouter",
-    "engineer": _or2,
-    "ppt": _or2,
-    "cross_review": "openrouter",
+    "ceo": _or(3),
+    "business_analyst": _or(4),
+    "researcher": _or(1),
+    "architect": _or(2),
+    "engineer": _or(3),
+    "ppt": _or(4),
+    "cross_review": _or(1),
 }
