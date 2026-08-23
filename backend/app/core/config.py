@@ -12,9 +12,6 @@ OPENROUTER_API_KEY_6 = os.getenv("OPENROUTER_API_KEY_6", "").strip()
 OPENROUTER_BASE_URL = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1").strip()
 
 OPENROUTER_KEYS = [k for k in [OPENROUTER_API_KEY, OPENROUTER_API_KEY_2, OPENROUTER_API_KEY_3, OPENROUTER_API_KEY_4, OPENROUTER_API_KEY_5, OPENROUTER_API_KEY_6] if k]
-
-import logging as _logging
-_logging.getLogger(__name__).info(f"OpenRouter keys loaded: {len(OPENROUTER_KEYS)}/6 | OpenAI: {'yes' if OPENAI_API_KEY else 'no'}")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
@@ -80,3 +77,6 @@ FALLBACK_PROVIDER_MAP = {
     "ppt": _or(1),
     "cross_review": _or(2),
 }
+
+import logging as _logging
+_logging.getLogger(__name__).info(f"OpenRouter keys loaded: {len(OPENROUTER_KEYS)}/6 | OpenAI: {'yes' if OPENAI_API_KEY else 'no'}")
