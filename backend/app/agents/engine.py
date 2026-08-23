@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 _clients: dict[str, OpenAI] = {}
 
-_OR_KEY_MAP = {"openrouter": 0, "openrouter2": 1, "openrouter3": 2, "openrouter4": 3}
+_OR_KEY_MAP = {"openrouter": 0, "openrouter2": 1, "openrouter3": 2, "openrouter4": 3, "openrouter5": 4, "openrouter6": 5}
 
 def get_client(provider: str = "openrouter") -> OpenAI:
     if provider not in _clients:
