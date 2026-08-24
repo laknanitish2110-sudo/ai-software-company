@@ -77,6 +77,11 @@ class ApprovalRequest(BaseModel):
     feedback: str | None = None
 
 
+class ReviseRequest(BaseModel):
+    role: AgentRole
+    feedback: str
+
+
 class CallEmployeeRequest(BaseModel):
     role: AgentRole
     message: str

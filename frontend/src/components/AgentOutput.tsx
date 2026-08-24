@@ -24,7 +24,9 @@ interface Props {
   outputId: string;
   onApprove: (outputId: string) => void;
   onReject: (outputId: string, feedback: string) => void;
+  onRevise?: (role: string, feedback: string) => void;
   showActions: boolean;
+  readOnly?: boolean;
   peerReview?: PeerReview | null;
 }
 
@@ -178,11 +180,16 @@ export default function AgentOutput({
   outputId,
   onApprove,
   onReject,
+  onRevise,
   showActions,
+  readOnly,
   peerReview,
 }: Props) {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showRevise, setShowRevise] = useState(false);
+  const [reviseFeedback, setReviseFeedback] = useState("");
+  const [revising, setRevising] = useState(false);
   const [expanded, setExpanded] = useState(showActions);
   const config = AGENT_CONFIG[role];
 
@@ -190,6 +197,8 @@ export default function AgentOutput({
   const displayContent = hasParseError && "raw_response" in content
     ? { response: content.raw_response }
     : content;
+
+  if (status === "superseded") return null;
 
   const statusStyle = status === "approved"
     ? { bg: "var(--success-bg)", color: "var(--success)", border: "var(--success-border)" }
@@ -260,7 +269,7 @@ export default function AgentOutput({
           {peerReview && <PeerReviewSection review={peerReview} />}
 
           {/* Action Buttons */}
-          {showActions && (
+          {showActions && !readOnly && (
             <div className="mt-6 pt-5" style={{ borderTop: "1px solid var(--border)" }}>
               <div className="flex gap-3">
                 <button onClick={() => onApprove(outputId)} className="btn-success flex-1 text-[15px]">
@@ -297,6 +306,66 @@ export default function AgentOutput({
                   >
                     Send Revision Request
                   </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Revise Approved Output */}
+          {status === "approved" && onRevise && !readOnly && !showActions && (
+            <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+              {!showRevise ? (
+                <button
+                  onClick={() => setShowRevise(true)}
+                  className="btn-ghost text-xs py-2 px-4 flex items-center gap-1.5"
+                  style={{ color: "var(--accent)", borderColor: "var(--accent-border)" }}
+                >
+                  <span>↻</span> Revise this output
+                </button>
+              ) : (
+                <div className="animate-fade-in">
+                  <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-muted)" }}>
+                    What should {config.label} change?
+                  </label>
+                  <textarea
+                    value={reviseFeedback}
+                    onChange={(e) => setReviseFeedback(e.target.value)}
+                    placeholder="e.g. Make the architecture more microservices-oriented..."
+                    className="w-full h-20 rounded-xl p-3 text-sm resize-none focus:outline-none transition-all"
+                    style={{
+                      background: "var(--bg-base)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text-primary)",
+                    }}
+                    onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
+                    onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={async () => {
+                        setRevising(true);
+                        onRevise(role, reviseFeedback);
+                        setReviseFeedback("");
+                        setShowRevise(false);
+                        setRevising(false);
+                      }}
+                      disabled={!reviseFeedback.trim() || revising}
+                      className="flex-1 text-sm font-semibold py-2.5 px-4 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed"
+                      style={{
+                        background: reviseFeedback.trim() ? "var(--accent)" : "var(--bg-elevated)",
+                        color: reviseFeedback.trim() ? "white" : "var(--text-muted)",
+                        border: "none",
+                      }}
+                    >
+                      {revising ? "Starting revision..." : "Start Revision"}
+                    </button>
+                    <button
+                      onClick={() => { setShowRevise(false); setReviseFeedback(""); }}
+                      className="btn-ghost text-sm py-2.5 px-4"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

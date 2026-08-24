@@ -55,6 +55,14 @@ async def init_db():
                 FOREIGN KEY (project_id) REFERENCES projects(id),
                 UNIQUE(project_id, key)
             );
+
+            CREATE TABLE IF NOT EXISTS share_links (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                token TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (project_id) REFERENCES projects(id)
+            );
         """)
         await db.commit()
     finally:
@@ -236,5 +244,38 @@ async def list_projects() -> list[dict]:
         cursor = await db.execute("SELECT * FROM projects ORDER BY created_at DESC")
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+    finally:
+        await db.close()
+
+
+async def create_share_link(project_id: str) -> str:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT token FROM share_links WHERE project_id = ?", (project_id,)
+        )
+        row = await cursor.fetchone()
+        if row:
+            return row["token"]
+        token = uuid.uuid4().hex[:16]
+        ts = now_iso()
+        await db.execute(
+            "INSERT INTO share_links (id, project_id, token, created_at) VALUES (?, ?, ?, ?)",
+            (new_id(), project_id, token, ts),
+        )
+        await db.commit()
+        return token
+    finally:
+        await db.close()
+
+
+async def get_project_by_share_token(token: str) -> str | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT project_id FROM share_links WHERE token = ?", (token,)
+        )
+        row = await cursor.fetchone()
+        return row["project_id"] if row else None
     finally:
         await db.close()

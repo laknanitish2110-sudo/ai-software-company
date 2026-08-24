@@ -258,6 +258,28 @@ class Orchestrator:
         task = asyncio.create_task(_run())
         self._running_tasks[project_id] = task
 
+    async def revise_agent(self, project_id: str, role: AgentRole, feedback: str):
+        project = await get_project(project_id)
+        if not project:
+            raise ValueError("Project not found")
+
+        await set_memory(project_id, f"{role.value}_revision_feedback", feedback, "founder")
+        await set_memory(project_id, "revision_in_progress", role.value, "system")
+
+        prev_status = project["status"]
+        await set_memory(project_id, "pre_revision_status", prev_status, "system")
+
+        existing = await get_latest_output(project_id, role.value)
+        if existing:
+            await update_output_status(existing["id"], "superseded")
+
+        await self._notify("revision_requested", project_id, {
+            "role": role.value,
+            "message": f"Revision requested for {role.value.replace('_', ' ').title()}. Reworking with your feedback..."
+        })
+
+        await self._start_next_agent(project_id, role)
+
     async def handle_approval(self, project_id: str, output_id: str, approved: bool, feedback: str | None = None):
         if approved:
             await update_output_status(output_id, "approved")
@@ -278,6 +300,19 @@ class Orchestrator:
                 await send_approval_event(project_id, current_role or "unknown", True)
             except Exception:
                 pass
+
+            mem = await get_memory(project_id)
+            if mem.get("revision_in_progress"):
+                prev_status = mem.get("pre_revision_status", ProjectStatus.COMPLETED.value)
+                await update_project_status(project_id, prev_status)
+                await set_memory(project_id, "revision_in_progress", "", "system")
+                await set_memory(project_id, "pre_revision_status", "", "system")
+                revised_role = current_role or "unknown"
+                await self._notify("revision_approved", project_id, {
+                    "role": revised_role,
+                    "message": f"Revision approved for {revised_role.replace('_', ' ').title()}. Project restored."
+                })
+                return
 
             next_role = None
 
@@ -354,6 +389,19 @@ class Orchestrator:
 
             if redo_role and feedback:
                 await set_memory(project_id, f"{redo_role.value}_revision_feedback", feedback, "founder")
+
+            if redo_role and not feedback:
+                mem = await get_memory(project_id)
+                if mem.get("revision_in_progress"):
+                    prev_status = mem.get("pre_revision_status", ProjectStatus.COMPLETED.value)
+                    await update_project_status(project_id, prev_status)
+                    await set_memory(project_id, "revision_in_progress", "", "system")
+                    await set_memory(project_id, "pre_revision_status", "", "system")
+                    await self._notify("revision_cancelled", project_id, {
+                        "role": redo_role.value,
+                        "message": f"Revision cancelled for {redo_role.value.replace('_', ' ').title()}. Project restored."
+                    })
+                    return
 
             if redo_role:
                 await self._notify("revision_requested", project_id, {

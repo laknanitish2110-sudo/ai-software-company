@@ -11,7 +11,7 @@ import ArchitectureDiagram from "./ArchitectureDiagram";
 import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
-import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache, ReconnectingWebSocket } from "@/lib/api";
+import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache, reviseAgent, generateShareLink, ReconnectingWebSocket } from "@/lib/api";
 import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS } from "@/lib/constants";
 
 interface Props {
@@ -64,6 +64,8 @@ export default function Dashboard({ projectId }: Props) {
   const [showArchDiagram, setShowArchDiagram] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [pipelineElapsed, setPipelineElapsed] = useState(0);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [copyingLink, setCopyingLink] = useState(false);
   const { toast } = useToast();
 
   const refreshState = useCallback(async () => {
@@ -177,6 +179,31 @@ export default function Dashboard({ projectId }: Props) {
       refreshState();
     } catch {
       toast("error", "Rejection failed", "Could not send feedback — backend may be restarting. Try again.");
+    }
+  }
+
+  async function handleRevise(role: string, feedback: string) {
+    try {
+      await reviseAgent(projectId, role, feedback);
+      toast("success", "Revision started", `${role.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} is reworking with your feedback.`);
+      refreshState();
+    } catch {
+      toast("error", "Revision failed", "Could not start revision — backend may be restarting.");
+    }
+  }
+
+  async function handleShareLink() {
+    setCopyingLink(true);
+    try {
+      const { token } = await generateShareLink(projectId);
+      const url = `${window.location.origin}/shared/${token}`;
+      setShareLink(url);
+      await navigator.clipboard.writeText(url);
+      toast("success", "Link copied!", "Share this link with anyone — no login required.");
+    } catch {
+      toast("error", "Share failed", "Could not generate share link.");
+    } finally {
+      setCopyingLink(false);
     }
   }
 
@@ -460,6 +487,19 @@ export default function Dashboard({ projectId }: Props) {
                 <span>🏗️</span> Architecture Diagram
               </button>
             )}
+            <button
+              onClick={handleShareLink}
+              disabled={copyingLink}
+              className="btn-ghost text-sm py-2.5 px-5 flex items-center gap-2"
+              style={{ borderColor: "rgba(99,91,255,0.4)", color: "#635bff" }}
+            >
+              {copyingLink ? (
+                <span className="spinner" style={{ width: 14, height: 14 }} />
+              ) : (
+                <span>🔗</span>
+              )}
+              {shareLink ? "Link Copied!" : "Share Link"}
+            </button>
           </div>
         )}
 
@@ -612,6 +652,7 @@ export default function Dashboard({ projectId }: Props) {
                     outputId={output.id}
                     onApprove={handleApprove}
                     onReject={handleReject}
+                    onRevise={handleRevise}
                     showActions={output.status === "pending" && output.id === pendingOutput?.id}
                     peerReview={getPeerReview(output.role)}
                   />

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.models.schemas import (
     CreateProjectRequest,
     ApprovalRequest,
+    ReviseRequest,
     CallEmployeeRequest,
     AgentRole,
 )
@@ -25,6 +26,8 @@ from app.core.database import (
     get_db,
     new_id,
     now_iso,
+    create_share_link,
+    get_project_by_share_token,
 )
 from app.agents.engine import call_employee
 from app.services.workflow_search import (
@@ -99,6 +102,38 @@ async def get_project_memory(project_id: str):
 async def approve_output(project_id: str, output_id: str, req: ApprovalRequest):
     await orchestrator.handle_approval(project_id, output_id, req.approved, req.feedback)
     return {"status": "ok", "approved": req.approved}
+
+
+@router.post("/projects/{project_id}/revise")
+async def revise_agent(project_id: str, req: ReviseRequest):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    try:
+        await orchestrator.revise_agent(project_id, req.role, req.feedback)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"status": "revision_started", "role": req.role.value}
+
+
+@router.post("/projects/{project_id}/share-link")
+async def generate_share_link(project_id: str):
+    project = await get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    token = await create_share_link(project_id)
+    return {"token": token}
+
+
+@router.get("/shared/{token}")
+async def get_shared_project(token: str):
+    project_id = await get_project_by_share_token(token)
+    if not project_id:
+        raise HTTPException(404, "Shared link not found or expired")
+    state = await orchestrator.get_project_state(project_id)
+    if not state:
+        raise HTTPException(404, "Project not found")
+    return state
 
 
 @router.post("/projects/{project_id}/call")

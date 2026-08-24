@@ -214,6 +214,35 @@ export interface IntrospectionData {
   peer_review: Record<string, unknown> | null;
 }
 
+export async function reviseAgent(
+  projectId: string,
+  role: string,
+  feedback: string
+): Promise<{ status: string; role: string }> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/revise`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, feedback }),
+  });
+  return checkedJson(res, "Failed to start revision");
+}
+
+export async function generateShareLink(
+  projectId: string
+): Promise<{ token: string }> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/share-link`, {
+    method: "POST",
+  });
+  return checkedJson(res, "Failed to generate share link");
+}
+
+export async function getSharedProject(
+  token: string
+): Promise<ProjectState> {
+  const res = await fetch(`${API_BASE}/shared/${token}`);
+  return checkedJson(res, "Shared project not found");
+}
+
 export async function getIntrospection(
   projectId: string,
   role: string
