@@ -10,12 +10,25 @@ interface RecentProject {
 }
 
 interface Props {
-  onStart: (problem: string, autoApprove: boolean) => void;
+  onStart: (problem: string, autoApprove: boolean, domain?: string | null) => void;
   loading: boolean;
   recentProjects?: RecentProject[];
   hasDemo?: boolean;
   onLoadDemo?: () => void;
 }
+
+const DOMAINS = [
+  { id: "healthtech", label: "Healthtech", icon: "🏥", color: "#10b981" },
+  { id: "fintech", label: "Fintech", icon: "💳", color: "#6366f1" },
+  { id: "edtech", label: "Edtech", icon: "🎓", color: "#f59e0b" },
+  { id: "e-commerce", label: "E-Commerce", icon: "🛒", color: "#ec4899" },
+  { id: "saas", label: "SaaS", icon: "☁️", color: "#8b5cf6" },
+  { id: "iot", label: "IoT", icon: "📡", color: "#14b8a6" },
+  { id: "cybersecurity", label: "Security", icon: "🔐", color: "#ef4444" },
+  { id: "sustainability", label: "Green Tech", icon: "🌱", color: "#22c55e" },
+  { id: "logistics", label: "Logistics", icon: "🚚", color: "#f97316" },
+  { id: "media", label: "Media", icon: "🎬", color: "#a855f7" },
+] as const;
 
 const AGENTS = [
   { icon: "👨‍💼", label: "CEO", desc: "Plans & delegates", color: "#635bff" },
@@ -43,6 +56,7 @@ const STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
 export default function StartProject({ onStart, loading, recentProjects, hasDemo, onLoadDemo }: Props) {
   const [problem, setProblem] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -82,6 +96,36 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
               onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
             />
 
+            {/* Domain Vertical Selector */}
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Industry focus</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}>optional</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {DOMAINS.map((d) => {
+                  const isSelected = selectedDomain === d.id;
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => setSelectedDomain(isSelected ? null : d.id)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                      style={{
+                        background: isSelected ? `${d.color}18` : "var(--bg-elevated)",
+                        color: isSelected ? d.color : "var(--text-muted)",
+                        border: `1.5px solid ${isSelected ? d.color : "var(--border)"}`,
+                        transform: isSelected ? "scale(1.05)" : "scale(1)",
+                      }}
+                    >
+                      <span>{d.icon}</span>
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="flex items-center gap-3 mt-4">
               <label className="flex items-center gap-2 cursor-pointer select-none shrink-0"
                      style={{ color: "var(--text-muted)" }}>
@@ -95,7 +139,7 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
                 <span className="text-xs font-medium">Auto-pilot</span>
               </label>
               <button
-                onClick={() => onStart(problem, autoApprove)}
+                onClick={() => onStart(problem, autoApprove, selectedDomain)}
                 disabled={!problem.trim() || loading}
                 className="btn-primary flex-1 text-[15px]"
               >
@@ -104,10 +148,8 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
                     <span className="spinner" style={{ borderTopColor: "white", borderColor: "rgba(255,255,255,0.3)" }} />
                     Starting your AI team...
                   </span>
-                ) : autoApprove ? (
-                  "Start Company (Auto-pilot)"
                 ) : (
-                  "Start Company"
+                  <>Start Company{autoApprove ? " (Auto-pilot)" : ""}{selectedDomain ? ` — ${DOMAINS.find(d => d.id === selectedDomain)?.label}` : ""}</>
                 )}
               </button>
               {hasDemo && onLoadDemo && (

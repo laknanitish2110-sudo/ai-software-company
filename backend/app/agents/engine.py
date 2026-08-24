@@ -215,10 +215,83 @@ async def _llm_call_with_retry(
     raise RuntimeError(f"LLM call failed on all keys (tried {len(tried)}): {last_error}")
 
 
+DOMAIN_CONTEXT = {
+    "healthtech": {
+        "label": "Healthcare & Health Tech",
+        "considerations": "HIPAA compliance, patient data privacy, FDA regulations for software as medical device (SaMD), HL7/FHIR interoperability standards, clinical workflow integration, EHR/EMR systems",
+        "frameworks": "HIPAA Security Rule, HITRUST CSF, FDA 21 CFR Part 11",
+        "users": "clinicians, patients, hospital administrators, insurance providers, health data analysts",
+    },
+    "fintech": {
+        "label": "Financial Technology",
+        "considerations": "PCI-DSS compliance, KYC/AML regulations, transaction security, real-time fraud detection, audit trails, financial data encryption at rest and in transit, RBI/SEBI guidelines for Indian markets",
+        "frameworks": "PCI-DSS, SOC 2, ISO 27001, PSD2 (EU), UPI/NPCI standards (India)",
+        "users": "banking customers, traders, financial advisors, compliance officers, payment merchants",
+    },
+    "edtech": {
+        "label": "Education Technology",
+        "considerations": "COPPA compliance for minors, accessibility (WCAG 2.1 AA), learning outcome measurement, adaptive learning paths, offline-first for low-connectivity areas, gamification, LMS integration (SCORM/xAPI)",
+        "frameworks": "COPPA, FERPA, WCAG 2.1, SCORM, xAPI/Tin Can",
+        "users": "students (K-12, university, lifelong learners), teachers, administrators, parents, content creators",
+    },
+    "e-commerce": {
+        "label": "E-Commerce & Retail",
+        "considerations": "payment gateway integration, inventory management, recommendation engines, cart abandonment, SEO optimization, multi-currency/multi-language, returns/refund workflows, logistics tracking",
+        "frameworks": "PCI-DSS for payments, GDPR for user data, consumer protection regulations",
+        "users": "shoppers, merchants, warehouse operators, delivery partners, customer support teams",
+    },
+    "saas": {
+        "label": "Software as a Service",
+        "considerations": "multi-tenancy architecture, subscription billing, role-based access control, API rate limiting, onboarding flows, usage analytics, SSO/OAuth integration, data isolation between tenants",
+        "frameworks": "SOC 2 Type II, OAuth 2.0/OIDC, REST/GraphQL API design, 12-factor app methodology",
+        "users": "B2B teams, SaaS administrators, developers integrating via API, end-users across organizations",
+    },
+    "iot": {
+        "label": "Internet of Things",
+        "considerations": "device provisioning and management, MQTT/CoAP protocols, edge computing, low-power constraints, OTA firmware updates, time-series data storage, real-time dashboards, device security and attestation",
+        "frameworks": "MQTT, CoAP, Matter/Thread for smart home, AWS IoT Core / Azure IoT Hub patterns",
+        "users": "device manufacturers, field engineers, operations managers, smart home users, industrial operators",
+    },
+    "cybersecurity": {
+        "label": "Cybersecurity",
+        "considerations": "threat detection and response, SIEM integration, zero-trust architecture, vulnerability scanning, incident response playbooks, compliance reporting, penetration testing workflows, log analysis",
+        "frameworks": "NIST Cybersecurity Framework, MITRE ATT&CK, OWASP Top 10, ISO 27001, CIS Controls",
+        "users": "SOC analysts, CISOs, penetration testers, compliance officers, IT administrators",
+    },
+    "sustainability": {
+        "label": "Sustainability & CleanTech",
+        "considerations": "carbon footprint tracking, ESG reporting, energy optimization, supply chain transparency, circular economy workflows, environmental sensor data, regulatory compliance (EPA, EU Green Deal)",
+        "frameworks": "GHG Protocol, GRI Standards, TCFD, EU Taxonomy, CDP reporting",
+        "users": "sustainability officers, ESG analysts, facility managers, supply chain managers, regulators",
+    },
+    "logistics": {
+        "label": "Logistics & Supply Chain",
+        "considerations": "route optimization, fleet management, warehouse management (WMS), real-time shipment tracking, demand forecasting, last-mile delivery, customs/trade compliance, carrier integration APIs",
+        "frameworks": "EDI standards, GS1 barcodes, TMS/WMS integration patterns, GPS/telematics",
+        "users": "logistics coordinators, warehouse operators, fleet managers, procurement teams, delivery drivers",
+    },
+    "media": {
+        "label": "Media & Entertainment",
+        "considerations": "content management systems, DRM and content protection, recommendation algorithms, streaming infrastructure (HLS/DASH), content moderation, creator tools, ad tech integration, royalty/licensing tracking",
+        "frameworks": "DRM (Widevine, FairPlay), HLS/DASH streaming, IAB ad standards, DMCA compliance",
+        "users": "content creators, editors, viewers/subscribers, advertisers, rights holders, platform moderators",
+    },
+}
+
+
 def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
     parts = [
         f"## Problem Statement\n{project['problem_statement']}",
     ]
+
+    domain = memory.get("domain_vertical")
+    if domain and domain in DOMAIN_CONTEXT:
+        dc = DOMAIN_CONTEXT[domain]
+        parts.append(f"## Domain Vertical: {dc['label']}\n"
+                     f"**Key considerations:** {dc['considerations']}\n"
+                     f"**Standards & frameworks:** {dc['frameworks']}\n"
+                     f"**Target user personas:** {dc['users']}\n"
+                     f"Apply {dc['label']}-specific best practices throughout your analysis.")
 
     role_order = ["ceo", "business_analyst", "researcher", "architect", "engineer"]
     for role in role_order:
@@ -227,11 +300,11 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
                 label = ROLE_LABELS.get(AgentRole(role), role)
                 parts.append(f"## {label}'s Approved Output\n```json\n{json.dumps(output['content'], indent=2)}\n```")
 
-    deliverable_type = memory.pop("deliverable_type", "code")
+    deliverable_type = memory.get("deliverable_type", "code")
     if deliverable_type != "code":
         parts.append(f"## Deliverable Type: {deliverable_type.upper()}\n{'Generate n8n workflow JSON (importable into n8n).' if deliverable_type == 'workflow' else 'Generate BOTH code project AND n8n workflow JSON.'}")
 
-    workflow_recs = memory.pop("workflow_recommendations", None)
+    workflow_recs = memory.get("workflow_recommendations")
     if workflow_recs:
         try:
             recs = json.loads(workflow_recs) if isinstance(workflow_recs, str) else workflow_recs
@@ -268,7 +341,7 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
         except Exception:
             pass
 
-    filtered_memory = {k: v for k, v in memory.items() if k != "workflow_recommendations"}
+    filtered_memory = {k: v for k, v in memory.items() if k not in ("workflow_recommendations", "domain_vertical", "deliverable_type")}
     if filtered_memory:
         parts.append(f"## Shared Project Memory\n```json\n{json.dumps(filtered_memory, indent=2)}\n```")
 

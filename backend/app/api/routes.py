@@ -58,8 +58,15 @@ orchestrator.set_ws_callback(ws_broadcast)
 
 @router.post("/projects")
 async def create_project(req: CreateProjectRequest):
-    project = await orchestrator.start_project(req.problem_statement, auto_approve=req.auto_approve)
+    project = await orchestrator.start_project(req.problem_statement, auto_approve=req.auto_approve, domain=req.domain)
     return project
+
+
+@router.get("/domains")
+async def get_domains():
+    from app.models.schemas import DOMAIN_VERTICALS
+    from app.agents.engine import DOMAIN_CONTEXT
+    return [{"id": d, "label": DOMAIN_CONTEXT[d]["label"]} for d in DOMAIN_VERTICALS if d in DOMAIN_CONTEXT]
 
 
 @router.get("/projects")

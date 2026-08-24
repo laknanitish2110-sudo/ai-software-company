@@ -46,11 +46,14 @@ class Orchestrator:
         if self._ws_callback:
             await self._ws_callback(msg_type, project_id, data)
 
-    async def start_project(self, problem_statement: str, auto_approve: bool = False) -> dict:
+    async def start_project(self, problem_statement: str, auto_approve: bool = False, domain: str | None = None) -> dict:
         project = await create_project(problem_statement)
         project_id = project["id"]
 
         await set_memory(project_id, "problem_statement", problem_statement, "founder")
+
+        if domain:
+            await set_memory(project_id, "domain_vertical", domain, "founder")
 
         if auto_approve:
             await set_memory(project_id, "auto_approve", "true", "founder")

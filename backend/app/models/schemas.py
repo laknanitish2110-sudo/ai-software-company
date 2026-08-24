@@ -52,9 +52,24 @@ WORKING_STAGES = {
 }
 
 
+DOMAIN_VERTICALS = [
+    "healthtech",
+    "fintech",
+    "edtech",
+    "e-commerce",
+    "saas",
+    "iot",
+    "cybersecurity",
+    "sustainability",
+    "logistics",
+    "media",
+]
+
+
 class CreateProjectRequest(BaseModel):
     problem_statement: str
     auto_approve: bool = False
+    domain: str | None = None
 
 
 class ApprovalRequest(BaseModel):

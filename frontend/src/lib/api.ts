@@ -52,12 +52,15 @@ async function checkedJson<T>(res: Response, fallbackMsg: string): Promise<T> {
 
 export async function createProject(
   problemStatement: string,
-  autoApprove: boolean = false
+  autoApprove: boolean = false,
+  domain?: string | null
 ): Promise<Project> {
+  const body: Record<string, unknown> = { problem_statement: problemStatement, auto_approve: autoApprove };
+  if (domain) body.domain = domain;
   const res = await fetch(`${API_BASE}/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ problem_statement: problemStatement, auto_approve: autoApprove }),
+    body: JSON.stringify(body),
   });
   return checkedJson(res, "Failed to create project");
 }

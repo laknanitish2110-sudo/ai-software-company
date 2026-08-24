@@ -36,10 +36,10 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  async function handleStart(problem: string, autoApprove: boolean = false) {
+  async function handleStart(problem: string, autoApprove: boolean = false, domain?: string | null) {
     setLoading(true);
     try {
-      const project = await createProject(problem, autoApprove);
+      const project = await createProject(problem, autoApprove, domain);
       localStorage.setItem("lastProjectId", project.id);
       router.push(`/project/${project.id}`);
     } catch {
