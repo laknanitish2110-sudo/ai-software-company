@@ -71,6 +71,9 @@ async def get_projects():
 async def get_project_detail(project_id: str):
     state = await orchestrator.get_project_state(project_id)
     if not state:
+        demo = load_demo()
+        if demo and demo.get("project", {}).get("id") == project_id:
+            return demo
         raise HTTPException(404, "Project not found")
     return state
 
