@@ -162,4 +162,4 @@ All models are configurable via environment variables (`MODEL_CEO`, `MODEL_BA`, 
 
 ## License
 
-Built for LaunchpadX Hackathon 2026.
+
