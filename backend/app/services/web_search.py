@@ -102,3 +102,10 @@ def research_topic(problem_statement: str) -> tuple[str, list[dict], list[str]]:
         formatted += f"{r['snippet']}\n\n"
 
     return formatted, unique_results, sorted(sources_used)
+
+
+import asyncio
+
+async def async_research_topic(problem_statement: str) -> tuple[str, list[dict], list[str]]:
+    """Non-blocking async wrapper around synchronous web search."""
+    return await asyncio.to_thread(research_topic, problem_statement)

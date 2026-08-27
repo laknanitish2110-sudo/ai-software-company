@@ -17,6 +17,8 @@ class ProjectStatus(str, Enum):
     PPT_WORKING = "ppt_working"
     COMPLETED = "completed"
     PAUSED = "paused"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class AgentRole(str, Enum):
@@ -25,6 +27,8 @@ class AgentRole(str, Enum):
     RESEARCHER = "researcher"
     ARCHITECT = "architect"
     ENGINEER = "engineer"
+    QA = "qa"
+    FIXER = "fixer"
     PPT = "ppt"
 
 
@@ -52,34 +56,14 @@ WORKING_STAGES = {
 }
 
 
-DOMAIN_VERTICALS = [
-    "healthtech",
-    "fintech",
-    "edtech",
-    "e-commerce",
-    "saas",
-    "iot",
-    "cybersecurity",
-    "sustainability",
-    "logistics",
-    "media",
-]
-
-
 class CreateProjectRequest(BaseModel):
     problem_statement: str
     auto_approve: bool = False
-    domain: str | None = None
 
 
 class ApprovalRequest(BaseModel):
     approved: bool
     feedback: str | None = None
-
-
-class ReviseRequest(BaseModel):
-    role: AgentRole
-    feedback: str
 
 
 class CallEmployeeRequest(BaseModel):

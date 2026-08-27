@@ -19,8 +19,45 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "").strip()
 DATABASE_PATH = os.getenv("DATABASE_PATH", "company.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+TASK_WORKER_ENGINE = os.getenv("TASK_WORKER_ENGINE", "in_process").strip().lower()
 SMART_MODEL = os.getenv("SMART_MODEL", "anthropic/claude-sonnet-4")
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash")
+
+JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_jwt_key_change_in_production_998877")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24
+
+def get_environment() -> str:
+    return os.getenv("ENVIRONMENT", "production").strip().lower()
+
+def get_sandbox_mode() -> str:
+    return os.getenv("SANDBOX_MODE", "e2b_required").strip().lower()
+
+ENVIRONMENT = get_environment()
+SANDBOX_MODE = get_sandbox_mode()
+
+VALID_SANDBOX_MODES = ("e2b_required", "local_dev")
+
+def validate_sandbox_config(env: str | None = None, mode: str | None = None):
+    curr_env = (env if env is not None else get_environment()).strip().lower()
+    curr_mode = (mode if mode is not None else get_sandbox_mode()).strip().lower()
+
+    if curr_mode not in VALID_SANDBOX_MODES:
+        raise ValueError(f"Invalid SANDBOX_MODE: '{curr_mode}'. Must be one of {VALID_SANDBOX_MODES}.")
+
+    if curr_env == "production" and curr_mode == "local_dev":
+        raise ValueError("Security Violation: SANDBOX_MODE='local_dev' is strictly forbidden in production environment.")
+
+# Rate Limiting & Resource Budget Config (P4.4)
+MAX_PROJECTS_PER_WINDOW = int(os.getenv("MAX_PROJECTS_PER_WINDOW", "10"))
+MAX_PROJECT_RUNS_PER_WINDOW = int(os.getenv("MAX_PROJECT_RUNS_PER_WINDOW", "20"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "3600"))
+
+MAX_LLM_CALLS_PER_PROJECT = int(os.getenv("MAX_LLM_CALLS_PER_PROJECT", "50"))
+MAX_E2B_EXECUTIONS_PER_PROJECT = int(os.getenv("MAX_E2B_EXECUTIONS_PER_PROJECT", "10"))
+MAX_REPAIR_ATTEMPTS_HARD_LIMIT = 3
 
 # Per-agent provider + model routing
 # Provider: "openrouter" | "openai" | "gemini"

@@ -1,11 +1,13 @@
 import json
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+import logging
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from app.models.schemas import (
     CreateProjectRequest,
     ApprovalRequest,
-    ReviseRequest,
     CallEmployeeRequest,
     AgentRole,
 )
@@ -17,8 +19,20 @@ from app.services.workflow_generator import get_workflow_json_path, generate_wor
 from app.services.webhook import send_share_request
 from app.services.demo_cache import save_demo, load_demo, has_demo, get_demo_deliverable
 from app.core.config import N8N_WEBHOOK_URL
+from app.core.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    decode_access_token,
+    get_current_user,
+    get_optional_user,
+)
 from app.core.database import (
     get_project,
+    get_project_for_user,
+    create_user,
+    get_user_by_email,
+    delete_project,
     get_project_outputs,
     get_memory,
     list_projects,
@@ -26,21 +40,65 @@ from app.core.database import (
     get_db,
     new_id,
     now_iso,
-    create_share_link,
-    get_project_by_share_token,
-)
-from app.agents.engine import call_employee
-from app.services.workflow_search import (
-    analyze_for_problem,
-    search_workflows,
-    search_by_category,
-    get_category_stats,
-    get_workflow_detail,
 )
 
 router = APIRouter()
 
 active_connections: dict[str, list[WebSocket]] = {}
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+# --- AUTHENTICATION ENDPOINTS ---
+
+@router.post("/auth/register")
+async def register(req: RegisterRequest):
+    if not req.email or not req.password:
+        raise HTTPException(400, "Email and password are required")
+    existing = await get_user_by_email(req.email)
+    if existing:
+        raise HTTPException(400, "User email is already registered")
+    pw_hash = hash_password(req.password)
+    user = await create_user(req.email, pw_hash)
+    token = create_access_token({"sub": user["id"], "email": user["email"]})
+    return {"user": user, "access_token": token, "token_type": "bearer"}
+
+
+@router.post("/auth/login")
+async def login(req: LoginRequest):
+    if not req.email or not req.password:
+        raise HTTPException(400, "Email and password are required")
+    user = await get_user_by_email(req.email)
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(401, "Invalid email or password")
+    token = create_access_token({"sub": user["id"], "email": user["email"]})
+    return {
+        "user": {"id": user["id"], "email": user["email"], "created_at": user["created_at"]},
+        "access_token": token,
+        "token_type": "bearer",
+    }
+
+
+@router.get("/auth/me")
+async def get_me(current_user: dict = Depends(get_current_user)):
+    return {"user": current_user}
+
+
+# --- HELPER FOR PROJECT OWNERSHIP CHECK ---
+
+async def _verify_project_owner(project_id: str, user_id: str) -> dict:
+    project = await get_project_for_user(project_id, user_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return project
 
 
 async def ws_broadcast(msg_type: str, project_id: str, data: dict):
@@ -59,94 +117,154 @@ async def ws_broadcast(msg_type: str, project_id: str, data: dict):
 orchestrator.set_ws_callback(ws_broadcast)
 
 
+from fastapi.responses import JSONResponse, FileResponse
+from app.services.rate_limiter import rate_limiter
+from app.services.resource_budget import resource_budget, ResourceBudgetExceededError
+
+# --- PROTECTED PROJECT ENDPOINTS ---
+
 @router.post("/projects")
-async def create_project(req: CreateProjectRequest):
-    project = await orchestrator.start_project(req.problem_statement, auto_approve=req.auto_approve, domain=req.domain)
-    return project
+async def create_project_endpoint(req: CreateProjectRequest, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
+    allowed, retry_after = rate_limiter.check_rate_limit(user_id=user_id, action="create")
+    if not allowed:
+        return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+
+    try:
+        project = await orchestrator.start_project(
+            req.problem_statement,
+            user_id=user_id,
+            auto_approve=req.auto_approve
+        )
+        return project
+    except ValueError as e:
+        if "PROJECT_EXECUTION_IN_PROGRESS" in str(e):
+            return JSONResponse(status_code=409, content={"error": "PROJECT_EXECUTION_IN_PROGRESS", "message": str(e)})
+        raise HTTPException(400, str(e))
 
 
-@router.get("/domains")
-async def get_domains():
-    from app.models.schemas import DOMAIN_VERTICALS
-    from app.agents.engine import DOMAIN_CONTEXT
-    return [{"id": d, "label": DOMAIN_CONTEXT[d]["label"]} for d in DOMAIN_VERTICALS if d in DOMAIN_CONTEXT]
+from app.services.task_queue import task_queue, STATUS_QUEUED, STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLING, STATUS_CANCELLED
+from app.services.redis_coordinator import redis_coordinator, RedisUnavailableError
+from app.core.config import get_environment, REDIS_URL
+
+@router.get("/projects/{project_id}/budget")
+async def get_project_budget_endpoint(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    return resource_budget.get_budget_status(project_id)
+
+
+@router.get("/projects/{project_id}/executions")
+async def get_project_executions_endpoint(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    return await task_queue.list_project_executions(project_id, user_id=current_user["id"])
+
+
+@router.post("/executions/{execution_id}/cancel")
+async def cancel_execution_endpoint(execution_id: str, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["id"]
+    exec_rec = await task_queue.get_execution(execution_id, user_id=user_id)
+    if not exec_rec:
+        raise HTTPException(404, "Execution not found or user unauthorized")
+
+    project_id = exec_rec["project_id"]
+    await _verify_project_owner(project_id, user_id)
+
+    status = exec_rec["status"]
+    if status in (STATUS_COMPLETED, STATUS_FAILED):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "CANNOT_CANCEL_TERMINAL_EXECUTION", "message": f"Cannot cancel execution in terminal state '{status}'"}
+        )
+
+    if status in (STATUS_CANCELLING, STATUS_CANCELLED):
+        return JSONResponse(
+            status_code=200,
+            content={"status": status, "message": "Execution is already cancelling or cancelled"}
+        )
+
+    if get_environment() == "production" and not REDIS_URL:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "REDIS_UNAVAILABLE", "message": "Cancellation signaling requires Redis in production. Please retry."}
+        )
+
+    try:
+        await redis_coordinator.set_cancellation_flag(execution_id)
+    except RedisUnavailableError as e:
+        if get_environment() == "production":
+            return JSONResponse(
+                status_code=503,
+                content={"error": "REDIS_UNAVAILABLE", "message": str(e)}
+            )
+
+    try:
+        if status == STATUS_QUEUED:
+            await task_queue.cancel(execution_id)
+            await redis_coordinator.publish_event(project_id, "cancellation_completed", {"execution_id": execution_id})
+            return JSONResponse(status_code=200, content={"status": STATUS_CANCELLED, "message": "Queued execution cancelled immediately"})
+
+        await task_queue.mark_cancelling(execution_id, user_id)
+        await redis_coordinator.publish_event(project_id, "cancellation_requested", {"execution_id": execution_id})
+        return JSONResponse(status_code=202, content={"status": STATUS_CANCELLING, "message": "Cancellation request accepted"})
+    except Exception as db_err:
+        logger.error(f"PostgreSQL error during cancellation of {execution_id}: {db_err}")
+        return JSONResponse(status_code=500, content={"error": "DATABASE_ERROR", "message": str(db_err)})
 
 
 @router.get("/projects")
-async def get_projects():
-    return await list_projects()
+async def get_projects(current_user: dict = Depends(get_current_user)):
+    return await list_projects(user_id=current_user["id"])
 
 
 @router.get("/projects/{project_id}")
-async def get_project_detail(project_id: str):
+async def get_project_detail(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     state = await orchestrator.get_project_state(project_id)
     if not state:
-        demo = load_demo()
-        if demo and demo.get("project", {}).get("id") == project_id:
-            return demo
         raise HTTPException(404, "Project not found")
     return state
 
 
+@router.delete("/projects/{project_id}")
+async def delete_project_endpoint(project_id: str, current_user: dict = Depends(get_current_user)):
+    deleted = await delete_project(project_id, current_user["id"])
+    if not deleted:
+        raise HTTPException(404, "Project not found")
+    return {"status": "ok", "deleted": True}
+
+
 @router.get("/projects/{project_id}/outputs")
-async def get_outputs(project_id: str):
+async def get_outputs(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     return await get_project_outputs(project_id)
 
 
 @router.get("/projects/{project_id}/memory")
-async def get_project_memory(project_id: str):
+async def get_project_memory(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     return await get_memory(project_id)
 
 
 @router.post("/projects/{project_id}/approve/{output_id}")
-async def approve_output(project_id: str, output_id: str, req: ApprovalRequest):
+async def approve_output(project_id: str, output_id: str, req: ApprovalRequest, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     await orchestrator.handle_approval(project_id, output_id, req.approved, req.feedback)
     return {"status": "ok", "approved": req.approved}
 
 
-@router.post("/projects/{project_id}/revise")
-async def revise_agent(project_id: str, req: ReviseRequest):
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    try:
-        await orchestrator.revise_agent(project_id, req.role, req.feedback)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    return {"status": "revision_started", "role": req.role.value}
-
-
-@router.post("/projects/{project_id}/share-link")
-async def generate_share_link(project_id: str):
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-    token = await create_share_link(project_id)
-    return {"token": token}
-
-
-@router.get("/shared/{token}")
-async def get_shared_project(token: str):
-    project_id = await get_project_by_share_token(token)
-    if not project_id:
-        raise HTTPException(404, "Shared link not found or expired")
-    state = await orchestrator.get_project_state(project_id)
-    if not state:
-        raise HTTPException(404, "Project not found")
-    return state
-
-
 @router.post("/projects/{project_id}/call")
-async def call_employee_endpoint(project_id: str, req: CallEmployeeRequest):
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
+async def call_employee_endpoint(project_id: str, req: CallEmployeeRequest, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    allowed, retry_after = rate_limiter.check_rate_limit(user_id=current_user["id"], action="call")
+    if not allowed:
+        return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
     response = await call_employee(project_id, req.role, req.message)
     return {"role": req.role.value, "response": response}
 
 
 @router.get("/projects/{project_id}/conversation/{role}")
-async def get_employee_conversation(project_id: str, role: str):
+async def get_employee_conversation(project_id: str, role: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     try:
         agent_role = AgentRole(role)
     except ValueError:
@@ -156,7 +274,8 @@ async def get_employee_conversation(project_id: str, role: str):
 
 
 @router.get("/projects/{project_id}/introspection/{role}")
-async def get_agent_introspection(project_id: str, role: str):
+async def get_agent_introspection(project_id: str, role: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     from app.agents.engine import SYSTEM_PROMPTS, ROLE_LABELS, AGENT_TIMEOUTS
     from app.core.config import MODEL_MAP, SMART_MODEL, PROVIDER_MAP
 
@@ -201,7 +320,8 @@ async def get_agent_introspection(project_id: str, role: str):
 
 
 @router.get("/projects/{project_id}/download/code")
-async def download_code(project_id: str):
+async def download_code(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     zip_path = get_project_zip_path(project_id)
     if not zip_path:
         zip_path = get_demo_deliverable("zip")
@@ -215,7 +335,8 @@ async def download_code(project_id: str):
 
 
 @router.get("/projects/{project_id}/download/pptx")
-async def download_pptx(project_id: str):
+async def download_pptx(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     pptx_path = get_pptx_path(project_id)
     if not pptx_path:
         pptx_path = get_demo_deliverable("pptx")
@@ -229,7 +350,8 @@ async def download_pptx(project_id: str):
 
 
 @router.get("/projects/{project_id}/download/docx")
-async def download_docx(project_id: str):
+async def download_docx(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     docx_path = get_docx_path(project_id)
     if not docx_path:
         docx_path = get_demo_deliverable("docx")
@@ -243,7 +365,8 @@ async def download_docx(project_id: str):
 
 
 @router.get("/projects/{project_id}/download/workflow")
-async def download_workflow(project_id: str):
+async def download_workflow(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     wf_path = get_workflow_json_path(project_id)
     if not wf_path:
         wf_path = get_demo_deliverable("workflow")
@@ -257,13 +380,15 @@ async def download_workflow(project_id: str):
 
 
 @router.get("/projects/{project_id}/files")
-async def list_generated_files(project_id: str):
+async def list_generated_files(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     files = get_generated_files_list(project_id)
     return {"project_id": project_id, "files": files, "count": len(files)}
 
 
 @router.get("/projects/{project_id}/files/content")
-async def get_file_contents(project_id: str):
+async def get_file_contents(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     from app.services.file_generator import get_generated_file_contents
     files = get_generated_file_contents(project_id)
     return {"project_id": project_id, "files": files, "count": len(files)}
@@ -282,10 +407,8 @@ async def integration_status():
 
 
 @router.post("/projects/{project_id}/share")
-async def share_project(project_id: str, req: ShareRequest):
-    project = await get_project(project_id)
-    if not project:
-        raise HTTPException(404, "Project not found")
+async def share_project(project_id: str, req: ShareRequest, current_user: dict = Depends(get_current_user)):
+    project = await _verify_project_owner(project_id, current_user["id"])
 
     if not N8N_WEBHOOK_URL:
         raise HTTPException(
@@ -445,16 +568,47 @@ async def workflow_detail(workflow_id: int):
 
 
 @router.websocket("/ws/{project_id}")
-async def websocket_endpoint(websocket: WebSocket, project_id: str):
+async def websocket_endpoint(websocket: WebSocket, project_id: str, token: str | None = None):
+    token_str = token or websocket.query_params.get("token")
+    user_id = None
+    if token_str:
+        payload = decode_access_token(token_str)
+        if payload and "sub" in payload:
+            user_id = payload["sub"]
+
+    if not user_id:
+        await websocket.accept()
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+
+    project = await get_project_for_user(project_id, user_id)
+    if not project:
+        print(f"WS DEBUG: project {project_id} not found for user {user_id}")
+        await websocket.accept()
+        await websocket.close(code=4003, reason="Forbidden")
+        return
+
     await websocket.accept()
     if project_id not in active_connections:
         active_connections[project_id] = []
     active_connections[project_id].append(websocket)
 
+    async def _forward_redis_events():
+        try:
+            async for event_msg in redis_coordinator.subscribe_events(project_id):
+                await websocket.send_text(event_msg)
+        except Exception:
+            pass
+
+    forward_task = asyncio.create_task(_forward_redis_events())
     try:
         while True:
             await websocket.receive_text()
-    except WebSocketDisconnect:
-        active_connections[project_id].remove(websocket)
-        if not active_connections[project_id]:
-            del active_connections[project_id]
+    except Exception:
+        pass
+    finally:
+        forward_task.cancel()
+        if project_id in active_connections and websocket in active_connections[project_id]:
+            active_connections[project_id].remove(websocket)
+            if not active_connections[project_id]:
+                del active_connections[project_id]

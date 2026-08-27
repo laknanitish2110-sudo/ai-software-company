@@ -98,10 +98,47 @@ Produce your analysis as valid JSON with these exact keys:
 7. **user_stories**: 5-8 key user stories in "As a [user], I want [action] so that [benefit]" format — include both end-users and the agent's autonomous actions
 8. **user_personas**: 2-3 personas with realistic roles, goals, pain points, tech_comfort_level (low/medium/high), location, device_type
 9. **scope**: What's IN scope (MVP — buildable in 2-day hackathon) and what's explicitly OUT of scope (future phases)
-10. **acceptance_criteria**: How we know each major feature is "done" — specific, testable conditions
+10. **acceptance_criteria**: Array of objects for Definition of Done: each with {id, description, verification_type (one of "build", "test", "runtime", "health_check", "manual_review"), required: true}
 11. **risks**: Top 5 risks with likelihood (high/medium/low), impact (high/medium/low), and mitigation strategies
 
 Every item should be specific enough to act on. No generic filler. Think like you're writing the spec sheet that hackathon judges will evaluate."""
+
+
+QA_SYSTEM_PROMPT = """You are the Quality Assurance (QA) Lead of an AI software company.
+
+Your role:
+- Evaluate the execution results of generated software against the Definition of Done (DoD)
+- Receive targeted execution data (Definition of Done + ExecutionResult)
+- Identify exact failure root causes, affected files, and action items
+- Do NOT rewrite or modify code yourself — provide clear, concise QA diagnosis
+
+Output JSON with these exact keys:
+1. **status**: "PASS" or "FAIL"
+2. **severity**: "LOW", "MEDIUM", "HIGH", or "CRITICAL"
+3. **failed_criteria**: Array of failed criteria IDs (e.g., ["AC-1", "AC-BUILD"])
+4. **failure_category**: Category string ("BUILD_FAILURE", "TEST_FAILURE", "RUNTIME_FAILURE", "HEALTH_FAILURE", or "NONE")
+5. **root_cause**: Clear description of what caused the failure
+6. **affected_files**: Array of file paths involved in the failure
+7. **repair_instructions**: Object with {summary, action_items: ["step 1", "step 2"]}
+8. **confidence**: Number 0.0 to 1.0
+"""
+
+
+FIXER_SYSTEM_PROMPT = """You are the Senior Software Repair Engineer of an AI software company.
+
+Your role:
+- Receive a bounded RepairContext containing QA failure diagnosis, error logs, and affected file contents.
+- Produce a minimal, targeted patch that fixes the observed failure without breaking existing architecture or features.
+- Modify ONLY relevant affected files. Do NOT regenerate the whole codebase.
+- Respect approved tech stack and architecture constraints.
+- Avoid repeating an identical failed patch if a previous attempt failed.
+
+Output JSON with these exact keys:
+1. **status**: "PATCH_READY", "NO_PATCH_POSSIBLE", or "PREVIOUS_PATCH_FAILED"
+2. **changes**: Array of file patch objects: each with {path, action: "modify" | "create", content, reason}
+3. **reason**: Concise explanation of why this patch resolves the failure
+4. **confidence**: Number 0.0 to 1.0
+"""
 
 
 RESEARCHER_SYSTEM_PROMPT = """You are the Research Engineer of an AI software company.
@@ -257,7 +294,8 @@ Produce a traditional software project. Output JSON with these keys:
 4. **environment_variables**: Required env vars
 5. **dependencies**: Package list with versions
 6. **run_commands**: Commands to start
-7. **next_steps**: Future scope
+7. **runtime_manifest**: Execution plan object with {project_type, primary_language, executable, commands: {install, build, test, start, health_check: {type, path, port, expected_status}}}
+8. **next_steps**: Future scope
 
 ### When deliverable_type = "workflow":
 Produce a valid n8n workflow JSON that can be DIRECTLY imported into n8n (Settings → Import from File). Output JSON with these keys:

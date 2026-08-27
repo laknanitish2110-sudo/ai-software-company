@@ -1,9 +1,10 @@
 import json
 import re
+import inspect
 import asyncio
 import time
 import logging
-from openai import OpenAI, RateLimitError, AuthenticationError, APIStatusError
+from openai import AsyncOpenAI, OpenAI, RateLimitError, AuthenticationError, APIStatusError
 
 from app.core.config import (
     OPENROUTER_API_KEY, OPENROUTER_KEYS, OPENROUTER_BASE_URL,
@@ -27,6 +28,8 @@ from app.agents.prompts import (
     RESEARCHER_SYSTEM_PROMPT,
     ARCHITECT_SYSTEM_PROMPT,
     ENGINEER_SYSTEM_PROMPT,
+    QA_SYSTEM_PROMPT,
+    FIXER_SYSTEM_PROMPT,
     PPT_SYSTEM_PROMPT,
     CROSS_REVIEW_PROMPT,
     REVIEW_CRITERIA,
@@ -37,26 +40,27 @@ from app.services.webhook import send_research_data
 
 logger = logging.getLogger(__name__)
 
-_clients: dict[str, OpenAI] = {}
+_clients: dict[str, Any] = {}
 
 _OR_KEY_MAP = {"openrouter": 0, "openrouter2": 1, "openrouter3": 2, "openrouter4": 3, "openrouter5": 4, "openrouter6": 5}
 
-def get_client(provider: str = "openrouter") -> OpenAI:
+def get_client(provider: str = "openrouter") -> Any:
     if provider not in _clients:
         if provider == "openai" and OPENAI_API_KEY:
-            _clients[provider] = OpenAI(api_key=OPENAI_API_KEY)
+            _clients[provider] = AsyncOpenAI(api_key=OPENAI_API_KEY)
         elif provider == "gemini" and GEMINI_API_KEY:
-            _clients[provider] = OpenAI(base_url=GEMINI_BASE_URL, api_key=GEMINI_API_KEY)
+            _clients[provider] = AsyncOpenAI(base_url=GEMINI_BASE_URL, api_key=GEMINI_API_KEY)
         elif provider in _OR_KEY_MAP:
             idx = _OR_KEY_MAP[provider]
             if idx < len(OPENROUTER_KEYS) and OPENROUTER_KEYS[idx]:
-                _clients[provider] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_KEYS[idx])
+                _clients[provider] = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_KEYS[idx])
             else:
-                _clients[provider] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_KEYS[0])
+                _clients[provider] = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_KEYS[0])
         else:
-            _clients["openrouter"] = OpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
+            _clients["openrouter"] = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
             provider = "openrouter"
     return _clients.get(provider, _clients.get("openrouter"))
+
 
 SYSTEM_PROMPTS = {
     AgentRole.CEO: CEO_SYSTEM_PROMPT,
@@ -64,6 +68,8 @@ SYSTEM_PROMPTS = {
     AgentRole.RESEARCHER: RESEARCHER_SYSTEM_PROMPT,
     AgentRole.ARCHITECT: ARCHITECT_SYSTEM_PROMPT,
     AgentRole.ENGINEER: ENGINEER_SYSTEM_PROMPT,
+    AgentRole.QA: QA_SYSTEM_PROMPT,
+    AgentRole.FIXER: FIXER_SYSTEM_PROMPT,
     AgentRole.PPT: PPT_SYSTEM_PROMPT,
 }
 
@@ -73,6 +79,8 @@ ROLE_LABELS = {
     AgentRole.RESEARCHER: "Research Engineer",
     AgentRole.ARCHITECT: "Solution Architect",
     AgentRole.ENGINEER: "Software Engineer",
+    AgentRole.QA: "Quality Assurance Lead",
+    AgentRole.FIXER: "Senior Repair Engineer",
     AgentRole.PPT: "Presentation & Documentation Specialist",
 }
 
@@ -82,6 +90,8 @@ AGENT_TIMEOUTS = {
     AgentRole.RESEARCHER: 180,
     AgentRole.ARCHITECT: 120,
     AgentRole.ENGINEER: 360,
+    AgentRole.QA: 90,
+    AgentRole.FIXER: 180,
     AgentRole.PPT: 150,
 }
 
@@ -120,6 +130,12 @@ def _repair_json(raw: str) -> str:
     return text
 
 
+def _sanitize_error(err_str: str) -> str:
+    if not err_str:
+        return ""
+    return re.sub(r'sk-[a-zA-Z0-9_-]{20,}', '[REDACTED_API_KEY]', str(err_str))
+
+
 async def _llm_call_single(
     model: str,
     messages: list[dict],
@@ -129,29 +145,62 @@ async def _llm_call_single(
     provider: str = "openrouter",
 ) -> str:
     client = get_client(provider)
+    create_func = client.chat.completions.create
+
     if stream_callback:
         collected = []
-        response = client.chat.completions.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=messages,
-            stream=True,
-            timeout=timeout,
-        )
-        for chunk in response:
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                token = chunk.choices[0].delta.content
-                collected.append(token)
-                await stream_callback(token)
+        if inspect.iscoroutinefunction(create_func):
+            response = await create_func(
+                model=model,
+                max_tokens=max_tokens,
+                messages=messages,
+                stream=True,
+                timeout=timeout,
+            )
+            async for chunk in response:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    collected.append(token)
+                    await stream_callback(token)
+        else:
+            def _sync_stream():
+                return create_func(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=messages,
+                    stream=True,
+                    timeout=timeout,
+                )
+            response = await asyncio.to_thread(_sync_stream)
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    token = chunk.choices[0].delta.content
+                    collected.append(token)
+                    await stream_callback(token)
         return "".join(collected)
     else:
-        response = client.chat.completions.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=messages,
-            timeout=timeout,
-        )
-        return response.choices[0].message.content.strip()
+        if inspect.iscoroutinefunction(create_func):
+            response = await create_func(
+                model=model,
+                max_tokens=max_tokens,
+                messages=messages,
+                timeout=timeout,
+            )
+        else:
+            def _sync_call():
+                return create_func(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=messages,
+                    timeout=timeout,
+                )
+            response = await asyncio.to_thread(_sync_call)
+
+        if hasattr(response, "choices") and response.choices:
+            choice = response.choices[0]
+            if hasattr(choice, "message") and hasattr(choice.message, "content"):
+                return (choice.message.content or "").strip()
+        return str(response).strip()
 
 
 def _all_or_providers(exclude: str) -> list[str]:
@@ -159,6 +208,8 @@ def _all_or_providers(exclude: str) -> list[str]:
     all_names = ["openrouter", "openrouter2", "openrouter3", "openrouter4", "openrouter5", "openrouter6"]
     return [name for i, name in enumerate(all_names) if name != exclude and i < len(OPENROUTER_KEYS)]
 
+
+from app.services.resource_budget import resource_budget, ResourceBudgetExceededError
 
 async def _llm_call_with_retry(
     model: str,
@@ -169,8 +220,12 @@ async def _llm_call_with_retry(
     fallback_model: str | None = None,
     provider: str = "openrouter",
     fallback_provider: str = "openrouter",
+    project_id: str | None = None,
 ) -> tuple[str, str]:
     """Returns (response_text, model_used)."""
+    if project_id:
+        resource_budget.check_llm_budget(project_id)
+
     last_error = None
 
     def _is_fatal(e: Exception) -> bool:
@@ -183,10 +238,13 @@ async def _llm_call_with_retry(
     for attempt in range(MAX_RETRIES):
         try:
             text = await _llm_call_single(model, messages, max_tokens, timeout, stream_callback, provider=provider)
+            if project_id:
+                resource_budget.record_llm_call(project_id)
             return text, f"{provider}/{model}"
         except Exception as e:
             last_error = e
-            logger.warning(f"LLM call attempt {attempt + 1}/{MAX_RETRIES} failed ({provider}:{model}): {e}")
+            clean_err = _sanitize_error(str(e))
+            logger.warning(f"LLM call attempt {attempt + 1}/{MAX_RETRIES} failed ({provider}:{model}): {clean_err}")
             if _is_fatal(e):
                 logger.warning(f"Fatal error (quota/auth) — skipping remaining retries for {provider}:{model}")
                 break
@@ -208,90 +266,18 @@ async def _llm_call_with_retry(
             return text, f"{fb_prov}/{fb_model}"
         except Exception as e:
             last_error = e
-            logger.warning(f"Key {fb_prov} failed: {e}")
+            clean_err = _sanitize_error(str(e))
+            logger.warning(f"Key {fb_prov} failed: {clean_err}")
             if not _is_fatal(e):
                 break
 
-    raise RuntimeError(f"LLM call failed on all keys (tried {len(tried)}): {last_error}")
-
-
-DOMAIN_CONTEXT = {
-    "healthtech": {
-        "label": "Healthcare & Health Tech",
-        "considerations": "HIPAA compliance, patient data privacy, FDA regulations for software as medical device (SaMD), HL7/FHIR interoperability standards, clinical workflow integration, EHR/EMR systems",
-        "frameworks": "HIPAA Security Rule, HITRUST CSF, FDA 21 CFR Part 11",
-        "users": "clinicians, patients, hospital administrators, insurance providers, health data analysts",
-    },
-    "fintech": {
-        "label": "Financial Technology",
-        "considerations": "PCI-DSS compliance, KYC/AML regulations, transaction security, real-time fraud detection, audit trails, financial data encryption at rest and in transit, RBI/SEBI guidelines for Indian markets",
-        "frameworks": "PCI-DSS, SOC 2, ISO 27001, PSD2 (EU), UPI/NPCI standards (India)",
-        "users": "banking customers, traders, financial advisors, compliance officers, payment merchants",
-    },
-    "edtech": {
-        "label": "Education Technology",
-        "considerations": "COPPA compliance for minors, accessibility (WCAG 2.1 AA), learning outcome measurement, adaptive learning paths, offline-first for low-connectivity areas, gamification, LMS integration (SCORM/xAPI)",
-        "frameworks": "COPPA, FERPA, WCAG 2.1, SCORM, xAPI/Tin Can",
-        "users": "students (K-12, university, lifelong learners), teachers, administrators, parents, content creators",
-    },
-    "e-commerce": {
-        "label": "E-Commerce & Retail",
-        "considerations": "payment gateway integration, inventory management, recommendation engines, cart abandonment, SEO optimization, multi-currency/multi-language, returns/refund workflows, logistics tracking",
-        "frameworks": "PCI-DSS for payments, GDPR for user data, consumer protection regulations",
-        "users": "shoppers, merchants, warehouse operators, delivery partners, customer support teams",
-    },
-    "saas": {
-        "label": "Software as a Service",
-        "considerations": "multi-tenancy architecture, subscription billing, role-based access control, API rate limiting, onboarding flows, usage analytics, SSO/OAuth integration, data isolation between tenants",
-        "frameworks": "SOC 2 Type II, OAuth 2.0/OIDC, REST/GraphQL API design, 12-factor app methodology",
-        "users": "B2B teams, SaaS administrators, developers integrating via API, end-users across organizations",
-    },
-    "iot": {
-        "label": "Internet of Things",
-        "considerations": "device provisioning and management, MQTT/CoAP protocols, edge computing, low-power constraints, OTA firmware updates, time-series data storage, real-time dashboards, device security and attestation",
-        "frameworks": "MQTT, CoAP, Matter/Thread for smart home, AWS IoT Core / Azure IoT Hub patterns",
-        "users": "device manufacturers, field engineers, operations managers, smart home users, industrial operators",
-    },
-    "cybersecurity": {
-        "label": "Cybersecurity",
-        "considerations": "threat detection and response, SIEM integration, zero-trust architecture, vulnerability scanning, incident response playbooks, compliance reporting, penetration testing workflows, log analysis",
-        "frameworks": "NIST Cybersecurity Framework, MITRE ATT&CK, OWASP Top 10, ISO 27001, CIS Controls",
-        "users": "SOC analysts, CISOs, penetration testers, compliance officers, IT administrators",
-    },
-    "sustainability": {
-        "label": "Sustainability & CleanTech",
-        "considerations": "carbon footprint tracking, ESG reporting, energy optimization, supply chain transparency, circular economy workflows, environmental sensor data, regulatory compliance (EPA, EU Green Deal)",
-        "frameworks": "GHG Protocol, GRI Standards, TCFD, EU Taxonomy, CDP reporting",
-        "users": "sustainability officers, ESG analysts, facility managers, supply chain managers, regulators",
-    },
-    "logistics": {
-        "label": "Logistics & Supply Chain",
-        "considerations": "route optimization, fleet management, warehouse management (WMS), real-time shipment tracking, demand forecasting, last-mile delivery, customs/trade compliance, carrier integration APIs",
-        "frameworks": "EDI standards, GS1 barcodes, TMS/WMS integration patterns, GPS/telematics",
-        "users": "logistics coordinators, warehouse operators, fleet managers, procurement teams, delivery drivers",
-    },
-    "media": {
-        "label": "Media & Entertainment",
-        "considerations": "content management systems, DRM and content protection, recommendation algorithms, streaming infrastructure (HLS/DASH), content moderation, creator tools, ad tech integration, royalty/licensing tracking",
-        "frameworks": "DRM (Widevine, FairPlay), HLS/DASH streaming, IAB ad standards, DMCA compliance",
-        "users": "content creators, editors, viewers/subscribers, advertisers, rights holders, platform moderators",
-    },
-}
+    raise RuntimeError(f"LLM call failed on all keys (tried {len(tried)}): {_sanitize_error(str(last_error))}")
 
 
 def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
     parts = [
         f"## Problem Statement\n{project['problem_statement']}",
     ]
-
-    domain = memory.get("domain_vertical")
-    if domain and domain in DOMAIN_CONTEXT:
-        dc = DOMAIN_CONTEXT[domain]
-        parts.append(f"## Domain Vertical: {dc['label']}\n"
-                     f"**Key considerations:** {dc['considerations']}\n"
-                     f"**Standards & frameworks:** {dc['frameworks']}\n"
-                     f"**Target user personas:** {dc['users']}\n"
-                     f"Apply {dc['label']}-specific best practices throughout your analysis.")
 
     role_order = ["ceo", "business_analyst", "researcher", "architect", "engineer"]
     for role in role_order:
@@ -300,11 +286,11 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
                 label = ROLE_LABELS.get(AgentRole(role), role)
                 parts.append(f"## {label}'s Approved Output\n```json\n{json.dumps(output['content'], indent=2)}\n```")
 
-    deliverable_type = memory.get("deliverable_type", "code")
+    deliverable_type = memory.pop("deliverable_type", "code")
     if deliverable_type != "code":
         parts.append(f"## Deliverable Type: {deliverable_type.upper()}\n{'Generate n8n workflow JSON (importable into n8n).' if deliverable_type == 'workflow' else 'Generate BOTH code project AND n8n workflow JSON.'}")
 
-    workflow_recs = memory.get("workflow_recommendations")
+    workflow_recs = memory.pop("workflow_recommendations", None)
     if workflow_recs:
         try:
             recs = json.loads(workflow_recs) if isinstance(workflow_recs, str) else workflow_recs
@@ -341,7 +327,7 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
         except Exception:
             pass
 
-    filtered_memory = {k: v for k, v in memory.items() if k not in ("workflow_recommendations", "domain_vertical", "deliverable_type")}
+    filtered_memory = {k: v for k, v in memory.items() if k != "workflow_recommendations"}
     if filtered_memory:
         parts.append(f"## Shared Project Memory\n```json\n{json.dumps(filtered_memory, indent=2)}\n```")
 

@@ -20,6 +20,7 @@ def generate_project_files(project_id: str, engineer_output: dict) -> str:
     project_dir.mkdir(parents=True)
 
     files = engineer_output.get("files", [])
+    resolved_root = project_dir.resolve()
     for file_entry in files:
         file_path = file_entry.get("path", "")
         content = file_entry.get("content", "")
@@ -28,7 +29,17 @@ def generate_project_files(project_id: str, engineer_output: dict) -> str:
             continue
 
         file_path = file_path.lstrip("/").lstrip("\\")
-        full_path = project_dir / file_path
+        full_path = (project_dir / file_path).resolve()
+        
+        # Security check: Ensure file stays within project_dir (prevents ../ path traversal)
+        try:
+            if not full_path.is_relative_to(resolved_root):
+                continue
+        except AttributeError:
+            # Fallback for Python < 3.9
+            if not str(full_path).startswith(str(resolved_root)):
+                continue
+
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
 

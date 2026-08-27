@@ -22,7 +22,6 @@ app = FastAPI(
 allowed_origins = [
     "http://localhost:3000",
     "http://localhost:3001",
-    "http://200.141.8.126:3000",
 ]
 
 frontend_url = os.getenv("FRONTEND_URL", "")
