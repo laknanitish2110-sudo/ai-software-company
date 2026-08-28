@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -110,6 +111,37 @@ class FinalValidationResult(BaseModel):
     reason: str = ""
 
 
+class HealthCheckSpec(BaseModel):
+    type: str = "http"
+    path: str = "/"
+    port: int = 3000
+    expected_status: int = 200
+    timeout_seconds: int = 15
+
+
+class ExecutionCommands(BaseModel):
+    install: Optional[str] = None
+    build: Optional[str] = None
+    test: Optional[str] = None
+    start: Optional[str] = None
+    health_check: Optional[HealthCheckSpec] = None
+
+
+class ExecutionEnvironment(BaseModel):
+    node_version: str = "20"
+    python_version: str = "3.11"
+    env_vars: Dict[str, str] = Field(default_factory=dict)
+
+
+class ExecutionPlan(BaseModel):
+    project_type: str = "node"  # node, python, n8n, hybrid, unknown
+    primary_language: str = "javascript"
+    executable: bool = True
+    execution_reason: Optional[str] = None
+    environment: ExecutionEnvironment = Field(default_factory=ExecutionEnvironment)
+    commands: ExecutionCommands = Field(default_factory=ExecutionCommands)
+
+
 def parse_or_convert_dod(ba_output: dict, plan: Optional[ExecutionPlan] = None) -> DefinitionOfDone:
     """
     Extends/converts existing BA acceptance_criteria or definition_of_done into structured DoD.
@@ -172,37 +204,6 @@ def parse_or_convert_dod(ba_output: dict, plan: Optional[ExecutionPlan] = None) 
             ))
 
     return DefinitionOfDone(items=parsed_items)
-
-
-class HealthCheckSpec(BaseModel):
-    type: str = "http"
-    path: str = "/"
-    port: int = 3000
-    expected_status: int = 200
-    timeout_seconds: int = 15
-
-
-class ExecutionCommands(BaseModel):
-    install: Optional[str] = None
-    build: Optional[str] = None
-    test: Optional[str] = None
-    start: Optional[str] = None
-    health_check: Optional[HealthCheckSpec] = None
-
-
-class ExecutionEnvironment(BaseModel):
-    node_version: str = "20"
-    python_version: str = "3.11"
-    env_vars: Dict[str, str] = Field(default_factory=dict)
-
-
-class ExecutionPlan(BaseModel):
-    project_type: str = "node"  # node, python, n8n, hybrid, unknown
-    primary_language: str = "javascript"
-    executable: bool = True
-    execution_reason: Optional[str] = None
-    environment: ExecutionEnvironment = Field(default_factory=ExecutionEnvironment)
-    commands: ExecutionCommands = Field(default_factory=ExecutionCommands)
 
 
 def validate_and_detect_execution_plan(engineer_output: dict) -> ExecutionPlan:
