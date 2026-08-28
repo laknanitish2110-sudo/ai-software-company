@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Callable, Awaitable
+from typing import Any, Dict, List, Optional, Tuple, Set, Callable, Awaitable
 from app.services.redis_coordinator import redis_coordinator, LockHeartbeat
 
 logger = logging.getLogger(__name__)
