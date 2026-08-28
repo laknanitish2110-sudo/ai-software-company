@@ -22,8 +22,8 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "company.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 REDIS_URL = os.getenv("REDIS_URL", "").strip()
 TASK_WORKER_ENGINE = os.getenv("TASK_WORKER_ENGINE", "in_process").strip().lower()
-SMART_MODEL = os.getenv("SMART_MODEL", "anthropic/claude-sonnet-4")
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash")
+SMART_MODEL = os.getenv("SMART_MODEL", "google/gemma-3-27b-it")
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemma-3-27b-it")
 
 DEFAULT_DEV_JWT_SECRET = "dev_secret_jwt_key_change_in_production_998877"
 KNOWN_INSECURE_SECRETS = {
@@ -117,13 +117,13 @@ PROVIDER_MAP = {
 }
 
 MODEL_MAP = {
-    "ceo": os.getenv("MODEL_CEO", "google/gemini-2.5-flash"),
+    "ceo": os.getenv("MODEL_CEO", "google/gemma-3-27b-it"),
     "business_analyst": os.getenv("MODEL_BA", SMART_MODEL),
-    "researcher": os.getenv("MODEL_RESEARCHER", "google/gemini-2.5-flash"),
+    "researcher": os.getenv("MODEL_RESEARCHER", "google/gemma-3-27b-it"),
     "architect": os.getenv("MODEL_ARCHITECT", SMART_MODEL),
     "engineer": os.getenv("MODEL_ENGINEER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
-    "ppt": os.getenv("MODEL_PPT", "google/gemini-2.5-flash"),
-    "cross_review": os.getenv("MODEL_REVIEW", "google/gemini-2.5-flash"),
+    "ppt": os.getenv("MODEL_PPT", "google/gemma-3-27b-it"),
+    "cross_review": os.getenv("MODEL_REVIEW", "google/gemma-3-27b-it"),
     "fixer": os.getenv("MODEL_FIXER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
 }
 
