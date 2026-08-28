@@ -129,10 +129,17 @@ def _repair_json(raw: str) -> str:
     return text
 
 
-def _sanitize_error(err_str: str) -> str:
-    if not err_str:
-        return ""
-    return re.sub(r'sk-[a-zA-Z0-9_-]{20,}', '[REDACTED_API_KEY]', str(err_str))
+def resolve_model_name(model: str, provider: str = "openrouter") -> str:
+    """Ensures OpenRouter models use openrouter/free or :free suffix when running on free OpenRouter keys."""
+    if not model:
+        return "openrouter/free"
+    model_str = model.strip()
+    if provider.startswith("openrouter") or provider == "openrouter":
+        if model_str in ("google/gemini-2.5-flash", "google/gemma-3-27b-it", "anthropic/claude-sonnet-4"):
+            return "openrouter/free"
+        if not model_str.endswith(":free") and not model_str.startswith("openrouter/") and "/" in model_str:
+            return f"{model_str}:free"
+    return model_str
 
 
 async def _llm_call_single(
@@ -147,12 +154,13 @@ async def _llm_call_single(
     create_func = client.chat.completions.create
 
     is_async_client = isinstance(client, AsyncOpenAI) or inspect.iscoroutinefunction(create_func)
+    target_model = resolve_model_name(model, provider)
 
     if stream_callback:
         collected = []
         if is_async_client:
             response = await create_func(
-                model=model,
+                model=target_model,
                 max_tokens=max_tokens,
                 messages=messages,
                 stream=True,
@@ -166,7 +174,7 @@ async def _llm_call_single(
         else:
             def _sync_stream():
                 return create_func(
-                    model=model,
+                    model=target_model,
                     max_tokens=max_tokens,
                     messages=messages,
                     stream=True,
@@ -189,7 +197,7 @@ async def _llm_call_single(
     else:
         if is_async_client:
             response = await create_func(
-                model=model,
+                model=target_model,
                 max_tokens=max_tokens,
                 messages=messages,
                 timeout=timeout,
@@ -197,7 +205,7 @@ async def _llm_call_single(
         else:
             def _sync_call():
                 return create_func(
-                    model=model,
+                    model=target_model,
                     max_tokens=max_tokens,
                     messages=messages,
                     timeout=timeout,

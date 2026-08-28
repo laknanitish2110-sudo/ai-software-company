@@ -22,8 +22,8 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "company.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 REDIS_URL = os.getenv("REDIS_URL", "").strip()
 TASK_WORKER_ENGINE = os.getenv("TASK_WORKER_ENGINE", "in_process").strip().lower()
-SMART_MODEL = os.getenv("SMART_MODEL", "google/gemma-3-27b-it")
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemma-3-27b-it")
+SMART_MODEL = os.getenv("SMART_MODEL", "openrouter/free")
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "openrouter/free")
 
 DEFAULT_DEV_JWT_SECRET = "dev_secret_jwt_key_change_in_production_998877"
 KNOWN_INSECURE_SECRETS = {
@@ -117,13 +117,13 @@ PROVIDER_MAP = {
 }
 
 MODEL_MAP = {
-    "ceo": os.getenv("MODEL_CEO", "google/gemma-3-27b-it"),
+    "ceo": os.getenv("MODEL_CEO", "openrouter/free"),
     "business_analyst": os.getenv("MODEL_BA", SMART_MODEL),
-    "researcher": os.getenv("MODEL_RESEARCHER", "google/gemma-3-27b-it"),
+    "researcher": os.getenv("MODEL_RESEARCHER", "openrouter/free"),
     "architect": os.getenv("MODEL_ARCHITECT", SMART_MODEL),
     "engineer": os.getenv("MODEL_ENGINEER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
-    "ppt": os.getenv("MODEL_PPT", "google/gemma-3-27b-it"),
-    "cross_review": os.getenv("MODEL_REVIEW", "google/gemma-3-27b-it"),
+    "ppt": os.getenv("MODEL_PPT", "openrouter/free"),
+    "cross_review": os.getenv("MODEL_REVIEW", "openrouter/free"),
     "fixer": os.getenv("MODEL_FIXER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
 }
 
