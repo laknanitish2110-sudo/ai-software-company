@@ -86,7 +86,7 @@ class RepairLoopService:
                 if execution_id:
                     from app.services.redis_coordinator import redis_coordinator
                     from app.services.task_queue import ExecutionCancelledError
-                    if redis_coordinator.is_cancelled(execution_id):
+                    if await redis_coordinator.is_cancelled(execution_id):
                         logger.info(f"Cancellation requested at repair attempt {attempt} for execution {execution_id}. Halting repair loop.")
                         raise ExecutionCancelledError(f"Cancellation requested during repair loop at attempt {attempt} for execution {execution_id}")
 

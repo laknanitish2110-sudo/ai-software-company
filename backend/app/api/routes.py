@@ -265,9 +265,19 @@ async def approve_output(project_id: str, output_id: str, req: ApprovalRequest, 
 @router.post("/projects/{project_id}/call")
 async def call_employee_endpoint(project_id: str, req: CallEmployeeRequest, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
-    allowed, retry_after = rate_limiter.check_rate_limit(user_id=current_user["id"], action="call")
-    if not allowed:
-        return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+    try:
+        allowed, retry_after = await rate_limiter.check_rate_limit(user_id=current_user["id"], action="call")
+        if not allowed:
+            return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+    except RedisUnavailableError as e:
+        if get_environment() == "production":
+            return JSONResponse(
+                status_code=503,
+                content={"error": "REDIS_UNAVAILABLE", "message": str(e)}
+            )
+        raise HTTPException(503, str(e))
+
+    from app.agents.engine import call_employee
     response = await call_employee(project_id, req.role, req.message)
     return {"role": req.role.value, "response": response}
 
