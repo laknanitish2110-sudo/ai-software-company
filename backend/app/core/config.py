@@ -25,7 +25,17 @@ TASK_WORKER_ENGINE = os.getenv("TASK_WORKER_ENGINE", "in_process").strip().lower
 SMART_MODEL = os.getenv("SMART_MODEL", "anthropic/claude-sonnet-4")
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash")
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev_secret_jwt_key_change_in_production_998877")
+DEFAULT_DEV_JWT_SECRET = "dev_secret_jwt_key_change_in_production_998877"
+KNOWN_INSECURE_SECRETS = {
+    DEFAULT_DEV_JWT_SECRET,
+    "secret",
+    "jwt_secret",
+    "change_me",
+    "password",
+    "123456",
+    "dev_secret_jwt_key",
+}
+
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
@@ -37,6 +47,27 @@ def get_sandbox_mode() -> str:
 
 ENVIRONMENT = get_environment()
 SANDBOX_MODE = get_sandbox_mode()
+
+def get_jwt_secret(env: str | None = None, secret_override: str | None = None) -> str:
+    curr_env = (env if env is not None else get_environment()).strip().lower()
+    raw_secret = (secret_override if secret_override is not None else os.getenv("JWT_SECRET", "")).strip()
+
+    if curr_env == "production":
+        if not raw_secret:
+            raise ValueError("Security Violation: JWT_SECRET is unconfigured. A unique, cryptographically strong JWT_SECRET is strictly required in production environment.")
+        if raw_secret in KNOWN_INSECURE_SECRETS or len(raw_secret) < 16:
+            raise ValueError(f"Security Violation: JWT_SECRET is set to an insecure key. A unique, cryptographically strong JWT_SECRET (minimum 16 characters) is strictly required in production.")
+        return raw_secret
+    else:
+        return raw_secret or DEFAULT_DEV_JWT_SECRET
+
+def validate_jwt_config(env: str | None = None, secret: str | None = None):
+    get_jwt_secret(env, secret)
+
+try:
+    JWT_SECRET = get_jwt_secret()
+except ValueError:
+    JWT_SECRET = DEFAULT_DEV_JWT_SECRET
 
 VALID_SANDBOX_MODES = ("e2b_required", "local_dev")
 
@@ -82,6 +113,7 @@ PROVIDER_MAP = {
     "engineer": os.getenv("PROVIDER_ENGINEER", "openai" if OPENAI_API_KEY else _or(5)),
     "ppt": os.getenv("PROVIDER_PPT", _or(6)),
     "cross_review": os.getenv("PROVIDER_REVIEW", _or(5)),
+    "fixer": os.getenv("PROVIDER_FIXER", "openai" if OPENAI_API_KEY else _or(5)),
 }
 
 MODEL_MAP = {
@@ -92,6 +124,7 @@ MODEL_MAP = {
     "engineer": os.getenv("MODEL_ENGINEER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
     "ppt": os.getenv("MODEL_PPT", "google/gemini-2.5-flash"),
     "cross_review": os.getenv("MODEL_REVIEW", "google/gemini-2.5-flash"),
+    "fixer": os.getenv("MODEL_FIXER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
 }
 
 FALLBACK_MAP = {
@@ -102,6 +135,7 @@ FALLBACK_MAP = {
     "engineer": os.getenv("FALLBACK_ENGINEER", SMART_MODEL),
     "ppt": os.getenv("FALLBACK_PPT", FALLBACK_MODEL),
     "cross_review": os.getenv("FALLBACK_REVIEW", FALLBACK_MODEL),
+    "fixer": os.getenv("FALLBACK_FIXER", SMART_MODEL),
 }
 
 # Fallback provider: each agent falls back to a DIFFERENT dedicated key
@@ -113,6 +147,7 @@ FALLBACK_PROVIDER_MAP = {
     "engineer": _or(6),
     "ppt": _or(1),
     "cross_review": _or(2),
+    "fixer": _or(4),
 }
 
 import logging as _logging

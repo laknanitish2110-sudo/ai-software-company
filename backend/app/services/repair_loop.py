@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import asyncio
+import inspect
 from typing import List, Dict, Any, Optional, Callable, Awaitable
 
 from app.models.execution_schema import (
@@ -180,7 +181,11 @@ class RepairLoopService:
                     previous_attempts=previous_attempts_history
                 )
 
-                patch_res: PatchResult = generate_targeted_patch(repair_ctx)
+                patch_res_or_coro = generate_targeted_patch(repair_ctx)
+                if inspect.isawaitable(patch_res_or_coro):
+                    patch_res: PatchResult = await patch_res_or_coro
+                else:
+                    patch_res: PatchResult = patch_res_or_coro
 
                 attempt_record = RepairAttempt(
                     attempt=attempt,
@@ -203,7 +208,7 @@ class RepairLoopService:
                     pre_patch_files = [dict(f) for f in current_files]
                     snapshot = applier.create_snapshot(project_id, current_files)
 
-                    apply_res, updated_files = applier.apply_patch(project_id, patch_res, current_files, attempt=attempt, execution_id=execution_id)
+                    apply_res, updated_files = await applier.apply_patch(project_id, patch_res, current_files, attempt=attempt, execution_id=execution_id)
 
                     if apply_res.status == "APPLIED":
                         current_files = updated_files

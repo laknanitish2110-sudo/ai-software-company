@@ -64,6 +64,13 @@ class DBWrapper:
     def __init__(self, backend_type: str, conn_or_pool: Any):
         self.backend_type = backend_type
         self.conn = conn_or_pool
+        self._closed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
 
     async def execute(self, sql: str, params: tuple = ()) -> DBCursorWrapper:
         if self.backend_type == "sqlite":
@@ -93,8 +100,17 @@ class DBWrapper:
             await self.conn.commit()
 
     async def close(self):
-        if self.backend_type == "sqlite":
+        if self._closed:
+            return
+        self._closed = True
+        if self.backend_type == "sqlite" and self.conn:
             await self.conn.close()
+            self.conn = None
+        elif self.backend_type == "postgres" and self.conn:
+            pool = await get_pg_pool()
+            if pool is not None:
+                await pool.release(self.conn)
+            self.conn = None
 
     def _to_pg_sql(self, sql: str) -> str:
         """Translates SQLite query dialect to PostgreSQL syntax."""

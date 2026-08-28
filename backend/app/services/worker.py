@@ -150,7 +150,7 @@ async def run_autonomous_pipeline_job(ctx: dict, execution_id: str, project_id: 
             if not t.done():
                 await t
 
-        if redis_coordinator.is_cancelled(execution_id):
+        if await redis_coordinator.is_cancelled(execution_id):
             raise ExecutionCancelledError(f"Cancellation requested for execution {execution_id}")
 
         await task_queue.complete(execution_id)

@@ -235,7 +235,7 @@ class TestP24RegressionChecker(unittest.TestCase):
 
         applier = PatchApplier()
         snapshot = applier.create_snapshot("e2b_reg_test_202", initial_files)
-        apply_res, patched_files = applier.apply_patch("e2b_reg_test_202", regressive_patch, initial_files, attempt=1)
+        apply_res, patched_files = asyncio.run(applier.apply_patch("e2b_reg_test_202", regressive_patch, initial_files, attempt=1))
         self.assertEqual(apply_res.status, "APPLIED")
 
         # Step 3: E2B Attempt 2 -> TEST-A fails (REGRESSION), TEST-B passes

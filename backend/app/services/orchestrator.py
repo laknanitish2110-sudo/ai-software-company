@@ -75,11 +75,14 @@ class Orchestrator:
         if auto_approve:
             await set_memory(project_id, "auto_approve", "true", "founder")
 
+        if execution_id:
+            await set_memory(project_id, "active_execution_id", execution_id, "system")
+
         async def _run_pipeline():
             token = None
             heartbeat = None
             try:
-                if execution_id and redis_coordinator.is_cancelled(execution_id):
+                if execution_id and await redis_coordinator.is_cancelled(execution_id):
                     from app.services.task_queue import ExecutionCancelledError
                     raise ExecutionCancelledError(f"Cancellation requested for execution {execution_id}")
 
@@ -148,7 +151,7 @@ class Orchestrator:
                 except Exception as e:
                     logger.warning(f"Workflow analysis failed (non-critical): {e}")
 
-                await self._start_next_agent(project_id, AgentRole.BUSINESS_ANALYST)
+                await self._start_next_agent(project_id, AgentRole.BUSINESS_ANALYST, execution_id=execution_id)
             except Exception as e:
                 logger.error(f"Pipeline startup failed: {e}")
                 await self._notify("error", project_id, {
@@ -160,9 +163,14 @@ class Orchestrator:
         return project
 
     async def _start_next_agent(self, project_id: str, role: AgentRole, execution_id: Optional[str] = None):
-        if execution_id and redis_coordinator.is_cancelled(execution_id):
+        exec_id = execution_id
+        if not exec_id:
+            mem = await get_memory(project_id)
+            exec_id = mem.get("active_execution_id")
+
+        if exec_id and await redis_coordinator.is_cancelled(exec_id):
             from app.services.task_queue import ExecutionCancelledError
-            raise ExecutionCancelledError(f"Cancellation requested for execution {execution_id}")
+            raise ExecutionCancelledError(f"Cancellation requested for execution {exec_id}")
 
         working_status = WORKING_STAGES.get(role)
         if working_status:
@@ -175,9 +183,9 @@ class Orchestrator:
 
         async def _run():
             try:
-                if execution_id and redis_coordinator.is_cancelled(execution_id):
+                if exec_id and await redis_coordinator.is_cancelled(exec_id):
                     from app.services.task_queue import ExecutionCancelledError
-                    raise ExecutionCancelledError(f"Cancellation requested for execution {execution_id}")
+                    raise ExecutionCancelledError(f"Cancellation requested for execution {exec_id}")
 
                 token_count = 0
 
@@ -206,9 +214,9 @@ class Orchestrator:
 
                 if role == AgentRole.ENGINEER and isinstance(output.get("content"), dict):
                     try:
-                        if execution_id and redis_coordinator.is_cancelled(execution_id):
+                        if exec_id and await redis_coordinator.is_cancelled(exec_id):
                             from app.services.task_queue import ExecutionCancelledError
-                            raise ExecutionCancelledError(f"Cancellation requested for execution {execution_id}")
+                            raise ExecutionCancelledError(f"Cancellation requested for execution {exec_id}")
 
                         await self._notify("sandbox_started", project_id, {
                             "role": "sandbox",
@@ -239,7 +247,7 @@ class Orchestrator:
                             engineer_output=eng_content,
                             architect_output=arch_content,
                             notify_cb=notify_bridge,
-                            execution_id=execution_id
+                            execution_id=exec_id
                         )
 
                         val_json = final_val_res.model_dump_json() if hasattr(final_val_res, "model_dump_json") else json.dumps(final_val_res.dict())
@@ -279,7 +287,7 @@ class Orchestrator:
                             "message": f"{role.value.replace('_', ' ').title()} completed. Auto-approving..."
                         })
                         await asyncio.sleep(1)
-                        await self.handle_approval(project_id, output["id"], True)
+                        await self.handle_approval(project_id, output["id"], True, execution_id=exec_id)
                     else:
                         await self._notify("approval_needed", project_id, {
                             "role": role.value,
@@ -361,7 +369,12 @@ class Orchestrator:
         task = asyncio.create_task(_run())
         self._running_tasks[project_id] = task
 
-    async def handle_approval(self, project_id: str, output_id: str, approved: bool, feedback: str | None = None):
+    async def handle_approval(self, project_id: str, output_id: str, approved: bool, feedback: str | None = None, execution_id: Optional[str] = None):
+        exec_id = execution_id
+        if not exec_id:
+            mem = await get_memory(project_id)
+            exec_id = mem.get("active_execution_id")
+
         if approved:
             await update_output_status(output_id, "approved")
 
@@ -423,7 +436,7 @@ class Orchestrator:
                 await self._notify("approval_accepted", project_id, {
                     "message": f"Approved! Moving to {next_role.value.replace('_', ' ').title()}..."
                 })
-                await self._start_next_agent(project_id, next_role)
+                await self._start_next_agent(project_id, next_role, execution_id=exec_id)
         else:
             await update_output_status(output_id, "rejected")
 
@@ -463,7 +476,7 @@ class Orchestrator:
                     "role": redo_role.value,
                     "message": f"Revision requested. {redo_role.value.replace('_', ' ').title()} is reworking..."
                 })
-                await self._start_next_agent(project_id, redo_role)
+                await self._start_next_agent(project_id, redo_role, execution_id=exec_id)
 
     async def get_project_state(self, project_id: str) -> dict:
         from app.core.database import get_project_outputs

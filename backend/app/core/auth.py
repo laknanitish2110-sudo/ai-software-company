@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from app.core.config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRATION_HOURS
+from app.core.config import get_jwt_secret, JWT_ALGORITHM, JWT_EXPIRATION_HOURS
 
 security = HTTPBearer(auto_error=False)
 
@@ -51,13 +51,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     else:
         expire = now + timedelta(hours=JWT_EXPIRATION_HOURS)
     to_encode.update({"exp": expire, "iat": now})
-    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    secret = get_jwt_secret()
+    return jwt.encode(to_encode, secret, algorithm=JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> Optional[dict]:
     """Decodes and validates a JWT access token."""
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        secret = get_jwt_secret()
+        payload = jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
         return payload
     except (jwt.PyJWTError, ValueError):
         return None

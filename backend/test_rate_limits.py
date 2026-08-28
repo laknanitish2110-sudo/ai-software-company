@@ -2,7 +2,7 @@ import os
 import sys
 import asyncio
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,7 +44,7 @@ class TestP44RateLimitsAndResourceProtection(unittest.TestCase):
 
     def test_case_a_user_below_rate_limit(self):
         """CASE A: User below rate limit -> request allowed (HTTP 200)."""
-        allowed, retry_after = rate_limiter.check_rate_limit(user_id=self.user_a_id, action="create", limit=5)
+        allowed, retry_after = asyncio.run(rate_limiter.check_rate_limit(user_id=self.user_a_id, action="create", limit=5))
         self.assertTrue(allowed)
         self.assertEqual(retry_after, 0)
         print("[PASS] CASE A (User Below Rate Limit Allowed) PASSED.")
@@ -54,15 +54,15 @@ class TestP44RateLimitsAndResourceProtection(unittest.TestCase):
         user_id = f"test_user_rate_b_{os.urandom(4).hex()}"
         # Exhaust 3 allowed project creation requests
         for _ in range(3):
-            rate_limiter.check_rate_limit(user_id=user_id, action="create", limit=3)
+            asyncio.run(rate_limiter.check_rate_limit(user_id=user_id, action="create", limit=3))
 
         # 4th request -> Rate Limited
-        allowed, retry_after = rate_limiter.check_rate_limit(user_id=user_id, action="create", limit=3)
+        allowed, retry_after = asyncio.run(rate_limiter.check_rate_limit(user_id=user_id, action="create", limit=3))
         self.assertFalse(allowed)
         self.assertGreater(retry_after, 0)
 
         # HTTP Endpoint check
-        with patch.object(rate_limiter, "check_rate_limit", return_value=(False, 30)):
+        with patch.object(rate_limiter, "check_rate_limit", new=AsyncMock(return_value=(False, 30))):
             res = self.client.post("/api/projects", json={"problem_statement": "Rate test"}, headers={"Authorization": f"Bearer {self.token_a}"})
             self.assertEqual(res.status_code, 429)
             self.assertEqual(res.json()["error"], "RATE_LIMITED")
@@ -161,13 +161,13 @@ class TestP44RateLimitsAndResourceProtection(unittest.TestCase):
 
         # Exhaust User A's rate limit
         for _ in range(2):
-            rate_limiter.check_rate_limit(user_id=user_a, action="create", limit=2)
+            asyncio.run(rate_limiter.check_rate_limit(user_id=user_a, action="create", limit=2))
 
-        allowed_a, _ = rate_limiter.check_rate_limit(user_id=user_a, action="create", limit=2)
+        allowed_a, _ = asyncio.run(rate_limiter.check_rate_limit(user_id=user_a, action="create", limit=2))
         self.assertFalse(allowed_a)
 
         # User B should still be allowed
-        allowed_b, _ = rate_limiter.check_rate_limit(user_id=user_b, action="create", limit=2)
+        allowed_b, _ = asyncio.run(rate_limiter.check_rate_limit(user_id=user_b, action="create", limit=2))
         self.assertTrue(allowed_b)
         print("[PASS] CASE H (Independent Multi-Tenant Rate Limits Verified) PASSED.")
 

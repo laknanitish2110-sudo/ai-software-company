@@ -178,9 +178,9 @@ class TestP45DurableExecutionAndCrashRecovery(unittest.TestCase):
         user_id = f"user_call_lim_{os.urandom(4).hex()}"
         # Exhaust 2 allowed calls
         for _ in range(2):
-            rate_limiter.check_rate_limit(user_id=user_id, action="call", limit=2)
+            asyncio.run(rate_limiter.check_rate_limit(user_id=user_id, action="call", limit=2))
 
-        allowed, retry_after = rate_limiter.check_rate_limit(user_id=user_id, action="call", limit=2)
+        allowed, retry_after = asyncio.run(rate_limiter.check_rate_limit(user_id=user_id, action="call", limit=2))
         self.assertFalse(allowed)
         self.assertGreater(retry_after, 0)
         print("[PASS] CASE J (Direct /call Endpoint User Rate Limit Enforced) PASSED.")

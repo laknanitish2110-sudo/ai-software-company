@@ -34,7 +34,7 @@ class UserRateLimiter:
     """
     Tracks request timestamps per user_id and enforces sliding window rate limits via Redis.
     """
-    def check_rate_limit(
+    async def check_rate_limit(
         self,
         user_id: str,
         action: str = "run",
@@ -43,18 +43,23 @@ class UserRateLimiter:
         max_limit: Optional[int] = None
     ) -> Tuple[bool, int]:
         """
-        Checks if user_id can perform action via Redis coordination.
+        Asynchronously checks if user_id can perform action via Redis coordination.
         Returns: (allowed: bool, retry_after_seconds: int)
         """
         lim = limit or max_limit
-        if redis_coordinator._client is None:
-            return redis_coordinator._in_memory_fallback.check_rate_limit(user_id, action, lim, window_seconds)
-        else:
-            try:
-                loop = asyncio.get_running_loop()
-                return redis_coordinator._in_memory_fallback.check_rate_limit(user_id, action, lim, window_seconds)
-            except RuntimeError:
-                return asyncio.run(redis_coordinator.check_rate_limit(user_id, action, lim, window_seconds))
+        return await redis_coordinator.check_rate_limit_async(user_id, action, limit=lim, window_seconds=window_seconds)
+
+    def check_rate_limit_sync(
+        self,
+        user_id: str,
+        action: str = "run",
+        window_seconds: Optional[int] = None,
+        limit: Optional[int] = None,
+        max_limit: Optional[int] = None
+    ) -> Tuple[bool, int]:
+        """Synchronous check for rate limits strictly when no event loop is active."""
+        lim = limit or max_limit
+        return redis_coordinator.check_rate_limit(user_id, action, limit=lim, window_seconds=window_seconds)
 
     def reset_user(self, user_id: str):
         """Reset rate limit history for test isolation."""

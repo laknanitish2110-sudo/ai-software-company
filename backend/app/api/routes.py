@@ -126,7 +126,7 @@ from app.services.resource_budget import resource_budget, ResourceBudgetExceeded
 @router.post("/projects")
 async def create_project_endpoint(req: CreateProjectRequest, current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
-    allowed, retry_after = rate_limiter.check_rate_limit(user_id=user_id, action="create")
+    allowed, retry_after = await rate_limiter.check_rate_limit(user_id=user_id, action="create")
     if not allowed:
         return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
 

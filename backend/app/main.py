@@ -2,12 +2,15 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import validate_sandbox_config, validate_jwt_config
 from app.core.database import init_db
 from app.api.routes import router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_sandbox_config()
+    validate_jwt_config()
     await init_db()
     yield
 

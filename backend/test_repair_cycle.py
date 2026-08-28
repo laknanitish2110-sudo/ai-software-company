@@ -106,7 +106,7 @@ class TestP23RepairCycle(unittest.TestCase):
         # Step 3: Apply patch via PatchApplier
         applier = PatchApplier()
         snapshot = applier.create_snapshot(self.test_pid, initial_files)
-        apply_res, patched_files = applier.apply_patch(self.test_pid, validated_patch, initial_files, attempt=1)
+        apply_res, patched_files = asyncio.run(applier.apply_patch(self.test_pid, validated_patch, initial_files, attempt=1))
 
         self.assertEqual(apply_res.status, "APPLIED")
         self.assertEqual(apply_res.modified_files, ["src/math_utils.py"])
@@ -139,7 +139,7 @@ class TestP23RepairCycle(unittest.TestCase):
             ]
         )
 
-        apply_res, updated_memory = applier.apply_patch(self.test_pid, invalid_patch, initial_files, attempt=1)
+        apply_res, updated_memory = asyncio.run(applier.apply_patch(self.test_pid, invalid_patch, initial_files, attempt=1))
 
         self.assertEqual(apply_res.status, "REJECTED")
         self.assertGreater(len(apply_res.errors), 0)
@@ -211,7 +211,7 @@ class TestP23RepairCycle(unittest.TestCase):
 
         # Step 3: Apply Patch
         applier = PatchApplier()
-        apply_res, patched_files = applier.apply_patch("e2b_repair_cycle_101", validated_patch, initial_files, attempt=1)
+        apply_res, patched_files = asyncio.run(applier.apply_patch("e2b_repair_cycle_101", validated_patch, initial_files, attempt=1))
         self.assertEqual(apply_res.status, "APPLIED")
 
         # Step 4: E2B Attempt 2 -> Expected TEST PASS

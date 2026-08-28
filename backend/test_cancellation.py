@@ -120,7 +120,7 @@ class TestP47DCancellation(unittest.TestCase):
         applier = PatchApplier()
 
         with self.assertRaises(ExecutionCancelledError):
-            applier.apply_patch(proj_id, patch_res, [], attempt=1, execution_id=exec_id)
+            asyncio.run(applier.apply_patch(proj_id, patch_res, [], attempt=1, execution_id=exec_id))
         print("[PASS] CASE 4 (Cancellation Immediately Before Patch Application -> NO PATCH APPLIED) PASSED.")
 
     def test_case_5_cancellation_while_llm_request_pending(self):

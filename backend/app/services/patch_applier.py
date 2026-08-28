@@ -75,7 +75,7 @@ class PatchApplier:
             
         return restored_memory
 
-    def apply_patch(
+    async def apply_patch(
         self,
         project_id: str,
         patch_result: PatchResult,
@@ -88,7 +88,7 @@ class PatchApplier:
         if execution_id:
             from app.services.redis_coordinator import redis_coordinator
             from app.services.task_queue import ExecutionCancelledError
-            if redis_coordinator.is_cancelled(execution_id):
+            if await redis_coordinator.is_cancelled(execution_id):
                 logger.info(f"Cancellation requested before applying patch for execution {execution_id}. Aborting patch application.")
                 raise ExecutionCancelledError(f"Cancellation requested before applying patch for execution {execution_id}")
 

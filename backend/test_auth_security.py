@@ -20,8 +20,14 @@ class TestP41AuthSecurity(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        os.environ["ENVIRONMENT"] = "development"
+        os.environ["SANDBOX_MODE"] = "local_dev"
         asyncio.run(init_db())
         cls.client = TestClient(app)
+
+    def setUp(self):
+        os.environ["ENVIRONMENT"] = "development"
+        os.environ["SANDBOX_MODE"] = "local_dev"
 
     def test_01_password_hashing_security(self):
         """Verify passwords are hashed with salt and not stored in plaintext."""
