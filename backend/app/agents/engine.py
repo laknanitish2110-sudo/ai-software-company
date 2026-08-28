@@ -146,9 +146,11 @@ async def _llm_call_single(
     client = get_client(provider)
     create_func = client.chat.completions.create
 
+    is_async_client = isinstance(client, AsyncOpenAI) or inspect.iscoroutinefunction(create_func)
+
     if stream_callback:
         collected = []
-        if inspect.iscoroutinefunction(create_func):
+        if is_async_client:
             response = await create_func(
                 model=model,
                 max_tokens=max_tokens,
@@ -171,14 +173,21 @@ async def _llm_call_single(
                     timeout=timeout,
                 )
             response = await asyncio.to_thread(_sync_stream)
-            for chunk in response:
-                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                    token = chunk.choices[0].delta.content
-                    collected.append(token)
-                    await stream_callback(token)
+            if inspect.isasyncgen(response) or hasattr(response, "__aiter__"):
+                async for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                        token = chunk.choices[0].delta.content
+                        collected.append(token)
+                        await stream_callback(token)
+            else:
+                for chunk in response:
+                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                        token = chunk.choices[0].delta.content
+                        collected.append(token)
+                        await stream_callback(token)
         return "".join(collected)
     else:
-        if inspect.iscoroutinefunction(create_func):
+        if is_async_client:
             response = await create_func(
                 model=model,
                 max_tokens=max_tokens,
@@ -194,6 +203,9 @@ async def _llm_call_single(
                     timeout=timeout,
                 )
             response = await asyncio.to_thread(_sync_call)
+
+        if inspect.isawaitable(response):
+            response = await response
 
         if hasattr(response, "choices") and response.choices:
             choice = response.choices[0]
