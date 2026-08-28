@@ -53,12 +53,10 @@ def get_client(provider: str = "openrouter") -> Any:
             _clients[provider] = AsyncOpenAI(base_url=GEMINI_BASE_URL, api_key=GEMINI_API_KEY)
         elif provider in _OR_KEY_MAP:
             idx = _OR_KEY_MAP[provider]
-            if idx < len(OPENROUTER_KEYS) and OPENROUTER_KEYS[idx]:
-                _clients[provider] = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_KEYS[idx])
-            else:
-                _clients[provider] = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_KEYS[0])
+            key = OPENROUTER_KEYS[idx] if idx < len(OPENROUTER_KEYS) and OPENROUTER_KEYS[idx] else (OPENROUTER_KEYS[0] if OPENROUTER_KEYS else OPENROUTER_API_KEY)
+            _clients[provider] = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=key or "missing_key")
         else:
-            _clients["openrouter"] = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY)
+            _clients["openrouter"] = AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=OPENROUTER_API_KEY or "missing_key")
             provider = "openrouter"
     return _clients.get(provider, _clients.get("openrouter"))
 

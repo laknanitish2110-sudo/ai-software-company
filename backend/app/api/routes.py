@@ -278,8 +278,12 @@ async def call_employee_endpoint(project_id: str, req: CallEmployeeRequest, curr
         raise HTTPException(503, str(e))
 
     from app.agents.engine import call_employee
-    response = await call_employee(project_id, req.role, req.message)
-    return {"role": req.role.value, "response": response}
+    try:
+        response = await call_employee(project_id, req.role, req.message)
+        return {"role": req.role.value, "response": response}
+    except Exception as e:
+        logger.error(f"Error calling employee {req.role.value} for project {project_id}: {e}", exc_info=True)
+        raise HTTPException(500, f"Failed to call employee {req.role.value}: {str(e)}")
 
 
 @router.get("/projects/{project_id}/conversation/{role}")
