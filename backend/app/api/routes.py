@@ -126,21 +126,31 @@ from app.services.resource_budget import resource_budget, ResourceBudgetExceeded
 @router.post("/projects")
 async def create_project_endpoint(req: CreateProjectRequest, current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
-    allowed, retry_after = await rate_limiter.check_rate_limit(user_id=user_id, action="create")
-    if not allowed:
-        return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
-
     try:
+        allowed, retry_after = await rate_limiter.check_rate_limit(user_id=user_id, action="create")
+        if not allowed:
+            return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+
         project = await orchestrator.start_project(
             req.problem_statement,
             user_id=user_id,
             auto_approve=req.auto_approve
         )
         return project
+    except RedisUnavailableError as e:
+        if get_environment() == "production":
+            return JSONResponse(
+                status_code=503,
+                content={"error": "REDIS_UNAVAILABLE", "message": str(e)}
+            )
+        raise HTTPException(503, str(e))
     except ValueError as e:
         if "PROJECT_EXECUTION_IN_PROGRESS" in str(e):
             return JSONResponse(status_code=409, content={"error": "PROJECT_EXECUTION_IN_PROGRESS", "message": str(e)})
         raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"Error creating project for user {user_id}: {e}", exc_info=True)
+        raise HTTPException(500, f"Failed to create project: {str(e)}")
 
 
 from app.services.task_queue import task_queue, STATUS_QUEUED, STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLING, STATUS_CANCELLED
