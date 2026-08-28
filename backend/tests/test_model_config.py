@@ -11,10 +11,6 @@ import os
 import sys
 import unittest
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.core.config import MODEL_MAP, SMART_MODEL, FALLBACK_MODEL
 from app.agents.engine import resolve_model_name
 

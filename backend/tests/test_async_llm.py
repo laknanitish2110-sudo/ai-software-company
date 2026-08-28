@@ -5,10 +5,6 @@ import asyncio
 import unittest
 from unittest.mock import patch, MagicMock
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.agents.engine import _llm_call_single, _llm_call_with_retry, AGENT_TIMEOUTS, _sanitize_error
 from app.models.schemas import AgentRole
 

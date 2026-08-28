@@ -140,35 +140,6 @@ def is_source_file(p: str) -> bool:
     return True
 
 
-def _generate_pattern_fallback_patch(repair_ctx: RepairContext) -> Optional[PatchResult]:
-    if not repair_ctx.file_contents:
-        return None
-
-    for path, existing_code in repair_ctx.file_contents.items():
-        norm_path = path.lstrip("/").lstrip("\\").replace("\\", "/")
-        patched_code = None
-        if "return a - b" in existing_code:
-            patched_code = existing_code.replace("return a - b", "return a + b")
-        elif "return x + y" in existing_code:
-            patched_code = existing_code.replace("return x + y", "return x * y")
-        elif "['status'] = 'pending'" in existing_code:
-            patched_code = existing_code.replace("['status'] = 'pending'", "['status'] = 'completed'")
-        elif "'status': 'pending'" in existing_code:
-            patched_code = existing_code.replace("'status': 'pending'", "'status': 'completed'")
-        elif "status' = 'pending'" in existing_code:
-            patched_code = existing_code.replace("status' = 'pending'", "status' = 'completed'")
-
-        if patched_code:
-            return PatchResult(
-                status="PATCH_READY",
-                changes=[FilePatch(path=norm_path, action="modify", content=patched_code, reason="Pattern fallback repair")],
-                reason="Pattern fallback repair applied",
-                confidence=0.5
-            )
-
-    return None
-
-
 async def generate_targeted_patch(
     repair_ctx: RepairContext,
     mock_patch: Optional[PatchResult] = None,
@@ -219,9 +190,6 @@ async def generate_targeted_patch(
             )
     except Exception as e:
         logger.warning(f"Fixer Agent LLM call failed for project {repair_ctx.project_id}: {e}")
-        fallback_patch = _generate_pattern_fallback_patch(repair_ctx)
-        if fallback_patch:
-            return validate_patch(fallback_patch, repair_ctx)
         result = PatchResult(
             status="PATCH_REJECTED",
             reason=f"LLM call exception: {str(e)}",

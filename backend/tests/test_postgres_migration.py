@@ -4,10 +4,6 @@ import asyncio
 import unittest
 from fastapi.testclient import TestClient
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.main import app
 from app.core.database import init_db, get_db, create_user, get_user_by_email, create_project, get_project, set_memory, get_memory, save_agent_output, get_project_outputs
 from app.services.task_queue import task_queue, STATUS_QUEUED, STATUS_RUNNING, STATUS_COMPLETED

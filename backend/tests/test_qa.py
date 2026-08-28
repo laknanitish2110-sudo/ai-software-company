@@ -2,10 +2,6 @@ import os
 import sys
 import unittest
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.models.execution_schema import DefinitionOfDone, DoDItem, parse_or_convert_dod, ExecutionPlan
 from app.services.sandbox_runner import ExecutionResult, StageResult
 from app.agents.qa import evaluate_qa_results, QAReport

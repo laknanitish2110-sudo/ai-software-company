@@ -11,10 +11,6 @@ import unittest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.main import app
 from app.core.database import init_db, get_project, get_db, create_project
 from app.models.schemas import ProjectStatus

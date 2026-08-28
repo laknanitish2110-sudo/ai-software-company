@@ -26,10 +26,6 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.models.execution_schema import RepairContext, PatchResult, FilePatch, ExecutionPlan, ExecutionCommands, DefinitionOfDone
 from app.agents.fixer import generate_targeted_patch, validate_patch, compute_patch_hash, build_fixer_user_prompt
 from app.agents.qa import evaluate_qa_results

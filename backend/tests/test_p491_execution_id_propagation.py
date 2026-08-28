@@ -14,10 +14,6 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.core.database import init_db, create_project, get_memory, set_memory, update_project_status
 from app.models.schemas import ProjectStatus, AgentRole
 from app.services.orchestrator import orchestrator

@@ -34,6 +34,10 @@ backend/assets/templates/*.pptx
 # Test files
 test_*.pptx
 
+# Binary docs (store in Google Drive, not git)
+*.pdf
+*.canvas
+
 # OS files
 .DS_Store
 Thumbs.db

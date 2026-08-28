@@ -15,10 +15,6 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.services.redis_coordinator import redis_coordinator, RedisUnavailableError
 
 

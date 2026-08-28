@@ -15,10 +15,6 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.core.config import get_jwt_secret, validate_jwt_config, DEFAULT_DEV_JWT_SECRET
 from app.core.auth import create_access_token, decode_access_token, hash_password, verify_password
 

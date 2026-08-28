@@ -6,10 +6,6 @@ import unittest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.main import app
 from app.core.database import init_db, get_project
 from app.services.task_queue import task_queue, STATUS_QUEUED, STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED, STATUS_RECOVERABLE

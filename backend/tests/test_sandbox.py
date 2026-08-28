@@ -7,10 +7,6 @@ import asyncio
 import unittest
 
 # Add backend directory to sys.path
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
 from app.services.file_generator import generate_project_files, PROJECTS_DIR
 from app.models.execution_schema import validate_and_detect_execution_plan, ExecutionPlan
 from app.services.sandbox_runner import (
