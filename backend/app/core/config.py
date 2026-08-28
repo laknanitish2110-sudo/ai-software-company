@@ -54,9 +54,9 @@ def get_jwt_secret(env: str | None = None, secret_override: str | None = None) -
 
     if curr_env == "production":
         if not raw_secret:
-            raise ValueError("Security Violation: JWT_SECRET is unconfigured. A unique, cryptographically strong JWT_SECRET is strictly required in production environment.")
+            raise ValueError("Security Violation: JWT_SECRET is required in production and must be a cryptographically strong secret.")
         if raw_secret in KNOWN_INSECURE_SECRETS or len(raw_secret) < 16:
-            raise ValueError(f"Security Violation: JWT_SECRET is set to an insecure key. A unique, cryptographically strong JWT_SECRET (minimum 16 characters) is strictly required in production.")
+            raise ValueError("Security Violation: JWT_SECRET is set to an insecure or short key. A cryptographically strong secret (minimum 16 characters) is required in production.")
         return raw_secret
     else:
         return raw_secret or DEFAULT_DEV_JWT_SECRET
