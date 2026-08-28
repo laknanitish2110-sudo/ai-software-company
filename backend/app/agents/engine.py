@@ -129,6 +129,12 @@ def _repair_json(raw: str) -> str:
     return text
 
 
+def _sanitize_error(err_str: str) -> str:
+    if not err_str:
+        return ""
+    return re.sub(r'sk-[a-zA-Z0-9_-]{20,}', '[REDACTED_API_KEY]', str(err_str))
+
+
 def resolve_model_name(model: str, provider: str = "openrouter") -> str:
     """Ensures OpenRouter models use openrouter/free or :free suffix when running on free OpenRouter keys."""
     if not model:
