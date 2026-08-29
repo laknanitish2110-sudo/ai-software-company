@@ -429,7 +429,7 @@ def _build_title_slide(prs, slide_data):
     p_tag = tf_tag.paragraphs[0]
     p_tag.alignment = PP_ALIGN.CENTER
     run_tag = p_tag.add_run()
-    run_tag.text = "AI SOFTWARE COMPANY  •  HACKATHON 2026"
+    run_tag.text = "AI SOFTWARE COMPANY"
     run_tag.font.size = Pt(11)
     run_tag.font.bold = True
     run_tag.font.color.rgb = _rgb(*ACCENT_LIGHT)
@@ -1003,7 +1003,7 @@ def _pitch_to_slides(pitch: dict) -> list[dict]:
     hook = pitch.get("hook", "Our Idea")
     slides.append({
         "title": str(hook),
-        "content": ["AI Software Company", "Hackathon Pitch 2026"],
+        "content": ["AI Software Company"],
         "speaker_notes": "Opening — introduce the team and idea."
     })
 
