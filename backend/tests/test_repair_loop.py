@@ -3,7 +3,7 @@ import sys
 import shutil
 import asyncio
 import unittest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch as mock_patch
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -28,6 +28,26 @@ from app.services.repair_loop import (
     MAX_REPAIR_ATTEMPTS
 )
 from app.services.patch_applier import PROJECTS_DIR
+
+
+def _openrouter_available():
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    return bool(key) and key != "test-key-placeholder"
+
+
+async def _mock_math_fix(repair_ctx, **kwargs):
+    """Deterministic mock that fixes 'return a - b' -> 'return a + b'."""
+    return PatchResult(
+        status="PATCH_READY",
+        changes=[FilePatch(
+            path="src/math_utils.py",
+            action="modify",
+            content="def add(a, b):\n    return a + b\n",
+            reason="Fixed subtraction to addition",
+        )],
+        reason="Deterministic mock fix for math_utils",
+        confidence=1.0,
+    )
 
 
 class MockRunner:
@@ -109,9 +129,15 @@ class TestP25RepairLoop(unittest.TestCase):
         service = RepairLoopService()
         runner = LocalSubprocessSandboxRunner()
 
-        res: FinalValidationResult = asyncio.run(service.run_repair_loop(
-            self.test_pid, initial_files, plan, self.dod, custom_runner=runner
-        ))
+        if _openrouter_available():
+            res: FinalValidationResult = asyncio.run(service.run_repair_loop(
+                self.test_pid, initial_files, plan, self.dod, custom_runner=runner
+            ))
+        else:
+            with mock_patch("app.services.repair_loop.generate_targeted_patch", _mock_math_fix):
+                res: FinalValidationResult = asyncio.run(service.run_repair_loop(
+                    self.test_pid, initial_files, plan, self.dod, custom_runner=runner
+                ))
 
         self.assertEqual(res.final_status, "VALIDATED")
         self.assertEqual(res.attempts_used, 2)

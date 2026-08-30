@@ -23,10 +23,26 @@ _test_db_path = os.path.join(_test_db_dir, "test.db")
 cfg_mod.DATABASE_PATH = _test_db_path
 cfg_mod.DATABASE_URL = ""
 
+import sqlite3
+
 import pytest
 import pytest_asyncio
 
 import app.core.database as db_mod
+
+# Enable WAL mode on the shared test DB so unittest.TestCase tests
+# don't hit "database is locked" from stale aiosqlite threads.
+_orig_get_db = db_mod.get_db
+
+
+async def _get_db_wal():
+    wrapper = await _orig_get_db()
+    if wrapper.backend_type == "sqlite":
+        await wrapper.conn.execute("PRAGMA journal_mode=WAL")
+        await wrapper.conn.execute("PRAGMA busy_timeout=5000")
+    return wrapper
+
+db_mod.get_db = _get_db_wal
 
 
 @pytest_asyncio.fixture(autouse=True)

@@ -4,6 +4,7 @@ import time
 import shutil
 import asyncio
 import unittest
+from unittest.mock import patch as mock_patch
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -13,11 +14,51 @@ from app.models.execution_schema import (
     DoDItem,
     ExecutionPlan,
     ExecutionCommands,
+    PatchResult,
+    FilePatch,
     FinalValidationResult
 )
 from app.services.sandbox_runner import E2BSandboxRunner, LocalSubprocessSandboxRunner
 from app.services.repair_loop import RepairLoopService
 from app.services.patch_applier import PROJECTS_DIR
+
+
+def _openrouter_available():
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    return bool(key) and key != "test-key-placeholder"
+
+
+async def _mock_task_api_fix(repair_ctx, **kwargs):
+    """Deterministic mock that fixes complete_task: 'pending' -> 'completed'."""
+    return PatchResult(
+        status="PATCH_READY",
+        changes=[FilePatch(
+            path="src/task_api.py",
+            action="modify",
+            content=(
+                "class TaskManager:\n"
+                "    def __init__(self):\n"
+                "        self.tasks = {}\n"
+                "    def create_task(self, title):\n"
+                "        task_id = str(len(self.tasks) + 1)\n"
+                "        task = {'id': task_id, 'title': title, 'status': 'pending'}\n"
+                "        self.tasks[task_id] = task\n"
+                "        return task\n"
+                "    def list_tasks(self):\n"
+                "        return list(self.tasks.values())\n"
+                "    def complete_task(self, task_id):\n"
+                "        if task_id in self.tasks:\n"
+                "            self.tasks[task_id]['status'] = 'completed'\n"
+                "            return self.tasks[task_id]\n"
+                "        return None\n"
+                "    def health(self):\n"
+                "        return {'status': 'ok'}\n"
+            ),
+            reason="Fixed complete_task to set status to completed",
+        )],
+        reason="Deterministic mock fix for task_api",
+        confidence=1.0,
+    )
 
 
 class TestP3E2EIntegration(unittest.TestCase):
@@ -174,18 +215,25 @@ class TestP3E2EIntegration(unittest.TestCase):
 
         start_time = time.time()
         service = RepairLoopService()
-        
+
         runner = E2BSandboxRunner() if os.getenv("E2B_API_KEY") else LocalSubprocessSandboxRunner()
-        res: FinalValidationResult = asyncio.run(service.run_repair_loop(
-            self.project_b_id, files_run_b, plan, dod, problem_statement="Task Management API with Defect", custom_runner=runner
-        ))
+
+        if _openrouter_available():
+            res: FinalValidationResult = asyncio.run(service.run_repair_loop(
+                self.project_b_id, files_run_b, plan, dod, problem_statement="Task Management API with Defect", custom_runner=runner
+            ))
+        else:
+            with mock_patch("app.services.repair_loop.generate_targeted_patch", _mock_task_api_fix):
+                res: FinalValidationResult = asyncio.run(service.run_repair_loop(
+                    self.project_b_id, files_run_b, plan, dod, problem_statement="Task Management API with Defect", custom_runner=runner
+                ))
         elapsed = time.time() - start_time
 
         self.assertEqual(res.final_status, "VALIDATED")
         self.assertEqual(res.attempts_used, 2)
         self.assertEqual(len(res.repair_history), 1)
         self.assertEqual(res.repair_history[0].patch_status, "APPLIED")
-        
+
         print(f"[PASS] RUN B (Defective Task API Auto-Repair & Re-Execution) PASSED in {elapsed:.2f}s!")
 
 

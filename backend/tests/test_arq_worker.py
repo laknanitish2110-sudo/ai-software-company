@@ -29,12 +29,20 @@ class TestP47CARQWorker(unittest.TestCase):
 
     def setUp(self):
         redis_coordinator.reset_in_memory()
-        db = asyncio.run(get_db())
-        try:
-            asyncio.run(db.execute("DELETE FROM executions"))
-            asyncio.run(db.commit())
-        finally:
-            asyncio.run(db.close())
+        for attempt in range(5):
+            try:
+                db = asyncio.run(get_db())
+                try:
+                    asyncio.run(db.execute("DELETE FROM executions"))
+                    asyncio.run(db.commit())
+                finally:
+                    asyncio.run(db.close())
+                break
+            except Exception:
+                if attempt < 4:
+                    time.sleep(0.1 * (attempt + 1))
+                else:
+                    raise
 
         email_a = f"arq_user_a_{os.urandom(4).hex()}@example.com"
         email_b = f"arq_user_b_{os.urandom(4).hex()}@example.com"

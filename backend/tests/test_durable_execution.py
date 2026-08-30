@@ -27,15 +27,23 @@ class TestP45DurableExecutionAndCrashRecovery(unittest.TestCase):
         cls.client = TestClient(app)
 
     def setUp(self):
-        email_a = f"dur_a_{os.urandom(4).hex()}@example.com"
-        email_b = f"dur_b_{os.urandom(4).hex()}@example.com"
-        res_a = self.client.post("/api/auth/register", json={"email": email_a, "password": "Password123"})
-        res_b = self.client.post("/api/auth/register", json={"email": email_b, "password": "Password123"})
-        self.token_a = res_a.json()["access_token"]
-        self.token_b = res_b.json()["access_token"]
-        self.user_a_id = res_a.json()["user"]["id"]
-        self.user_b_id = res_b.json()["user"]["id"]
-        
+        for attempt in range(5):
+            try:
+                email_a = f"dur_a_{os.urandom(4).hex()}@example.com"
+                email_b = f"dur_b_{os.urandom(4).hex()}@example.com"
+                res_a = self.client.post("/api/auth/register", json={"email": email_a, "password": "Password123"})
+                res_b = self.client.post("/api/auth/register", json={"email": email_b, "password": "Password123"})
+                self.token_a = res_a.json()["access_token"]
+                self.token_b = res_b.json()["access_token"]
+                self.user_a_id = res_a.json()["user"]["id"]
+                self.user_b_id = res_b.json()["user"]["id"]
+                break
+            except Exception:
+                if attempt < 4:
+                    time.sleep(0.1 * (attempt + 1))
+                else:
+                    raise
+
         rate_limiter.reset_user(self.user_a_id)
         rate_limiter.reset_user(self.user_b_id)
 
