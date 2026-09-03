@@ -454,10 +454,10 @@ async def run_sandbox_execution(
     """
     start_time = time.time()
     try:
-        resource_budget.check_e2b_budget(project_id)
+        await resource_budget.check_e2b_budget(project_id)
         runner = custom_runner or get_sandbox_runner()
         res = await runner.execute(project_id, files, plan)
-        resource_budget.record_e2b_execution(project_id)
+        await resource_budget.record_e2b_execution(project_id)
         return res
     except (SandboxUnavailableError, ResourceBudgetExceededError) as e:
         logger.error(f"Sandbox execution rejected for project {project_id}: {e}")

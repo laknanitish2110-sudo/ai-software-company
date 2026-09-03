@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 MAX_REPAIR_ATTEMPTS = 3
 
 # Idempotency safeguard tracking active repair loops to prevent duplicate executions
+_repair_lock = asyncio.Lock()
 active_repair_loops = set()
 
 
@@ -56,15 +57,15 @@ class RepairLoopService:
     ) -> FinalValidationResult:
         
         # Idempotency check: prevent duplicate concurrent runs for the same project
-        if project_id in active_repair_loops:
-            logger.warning(f"Repair loop already active for project {project_id}. Rejecting duplicate invocation.")
-            return FinalValidationResult(
-                attempts_used=0,
-                final_status="VALIDATION_FAILED",
-                reason=f"Duplicate repair loop invocation rejected for project {project_id}."
-            )
-
-        active_repair_loops.add(project_id)
+        async with _repair_lock:
+            if project_id in active_repair_loops:
+                logger.warning(f"Repair loop already active for project {project_id}. Rejecting duplicate invocation.")
+                return FinalValidationResult(
+                    attempts_used=0,
+                    final_status="VALIDATION_FAILED",
+                    reason=f"Duplicate repair loop invocation rejected for project {project_id}."
+                )
+            active_repair_loops.add(project_id)
 
         try:
             current_files = [dict(f) for f in files] if isinstance(files, list) else []
@@ -92,8 +93,8 @@ class RepairLoopService:
 
                 if attempt > 1:
                     try:
-                        resource_budget.check_repair_budget(project_id)
-                        resource_budget.record_repair_attempt(project_id)
+                        await resource_budget.check_repair_budget(project_id)
+                        await resource_budget.record_repair_attempt(project_id)
                     except ResourceBudgetExceededError as budget_err:
                         logger.warning(f"Repair loop budget exceeded for project {project_id}: {budget_err}")
                         return FinalValidationResult(

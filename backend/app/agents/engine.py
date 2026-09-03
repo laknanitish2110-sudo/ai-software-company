@@ -249,7 +249,7 @@ async def _llm_call_with_retry(
 ) -> tuple[str, str]:
     """Returns (response_text, model_used)."""
     if project_id:
-        resource_budget.check_llm_budget(project_id)
+        await resource_budget.check_llm_budget(project_id)
 
     last_error = None
 
@@ -264,7 +264,7 @@ async def _llm_call_with_retry(
         try:
             text = await _llm_call_single(model, messages, max_tokens, timeout, stream_callback, provider=provider)
             if project_id:
-                resource_budget.record_llm_call(project_id)
+                await resource_budget.record_llm_call(project_id)
             return text, f"{provider}/{model}"
         except Exception as e:
             last_error = e
@@ -311,11 +311,11 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
                 label = ROLE_LABELS.get(AgentRole(role), role)
                 parts.append(f"## {label}'s Approved Output\n```json\n{json.dumps(output['content'], indent=2)}\n```")
 
-    deliverable_type = memory.pop("deliverable_type", "code")
+    deliverable_type = memory.get("deliverable_type", "code")
     if deliverable_type != "code":
         parts.append(f"## Deliverable Type: {deliverable_type.upper()}\n{'Generate n8n workflow JSON (importable into n8n).' if deliverable_type == 'workflow' else 'Generate BOTH code project AND n8n workflow JSON.'}")
 
-    workflow_recs = memory.pop("workflow_recommendations", None)
+    workflow_recs = memory.get("workflow_recommendations", None)
     if workflow_recs:
         try:
             recs = json.loads(workflow_recs) if isinstance(workflow_recs, str) else workflow_recs

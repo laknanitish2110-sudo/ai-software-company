@@ -3,9 +3,9 @@ Project Resource Budget Manager (P4.4)
 
 Tracks and enforces per-project execution limits (LLM calls, E2B microVM executions, repair attempts).
 Fails closed with ResourceBudgetExceededError before invoking expensive external operations.
+Uses Redis for durable, cross-restart budget tracking; falls back to in-memory for dev.
 """
 
-import threading
 import logging
 from typing import Dict, Any, Optional
 
@@ -23,95 +23,80 @@ class ResourceBudgetExceededError(Exception):
     pass
 
 
-import asyncio
 from app.services.redis_coordinator import redis_coordinator
 
 
 class ResourceBudgetManager:
     """
     Manager for tracking per-project resource budgets via Redis coordination.
+    Falls back to in-memory counters when Redis is unavailable (dev mode).
     """
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._budgets: Dict[str, Dict[str, int]] = {}
 
-    def _get_project_counters(self, project_id: str) -> Dict[str, int]:
-        if project_id not in self._budgets:
-            self._budgets[project_id] = {
-                "llm_calls": 0,
-                "e2b_executions": 0,
-                "repair_attempts": 0,
-            }
-        return self._budgets[project_id]
-
-    def check_llm_budget(self, project_id: str, max_limit: Optional[int] = None):
+    async def check_llm_budget(self, project_id: str, max_limit: Optional[int] = None):
         limit = max_limit if max_limit is not None else MAX_LLM_CALLS_PER_PROJECT
-        with self._lock:
-            counters = self._get_project_counters(project_id)
-            if counters["llm_calls"] >= limit:
-                msg = f"RESOURCE_BUDGET_EXCEEDED: Project {project_id} reached max LLM calls limit ({counters['llm_calls']}/{limit})."
-                logger.warning(msg)
-                raise ResourceBudgetExceededError(msg)
+        allowed, current = await redis_coordinator.consume_budget(project_id, "llm_calls", limit, amount=0)
+        if not allowed:
+            raise ResourceBudgetExceededError(
+                f"RESOURCE_BUDGET_EXCEEDED: Project {project_id} reached max LLM calls limit ({current}/{limit})."
+            )
 
-    def record_llm_call(self, project_id: str):
-        with self._lock:
-            counters = self._get_project_counters(project_id)
-            counters["llm_calls"] += 1
+    async def record_llm_call(self, project_id: str):
+        await redis_coordinator.consume_budget(project_id, "llm_calls", MAX_LLM_CALLS_PER_PROJECT, amount=1)
 
-    def check_e2b_budget(self, project_id: str, max_limit: Optional[int] = None):
+    async def check_e2b_budget(self, project_id: str, max_limit: Optional[int] = None):
         limit = max_limit if max_limit is not None else MAX_E2B_EXECUTIONS_PER_PROJECT
-        with self._lock:
-            counters = self._get_project_counters(project_id)
-            if counters["e2b_executions"] >= limit:
-                msg = f"RESOURCE_BUDGET_EXCEEDED: Project {project_id} reached max E2B executions limit ({counters['e2b_executions']}/{limit})."
-                logger.warning(msg)
-                raise ResourceBudgetExceededError(msg)
+        allowed, current = await redis_coordinator.consume_budget(project_id, "e2b_executions", limit, amount=0)
+        if not allowed:
+            raise ResourceBudgetExceededError(
+                f"RESOURCE_BUDGET_EXCEEDED: Project {project_id} reached max E2B executions limit ({current}/{limit})."
+            )
 
-    def record_e2b_execution(self, project_id: str):
-        with self._lock:
-            counters = self._get_project_counters(project_id)
-            counters["e2b_executions"] += 1
+    async def record_e2b_execution(self, project_id: str):
+        await redis_coordinator.consume_budget(project_id, "e2b_executions", MAX_E2B_EXECUTIONS_PER_PROJECT, amount=1)
 
-    def check_repair_budget(self, project_id: str, max_limit: Optional[int] = None):
+    async def check_repair_budget(self, project_id: str, max_limit: Optional[int] = None):
         limit = max_limit if max_limit is not None else MAX_REPAIR_ATTEMPTS_HARD_LIMIT
-        with self._lock:
-            counters = self._get_project_counters(project_id)
-            if counters["repair_attempts"] >= limit:
-                msg = f"RESOURCE_BUDGET_EXCEEDED: Project {project_id} reached max repair attempts ceiling ({counters['repair_attempts']}/{limit})."
-                logger.warning(msg)
-                raise ResourceBudgetExceededError(msg)
+        allowed, current = await redis_coordinator.consume_budget(project_id, "repair_attempts", limit, amount=0)
+        if not allowed:
+            raise ResourceBudgetExceededError(
+                f"RESOURCE_BUDGET_EXCEEDED: Project {project_id} reached max repair attempts ceiling ({current}/{limit})."
+            )
 
-    def record_repair_attempt(self, project_id: str):
-        with self._lock:
-            counters = self._get_project_counters(project_id)
-            counters["repair_attempts"] += 1
+    async def record_repair_attempt(self, project_id: str):
+        await redis_coordinator.consume_budget(project_id, "repair_attempts", MAX_REPAIR_ATTEMPTS_HARD_LIMIT, amount=1)
 
-    def get_budget_status(self, project_id: str) -> Dict[str, Any]:
-        with self._lock:
-            counters = dict(self._get_project_counters(project_id))
-            status = "OK"
-            if (
-                counters["llm_calls"] >= MAX_LLM_CALLS_PER_PROJECT
-                or counters["e2b_executions"] >= MAX_E2B_EXECUTIONS_PER_PROJECT
-                or counters["repair_attempts"] >= MAX_REPAIR_ATTEMPTS_HARD_LIMIT
-            ):
-                status = "RESOURCE_BUDGET_EXCEEDED"
+    async def get_budget_status(self, project_id: str) -> Dict[str, Any]:
+        llm = 0
+        e2b = 0
+        repair = 0
+        try:
+            _, llm = await redis_coordinator.consume_budget(project_id, "llm_calls", MAX_LLM_CALLS_PER_PROJECT, amount=0)
+            _, e2b = await redis_coordinator.consume_budget(project_id, "e2b_executions", MAX_E2B_EXECUTIONS_PER_PROJECT, amount=0)
+            _, repair = await redis_coordinator.consume_budget(project_id, "repair_attempts", MAX_REPAIR_ATTEMPTS_HARD_LIMIT, amount=0)
+        except Exception:
+            pass
 
-            return {
-                "project_id": project_id,
-                "llm_calls": counters["llm_calls"],
-                "e2b_executions": counters["e2b_executions"],
-                "repair_attempts": counters["repair_attempts"],
-                "max_llm_calls": MAX_LLM_CALLS_PER_PROJECT,
-                "max_e2b_executions": MAX_E2B_EXECUTIONS_PER_PROJECT,
-                "max_repair_attempts": MAX_REPAIR_ATTEMPTS_HARD_LIMIT,
-                "budget_status": status,
-            }
+        status = "OK"
+        if (
+            llm >= MAX_LLM_CALLS_PER_PROJECT
+            or e2b >= MAX_E2B_EXECUTIONS_PER_PROJECT
+            or repair >= MAX_REPAIR_ATTEMPTS_HARD_LIMIT
+        ):
+            status = "RESOURCE_BUDGET_EXCEEDED"
+
+        return {
+            "project_id": project_id,
+            "llm_calls": llm,
+            "e2b_executions": e2b,
+            "repair_attempts": repair,
+            "max_llm_calls": MAX_LLM_CALLS_PER_PROJECT,
+            "max_e2b_executions": MAX_E2B_EXECUTIONS_PER_PROJECT,
+            "max_repair_attempts": MAX_REPAIR_ATTEMPTS_HARD_LIMIT,
+            "budget_status": status,
+        }
 
     def reset_project(self, project_id: str):
-        with self._lock:
-            self._budgets.pop(project_id, None)
-            redis_coordinator.reset_in_memory()
+        redis_coordinator.reset_in_memory()
 
 
 # Global singleton instance

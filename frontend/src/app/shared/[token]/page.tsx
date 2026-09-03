@@ -113,19 +113,19 @@ export default function SharedProjectPage({ params }: { params: Promise<{ token:
 
       {/* Download Buttons */}
       <div className="flex gap-3 mb-8 flex-wrap animate-fade-in" style={{ animationDelay: "0.1s" }}>
-        <a href={`${API_BASE}/projects/${project.id}/download/code`}
+        <a href={`${API_BASE}/shared/${token}/download/code`}
            target="_blank" rel="noopener noreferrer"
            className="btn-success text-sm py-2.5 px-5 flex items-center gap-2"
            style={{ textDecoration: "none" }}>
           <span>📦</span> Download Code
         </a>
-        <a href={`${API_BASE}/projects/${project.id}/download/pptx`}
+        <a href={`${API_BASE}/shared/${token}/download/pptx`}
            target="_blank" rel="noopener noreferrer"
            className="btn-primary text-sm py-2.5 px-5 flex items-center gap-2"
            style={{ textDecoration: "none" }}>
           <span>📊</span> Presentation
         </a>
-        <a href={`${API_BASE}/projects/${project.id}/download/docx`}
+        <a href={`${API_BASE}/shared/${token}/download/docx`}
            target="_blank" rel="noopener noreferrer"
            className="btn-ghost text-sm py-2.5 px-5 flex items-center gap-2"
            style={{ textDecoration: "none" }}>

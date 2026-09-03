@@ -123,8 +123,6 @@ class DBWrapper:
             res.append(parts[-1])
             sql = "".join(res)
         
-        # Dialect adjustments
-        sql = sql.replace("ON CONFLICT DO NOTHING", "ON CONFLICT (project_id, agent_role) DO NOTHING")
         return sql
 
 
@@ -136,6 +134,8 @@ async def get_db() -> DBWrapper:
     else:
         db = await aiosqlite.connect(DATABASE_PATH)
         db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         return DBWrapper("sqlite", db)
 
 
@@ -205,6 +205,14 @@ async def init_db():
                     FOREIGN KEY (project_id) REFERENCES projects(id),
                     UNIQUE(project_id, key)
                 );
+
+                CREATE TABLE IF NOT EXISTS share_links (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    token TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (project_id) REFERENCES projects(id)
+                );
             """)
         else:
             # PostgreSQL DDL
@@ -266,6 +274,13 @@ async def init_db():
                     updated_at TEXT NOT NULL,
                     CONSTRAINT unq_mem_proj_key UNIQUE(project_id, key)
                 );
+
+                CREATE TABLE IF NOT EXISTS share_links (
+                    id VARCHAR(255) PRIMARY KEY,
+                    project_id VARCHAR(255) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    token VARCHAR(255) NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL
+                );
             """)
         await db.commit()
     finally:
@@ -283,7 +298,7 @@ def now_iso() -> str:
 
 
 def new_id() -> str:
-    return uuid.uuid4().hex[:12]
+    return uuid.uuid4().hex[:16]
 
 
 # --- USER DATABASE FUNCTIONS ---
@@ -556,5 +571,32 @@ async def list_projects(user_id: str | None = None) -> list[dict]:
             cursor = await db.execute("SELECT * FROM projects ORDER BY created_at DESC")
         rows = await cursor.fetchall()
         return rows
+    finally:
+        await db.close()
+
+
+async def create_share_link(project_id: str, token: str) -> dict:
+    db = await get_db()
+    try:
+        link_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            "INSERT INTO share_links (id, project_id, token, created_at) VALUES (?, ?, ?, ?)",
+            (link_id, project_id, token, ts),
+        )
+        await db.commit()
+        return {"id": link_id, "project_id": project_id, "token": token, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_project_by_share_token(token: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT p.* FROM projects p JOIN share_links sl ON p.id = sl.project_id WHERE sl.token = ?",
+            (token,),
+        )
+        return await cursor.fetchone()
     finally:
         await db.close()

@@ -64,10 +64,13 @@ def get_jwt_secret(env: str | None = None, secret_override: str | None = None) -
 def validate_jwt_config(env: str | None = None, secret: str | None = None):
     get_jwt_secret(env, secret)
 
-try:
+if get_environment() == "production":
     JWT_SECRET = get_jwt_secret()
-except ValueError:
-    JWT_SECRET = DEFAULT_DEV_JWT_SECRET
+else:
+    try:
+        JWT_SECRET = get_jwt_secret()
+    except ValueError:
+        JWT_SECRET = DEFAULT_DEV_JWT_SECRET
 
 VALID_SANDBOX_MODES = ("e2b_required", "local_dev")
 

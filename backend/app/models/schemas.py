@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from enum import Enum
 from typing import Any
 
@@ -57,7 +57,7 @@ WORKING_STAGES = {
 
 
 class CreateProjectRequest(BaseModel):
-    problem_statement: str
+    problem_statement: str = Field(..., min_length=10, max_length=5000)
     auto_approve: bool = False
 
 

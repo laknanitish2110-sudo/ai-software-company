@@ -483,6 +483,23 @@ class RedisCoordinator:
             except Exception:
                 pass
 
+    async def ping(self) -> bool:
+        client = await self._get_client()
+        if client is None:
+            return False
+        try:
+            return await client.ping()
+        except Exception:
+            return False
+
+    async def close(self):
+        if self._client is not None:
+            try:
+                await self._client.close()
+            except Exception:
+                pass
+            self._client = None
+
     def reset_in_memory(self):
         """Helper for resetting unit testing fallback state."""
         self._in_memory_fallback.reset()

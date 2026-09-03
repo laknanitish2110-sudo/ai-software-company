@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import StartProject from "@/components/StartProject";
+import AuthGuard from "@/components/AuthGuard";
 import { useToast } from "@/components/Toast";
 import { createProject, getProjects, getDemoStatus, loadDemoCache } from "@/lib/api";
 
@@ -65,12 +66,14 @@ export default function Home() {
   }
 
   return (
-    <StartProject
-      onStart={handleStart}
-      loading={loading}
-      recentProjects={recentProjects}
-      hasDemo={hasDemo}
-      onLoadDemo={handleLoadDemo}
-    />
+    <AuthGuard>
+      <StartProject
+        onStart={handleStart}
+        loading={loading}
+        recentProjects={recentProjects}
+        hasDemo={hasDemo}
+        onLoadDemo={handleLoadDemo}
+      />
+    </AuthGuard>
   );
 }

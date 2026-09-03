@@ -1,4 +1,5 @@
 import json
+import asyncio
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
 
@@ -19,6 +20,13 @@ from app.services.workflow_generator import get_workflow_json_path, generate_wor
 from app.services.webhook import send_share_request
 from app.services.demo_cache import save_demo, load_demo, has_demo, get_demo_deliverable
 from app.core.config import N8N_WEBHOOK_URL
+from app.services.workflow_search import (
+    analyze_for_problem,
+    search_workflows,
+    get_category_stats,
+    search_by_category,
+    get_workflow_detail,
+)
 from app.core.auth import (
     hash_password,
     verify_password,
@@ -40,6 +48,10 @@ from app.core.database import (
     get_db,
     new_id,
     now_iso,
+    create_share_link,
+    get_project_by_share_token,
+    save_agent_output,
+    set_memory,
 )
 
 router = APIRouter()
@@ -63,6 +75,12 @@ class LoginRequest(BaseModel):
 async def register(req: RegisterRequest):
     if not req.email or not req.password:
         raise HTTPException(400, "Email and password are required")
+    try:
+        allowed, retry_after = await rate_limiter.check_rate_limit(user_id=req.email, action="auth", limit=5, window_seconds=60)
+        if not allowed:
+            return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+    except Exception:
+        pass
     existing = await get_user_by_email(req.email)
     if existing:
         raise HTTPException(400, "User email is already registered")
@@ -76,6 +94,12 @@ async def register(req: RegisterRequest):
 async def login(req: LoginRequest):
     if not req.email or not req.password:
         raise HTTPException(400, "Email and password are required")
+    try:
+        allowed, retry_after = await rate_limiter.check_rate_limit(user_id=req.email, action="auth", limit=5, window_seconds=60)
+        if not allowed:
+            return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+    except Exception:
+        pass
     user = await get_user_by_email(req.email)
     if not user or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
@@ -150,7 +174,7 @@ async def create_project_endpoint(req: CreateProjectRequest, current_user: dict 
         raise HTTPException(400, str(e))
     except Exception as e:
         logger.error(f"Error creating project for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(500, f"Failed to create project: {str(e)}")
+        raise HTTPException(500, "Internal server error")
 
 
 from app.services.task_queue import task_queue, STATUS_QUEUED, STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLING, STATUS_CANCELLED
@@ -160,7 +184,7 @@ from app.core.config import get_environment, REDIS_URL
 @router.get("/projects/{project_id}/budget")
 async def get_project_budget_endpoint(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
-    return resource_budget.get_budget_status(project_id)
+    return await resource_budget.get_budget_status(project_id)
 
 
 @router.get("/projects/{project_id}/executions")
@@ -218,7 +242,7 @@ async def cancel_execution_endpoint(execution_id: str, current_user: dict = Depe
         return JSONResponse(status_code=202, content={"status": STATUS_CANCELLING, "message": "Cancellation request accepted"})
     except Exception as db_err:
         logger.error(f"PostgreSQL error during cancellation of {execution_id}: {db_err}")
-        return JSONResponse(status_code=500, content={"error": "DATABASE_ERROR", "message": str(db_err)})
+        return JSONResponse(status_code=500, content={"error": "DATABASE_ERROR", "message": "Internal server error"})
 
 
 @router.get("/projects")
@@ -283,7 +307,7 @@ async def call_employee_endpoint(project_id: str, req: CallEmployeeRequest, curr
         return {"role": req.role.value, "response": response}
     except Exception as e:
         logger.error(f"Error calling employee {req.role.value} for project {project_id}: {e}", exc_info=True)
-        raise HTTPException(500, f"Failed to call employee {req.role.value}: {str(e)}")
+        raise HTTPException(500, "Internal server error")
 
 
 @router.get("/projects/{project_id}/conversation/{role}")
@@ -471,6 +495,83 @@ async def share_project(project_id: str, req: ShareRequest, current_user: dict =
     }
 
 
+import secrets
+
+
+class ReviseRequest(BaseModel):
+    role: str
+    feedback: str
+
+
+@router.post("/projects/{project_id}/revise")
+async def revise_agent_endpoint(project_id: str, req: ReviseRequest, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    try:
+        agent_role = AgentRole(req.role)
+    except ValueError:
+        raise HTTPException(400, f"Invalid role: {req.role}")
+    outputs = await get_project_outputs(project_id)
+    target_output = None
+    for o in reversed(outputs):
+        if o["role"] == req.role:
+            target_output = o
+            break
+    if not target_output:
+        raise HTTPException(404, f"No output found for role {req.role}")
+    await orchestrator.handle_approval(project_id, target_output["id"], approved=False, feedback=req.feedback)
+    return {"status": "revision_started", "role": req.role}
+
+
+@router.post("/projects/{project_id}/share-link")
+async def generate_share_link_endpoint(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    token = secrets.token_urlsafe(32)
+    await create_share_link(project_id, token)
+    return {"token": token}
+
+
+@router.get("/shared/{token}")
+async def get_shared_project(token: str):
+    project = await get_project_by_share_token(token)
+    if not project:
+        raise HTTPException(404, "Shared project not found")
+    project_id = project["id"]
+    outputs = await get_project_outputs(project_id)
+    memory = await get_memory(project_id)
+    return {
+        "project": dict(project),
+        "outputs": outputs,
+        "memory": memory,
+        "current_agent": None,
+        "pending_approval": False,
+    }
+
+
+@router.get("/shared/{token}/download/{file_type}")
+async def download_shared_file(token: str, file_type: str):
+    project = await get_project_by_share_token(token)
+    if not project:
+        raise HTTPException(404, "Shared project not found")
+    project_id = project["id"]
+    if file_type == "code":
+        path = get_project_zip_path(project_id) or get_demo_deliverable("zip")
+        if not path:
+            raise HTTPException(404, "No generated code found")
+        return FileResponse(path, media_type="application/zip", filename=f"project-{project_id}.zip")
+    elif file_type == "pptx":
+        path = get_pptx_path(project_id) or get_demo_deliverable("pptx")
+        if not path:
+            raise HTTPException(404, "No presentation found")
+        return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation", filename=f"project-{project_id}.pptx")
+    elif file_type == "docx":
+        path = get_docx_path(project_id) or get_demo_deliverable("docx")
+        if not path:
+            raise HTTPException(404, "No report found")
+        return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=f"project-{project_id}.docx")
+    else:
+        raise HTTPException(400, f"Unknown file type: {file_type}")
+
+
 @router.post("/demo/save/{project_id}")
 async def save_demo_cache(project_id: str):
     result = await save_demo(project_id)
@@ -494,19 +595,22 @@ async def load_demo_cache():
                 "INSERT INTO projects (id, problem_statement, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (pid, project.get("problem_statement", ""), project.get("status", "completed"), ts, project.get("updated_at", ts)),
             )
-            for out in data.get("outputs", []):
-                await db.execute(
-                    "INSERT OR IGNORE INTO agent_outputs (id, project_id, role, content, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (out.get("id", new_id()), pid, out.get("role", ""), json.dumps(out.get("content", {})) if isinstance(out.get("content"), dict) else out.get("content", "{}"), out.get("status", "approved"), out.get("created_at", ts)),
-                )
-            for key, value in data.get("memory", {}).items():
-                await db.execute(
-                    "INSERT OR IGNORE INTO shared_memory (id, project_id, key, value, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (new_id(), pid, key, value if isinstance(value, str) else json.dumps(value), "demo", ts),
-                )
             await db.commit()
         finally:
             await db.close()
+
+        for out in data.get("outputs", []):
+            content = out.get("content", {})
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except Exception:
+                    content = {"raw": content}
+            await save_agent_output(pid, out.get("role", ""), content)
+
+        for key, value in data.get("memory", {}).items():
+            val_str = value if isinstance(value, str) else json.dumps(value)
+            await set_memory(pid, key, val_str, "demo")
 
         for out in data.get("outputs", []):
             if out.get("role") == "engineer" and isinstance(out.get("content"), dict):

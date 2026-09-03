@@ -78,15 +78,16 @@ class Orchestrator:
         if execution_id:
             await set_memory(project_id, "active_execution_id", execution_id, "system")
 
+        lock_token = await self.register_project_execution(project_id)
+
         async def _run_pipeline():
-            token = None
+            token = lock_token
             heartbeat = None
             try:
                 if execution_id and await redis_coordinator.is_cancelled(execution_id):
                     from app.services.task_queue import ExecutionCancelledError
                     raise ExecutionCancelledError(f"Cancellation requested for execution {execution_id}")
 
-                token = await self.register_project_execution(project_id)
                 heartbeat = LockHeartbeat(project_id, token, ttl_seconds=60, interval_seconds=15)
                 heartbeat.start()
                 # Step 1: CEO analyzes problem
@@ -192,7 +193,7 @@ class Orchestrator:
                 async def _stream_to_ws(token: str):
                     nonlocal token_count
                     token_count += 1
-                    if token_count % 8 == 0:
+                    if token_count % 3 == 0:
                         await self._notify("agent_stream", project_id, {
                             "role": role.value,
                             "token": token,
@@ -243,7 +244,7 @@ class Orchestrator:
                             files=files,
                             plan=plan,
                             dod=dod,
-                            problem_statement=project.get("problem_statement", "") if 'project' in locals() else "",
+                            problem_statement=(await get_project(project_id) or {}).get("problem_statement", ""),
                             engineer_output=eng_content,
                             architect_output=arch_content,
                             notify_cb=notify_bridge,
