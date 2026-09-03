@@ -103,6 +103,45 @@ export async function getProjects(): Promise<Project[]> {
   return checkedJson(res, "Failed to load projects");
 }
 
+export async function deleteProject(projectId: string): Promise<{ status: string; deleted: boolean }> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to delete project");
+}
+
+export async function getProjectBudget(
+  projectId: string
+): Promise<Record<string, unknown>> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/budget`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load budget");
+}
+
+export async function getProjectExecutions(
+  projectId: string
+): Promise<Record<string, unknown>[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/executions`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load executions");
+}
+
+export async function cancelExecution(
+  executionId: string
+): Promise<{ status: string; message: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/cancel`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to cancel execution");
+}
+
+export async function listGeneratedFiles(
+  projectId: string
+): Promise<{ project_id: string; files: string[]; count: number }> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/files`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to list files");
+}
+
 export async function getProjectState(
   projectId: string
 ): Promise<ProjectState> {

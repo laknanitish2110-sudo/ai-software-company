@@ -447,7 +447,7 @@ class ShareRequest(BaseModel):
 
 
 @router.get("/integrations/status")
-async def integration_status():
+async def integration_status(current_user: dict = Depends(get_current_user)):
     return {
         "n8n_connected": bool(N8N_WEBHOOK_URL),
         "webhook_url_set": bool(N8N_WEBHOOK_URL),
@@ -573,13 +573,14 @@ async def download_shared_file(token: str, file_type: str):
 
 
 @router.post("/demo/save/{project_id}")
-async def save_demo_cache(project_id: str):
+async def save_demo_cache(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     result = await save_demo(project_id)
     return result
 
 
 @router.get("/demo/load")
-async def load_demo_cache():
+async def load_demo_cache(current_user: dict = Depends(get_current_user)):
     data = load_demo()
     if not data:
         raise HTTPException(404, "No demo cache found. Run a successful pipeline first, then save it.")
@@ -645,7 +646,7 @@ async def demo_status():
 
 
 @router.get("/demo/download/{file_type}")
-async def download_demo_deliverable(file_type: str):
+async def download_demo_deliverable(file_type: str, current_user: dict = Depends(get_current_user)):
     path = get_demo_deliverable(file_type)
     if not path:
         raise HTTPException(404, f"No cached {file_type} found")
