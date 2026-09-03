@@ -361,10 +361,6 @@ class Orchestrator:
                     "message": f"Pipeline execution error: {clean_msg}"
                 })
             finally:
-                if heartbeat:
-                    await heartbeat.stop()
-                if token:
-                    await redis_coordinator.release_lock(project_id, token)
                 self._active_executions.discard(project_id)
 
         task = asyncio.create_task(_run())

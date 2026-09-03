@@ -253,10 +253,17 @@ async def _llm_call_with_retry(
 
     last_error = None
 
-    def _is_fatal(e: Exception) -> bool:
-        if isinstance(e, (RateLimitError, AuthenticationError)):
+    def _is_rate_limit(e: Exception) -> bool:
+        if isinstance(e, RateLimitError):
             return True
-        if isinstance(e, APIStatusError) and e.status_code in (401, 402, 403, 429):
+        if isinstance(e, APIStatusError) and e.status_code == 429:
+            return True
+        return False
+
+    def _is_fatal(e: Exception) -> bool:
+        if isinstance(e, AuthenticationError):
+            return True
+        if isinstance(e, APIStatusError) and e.status_code in (401, 402, 403):
             return True
         return False
 
@@ -271,10 +278,10 @@ async def _llm_call_with_retry(
             clean_err = _sanitize_error(str(e))
             logger.warning(f"LLM call attempt {attempt + 1}/{MAX_RETRIES} failed ({provider}:{model}): {clean_err}")
             if _is_fatal(e):
-                logger.warning(f"Fatal error (quota/auth) — skipping remaining retries for {provider}:{model}")
+                logger.warning(f"Fatal error (auth) — skipping remaining retries for {provider}:{model}")
                 break
             if attempt < MAX_RETRIES - 1:
-                delay = RETRY_DELAYS[attempt]
+                delay = RETRY_DELAYS[attempt] * (3 if _is_rate_limit(e) else 1)
                 logger.info(f"Retrying in {delay}s...")
                 await asyncio.sleep(delay)
 

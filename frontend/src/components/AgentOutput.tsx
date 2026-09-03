@@ -90,6 +90,12 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
+function safeText(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object") return Object.values(v).map(safeText).join(" — ");
+  return String(v ?? "");
+}
+
 function PeerReviewSection({ review }: { review: PeerReview }) {
   const reviewerConfig = AGENT_CONFIG[review.reviewer];
 
@@ -113,7 +119,7 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
         </div>
       )}
 
-      <div className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>{review.overall_assessment}</div>
+      <div className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>{safeText(review.overall_assessment)}</div>
 
       <div className="grid grid-cols-1 gap-3">
         {review.strengths.length > 0 && (
@@ -122,7 +128,7 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
             {review.strengths.map((s, i) => (
               <div key={i} className="flex items-start gap-2 text-sm mb-1">
                 <span style={{ color: "var(--success)" }} className="shrink-0 mt-0.5">+</span>
-                <span style={{ color: "var(--text-secondary)" }}>{s}</span>
+                <span style={{ color: "var(--text-secondary)" }}>{safeText(s)}</span>
               </div>
             ))}
           </div>
@@ -134,7 +140,7 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
             {review.concerns.map((c, i) => (
               <div key={i} className="flex items-start gap-2 text-sm mb-1">
                 <span style={{ color: "var(--warning)" }} className="shrink-0 mt-0.5">!</span>
-                <span style={{ color: "var(--text-secondary)" }}>{c}</span>
+                <span style={{ color: "var(--text-secondary)" }}>{safeText(c)}</span>
               </div>
             ))}
           </div>
@@ -146,7 +152,7 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
             {review.suggestions.map((s, i) => (
               <div key={i} className="flex items-start gap-2 text-sm mb-1">
                 <span style={{ color: "var(--info)" }} className="shrink-0 mt-0.5">~</span>
-                <span style={{ color: "var(--text-secondary)" }}>{s}</span>
+                <span style={{ color: "var(--text-secondary)" }}>{safeText(s)}</span>
               </div>
             ))}
           </div>
