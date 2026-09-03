@@ -283,6 +283,22 @@ async def init_db():
                 );
             """)
         await db.commit()
+
+        # Migrate: add user_id to projects if missing (pre-auth databases)
+        if db.backend_type == "sqlite":
+            cols = [r["name"] for r in await (await db.execute("PRAGMA table_info(projects)")).fetchall()]
+            if "user_id" not in cols:
+                await db.execute("ALTER TABLE projects ADD COLUMN user_id TEXT NOT NULL DEFAULT 'legacy_owner'")
+                await db.commit()
+                logger.info("Migration: added user_id column to projects table")
+        else:
+            await db.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE projects ADD COLUMN user_id VARCHAR(255) NOT NULL DEFAULT 'legacy_owner';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+            await db.commit()
     finally:
         await db.close()
 
