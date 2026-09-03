@@ -199,7 +199,10 @@ async def _llm_call_single(
                         token = chunk.choices[0].delta.content
                         collected.append(token)
                         await stream_callback(token)
-        return "".join(collected)
+        result = "".join(collected)
+        if not result.strip():
+            raise RuntimeError("Model returned empty response after streaming")
+        return result
     else:
         if is_async_client:
             response = await create_func(

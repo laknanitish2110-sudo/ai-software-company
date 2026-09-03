@@ -115,7 +115,7 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
           background: "var(--bg-elevated)",
           borderLeft: "3px solid var(--accent)"
         }}>
-          &ldquo;{review.team_note}&rdquo;
+          &ldquo;{safeText(review.team_note)}&rdquo;
         </div>
       )}
 
@@ -163,13 +163,13 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
             {review.alignment_check && (
               <div className="mb-2">
                 <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>Alignment</div>
-                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{review.alignment_check}</div>
+                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{safeText(review.alignment_check)}</div>
               </div>
             )}
             {review.hackathon_readiness && (
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>Hackathon readiness</div>
-                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{review.hackathon_readiness}</div>
+                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{safeText(review.hackathon_readiness)}</div>
               </div>
             )}
           </div>
