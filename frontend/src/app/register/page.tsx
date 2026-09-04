@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/Toast";
+import SocialLoginButtons from "@/components/SocialLoginButtons";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -92,6 +93,7 @@ export default function RegisterPage() {
           >
             {loading ? "Creating account..." : "Create Account"}
           </button>
+          <SocialLoginButtons />
         </form>
         <p className="text-center text-sm text-[var(--text-muted)] mt-4">
           Already have an account?{" "}

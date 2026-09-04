@@ -72,6 +72,14 @@ else:
     except ValueError:
         JWT_SECRET = DEFAULT_DEV_JWT_SECRET
 
+# OAuth Provider Config
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "").strip()
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "").strip()
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+OAUTH_FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").strip().rstrip("/")
+OAUTH_BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").strip().rstrip("/")
+
 VALID_SANDBOX_MODES = ("e2b_required", "local_dev")
 
 def validate_sandbox_config(env: str | None = None, mode: str | None = None):

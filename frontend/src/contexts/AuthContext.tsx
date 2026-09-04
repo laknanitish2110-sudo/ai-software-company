@@ -7,6 +7,9 @@ interface User {
   id: string;
   email: string;
   created_at: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  oauth_provider?: string | null;
 }
 
 interface AuthContextValue {
@@ -16,6 +19,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  handleOAuthCallback: (token: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -25,6 +29,7 @@ const AuthContext = createContext<AuthContextValue>({
   login: async () => {},
   register: async () => {},
   logout: () => {},
+  handleOAuthCallback: async () => {},
 });
 
 export function useAuth() {
@@ -114,8 +119,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [router]);
 
+  const handleOAuthCallback = useCallback(async (oauthToken: string) => {
+    localStorage.setItem(TOKEN_KEY, oauthToken);
+    setToken(oauthToken);
+
+    const res = await authFetch(`${API_BASE}/auth/me`, {
+      headers: { Authorization: `Bearer ${oauthToken}` },
+    });
+    if (!res.ok) {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      setToken(null);
+      setUser(null);
+      throw new Error("Failed to fetch user profile");
+    }
+    const data = await res.json();
+    const userData: User = data.user;
+    localStorage.setItem(USER_KEY, JSON.stringify(userData));
+    setUser(userData);
+  }, []);
+
   return (
-    <AuthContext value={{ user, token, loading, login, register, logout }}>
+    <AuthContext value={{ user, token, loading, login, register, logout, handleOAuthCallback }}>
       {children}
     </AuthContext>
   );

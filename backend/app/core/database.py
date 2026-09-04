@@ -338,6 +338,26 @@ async def init_db():
                 END $$;
             """)
             await db.commit()
+
+        # Migrate: add OAuth columns to users table
+        if db.backend_type == "sqlite":
+            user_cols = [r["name"] for r in await (await db.execute("PRAGMA table_info(users)")).fetchall()]
+            if "oauth_provider" not in user_cols:
+                await db.execute("ALTER TABLE users ADD COLUMN oauth_provider TEXT")
+                await db.execute("ALTER TABLE users ADD COLUMN oauth_provider_id TEXT")
+                await db.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+                await db.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT")
+                await db.commit()
+                logger.info("Migration: added OAuth columns to users table")
+        else:
+            for col, col_type in [("oauth_provider", "VARCHAR(255)"), ("oauth_provider_id", "VARCHAR(255)"), ("display_name", "VARCHAR(255)"), ("avatar_url", "TEXT")]:
+                await db.execute(f"""
+                    DO $$ BEGIN
+                        ALTER TABLE users ADD COLUMN {col} {col_type};
+                    EXCEPTION WHEN duplicate_column THEN NULL;
+                    END $$;
+                """)
+            await db.commit()
     finally:
         await db.close()
 
@@ -388,9 +408,68 @@ async def get_user_by_email(email: str) -> dict | None:
 async def get_user_by_id(user_id: str) -> dict | None:
     db = await get_db()
     try:
-        cursor = await db.execute("SELECT id, email, created_at FROM users WHERE id = ?", (user_id,))
+        cursor = await db.execute(
+            "SELECT id, email, created_at, oauth_provider, display_name, avatar_url FROM users WHERE id = ?",
+            (user_id,),
+        )
         row = await cursor.fetchone()
         return row
+    finally:
+        await db.close()
+
+
+async def get_user_by_oauth(provider: str, provider_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT id, email, created_at, oauth_provider, display_name, avatar_url "
+            "FROM users WHERE oauth_provider = ? AND oauth_provider_id = ?",
+            (provider, provider_id),
+        )
+        return await cursor.fetchone()
+    finally:
+        await db.close()
+
+
+async def create_oauth_user(
+    email: str, provider: str, provider_id: str,
+    display_name: str | None = None, avatar_url: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        user_id = new_id()
+        ts = now_iso()
+        norm_email = email.strip().lower()
+        await db.execute(
+            "INSERT INTO users (id, email, password_hash, created_at, "
+            "oauth_provider, oauth_provider_id, display_name, avatar_url) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, norm_email, "oauth:no_password", ts,
+             provider, provider_id, display_name, avatar_url),
+        )
+        await db.commit()
+        return {
+            "id": user_id, "email": norm_email, "created_at": ts,
+            "display_name": display_name, "avatar_url": avatar_url,
+            "oauth_provider": provider,
+        }
+    finally:
+        await db.close()
+
+
+async def link_oauth_to_user(
+    user_id: str, provider: str, provider_id: str,
+    display_name: str | None = None, avatar_url: str | None = None,
+):
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE users SET oauth_provider = ?, oauth_provider_id = ?, "
+            "display_name = COALESCE(?, display_name), "
+            "avatar_url = COALESCE(?, avatar_url) WHERE id = ?",
+            (provider, provider_id, display_name, avatar_url, user_id),
+        )
+        await db.commit()
     finally:
         await db.close()
 

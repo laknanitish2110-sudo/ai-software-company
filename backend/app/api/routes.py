@@ -2,10 +2,14 @@ import os
 import json
 import asyncio
 import logging
+import secrets
+import time
+from urllib.parse import urlencode
+import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
 
 logger = logging.getLogger(__name__)
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from app.models.schemas import (
     CreateProjectRequest,
@@ -20,7 +24,12 @@ from app.services.docx_generator import get_docx_path, generate_docx
 from app.services.workflow_generator import get_workflow_json_path, generate_workflow_json
 from app.services.webhook import send_share_request
 from app.services.demo_cache import save_demo, load_demo, has_demo, get_demo_deliverable
-from app.core.config import N8N_WEBHOOK_URL
+from app.core.config import (
+    N8N_WEBHOOK_URL,
+    GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET,
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+    OAUTH_FRONTEND_URL, OAUTH_BACKEND_URL,
+)
 from app.services.workflow_search import (
     analyze_for_problem,
     search_workflows,
@@ -53,6 +62,9 @@ from app.core.database import (
     get_project_by_share_token,
     save_agent_output,
     set_memory,
+    get_user_by_oauth,
+    create_oauth_user,
+    link_oauth_to_user,
 )
 
 router = APIRouter()
@@ -106,7 +118,11 @@ async def login(req: LoginRequest):
         raise HTTPException(401, "Invalid email or password")
     token = create_access_token({"sub": user["id"], "email": user["email"]})
     return {
-        "user": {"id": user["id"], "email": user["email"], "created_at": user["created_at"]},
+        "user": {
+            "id": user["id"], "email": user["email"], "created_at": user["created_at"],
+            "display_name": user.get("display_name"), "avatar_url": user.get("avatar_url"),
+            "oauth_provider": user.get("oauth_provider"),
+        },
         "access_token": token,
         "token_type": "bearer",
     }
@@ -115,6 +131,208 @@ async def login(req: LoginRequest):
 @router.get("/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
+
+
+# --- OAuth State Management ---
+
+_oauth_states: dict[str, float] = {}
+_OAUTH_STATE_TTL = 300
+
+
+def _create_oauth_state() -> str:
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = time.time()
+    cutoff = time.time() - _OAUTH_STATE_TTL
+    for k in [k for k, v in _oauth_states.items() if v < cutoff]:
+        del _oauth_states[k]
+    return state
+
+
+def _validate_oauth_state(state: str) -> bool:
+    ts = _oauth_states.pop(state, None)
+    if ts is None:
+        return False
+    return (time.time() - ts) < _OAUTH_STATE_TTL
+
+
+async def _handle_oauth_user(
+    email: str, provider: str, provider_id: str,
+    display_name: str | None, avatar_url: str | None,
+) -> str:
+    user = await get_user_by_oauth(provider, provider_id)
+    if user:
+        return create_access_token({"sub": user["id"], "email": user["email"]})
+
+    user = await get_user_by_email(email)
+    if user:
+        await link_oauth_to_user(user["id"], provider, provider_id, display_name, avatar_url)
+        return create_access_token({"sub": user["id"], "email": user["email"]})
+
+    user = await create_oauth_user(email, provider, provider_id, display_name, avatar_url)
+    return create_access_token({"sub": user["id"], "email": user["email"]})
+
+
+# --- OAuth Endpoints ---
+
+@router.get("/auth/providers")
+async def get_auth_providers():
+    return {
+        "github": bool(GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET),
+        "google": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
+    }
+
+
+@router.get("/auth/github")
+async def github_oauth_redirect():
+    if not GITHUB_CLIENT_ID:
+        raise HTTPException(501, "GitHub OAuth is not configured")
+    state = _create_oauth_state()
+    params = urlencode({
+        "client_id": GITHUB_CLIENT_ID,
+        "scope": "read:user user:email",
+        "state": state,
+    })
+    return RedirectResponse(f"https://github.com/login/oauth/authorize?{params}", status_code=302)
+
+
+@router.get("/auth/github/callback")
+async def github_oauth_callback(code: str = "", state: str = "", error: str = ""):
+    error_redirect = f"{OAUTH_FRONTEND_URL}/auth/callback?error="
+
+    if error:
+        return RedirectResponse(f"{error_redirect}{error}", status_code=302)
+    if not code or not state:
+        return RedirectResponse(f"{error_redirect}missing_params", status_code=302)
+    if not _validate_oauth_state(state):
+        return RedirectResponse(f"{error_redirect}invalid_state", status_code=302)
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            token_resp = await client.post(
+                "https://github.com/login/oauth/access_token",
+                json={
+                    "client_id": GITHUB_CLIENT_ID,
+                    "client_secret": GITHUB_CLIENT_SECRET,
+                    "code": code,
+                },
+                headers={"Accept": "application/json"},
+            )
+            token_data = token_resp.json()
+
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return RedirectResponse(f"{error_redirect}token_exchange_failed", status_code=302)
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            user_resp = await client.get(
+                "https://api.github.com/user",
+                headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            )
+            gh_user = user_resp.json()
+
+        github_id = str(gh_user.get("id", ""))
+        email = gh_user.get("email")
+        display_name = gh_user.get("name") or gh_user.get("login")
+        avatar_url = gh_user.get("avatar_url")
+
+        if not email:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                emails_resp = await client.get(
+                    "https://api.github.com/user/emails",
+                    headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+                )
+                emails = emails_resp.json()
+            primary = next((e for e in emails if e.get("primary") and e.get("verified")), None)
+            if primary:
+                email = primary["email"]
+            elif emails:
+                verified = next((e for e in emails if e.get("verified")), None)
+                email = verified["email"] if verified else emails[0].get("email")
+
+        if not email:
+            return RedirectResponse(f"{error_redirect}no_email", status_code=302)
+
+        jwt_token = await _handle_oauth_user(email, "github", github_id, display_name, avatar_url)
+        return RedirectResponse(f"{OAUTH_FRONTEND_URL}/auth/callback?token={jwt_token}", status_code=302)
+
+    except Exception as e:
+        logger.error(f"GitHub OAuth error: {e}", exc_info=True)
+        return RedirectResponse(f"{error_redirect}server_error", status_code=302)
+
+
+def _google_redirect_uri() -> str:
+    return f"{OAUTH_BACKEND_URL.rstrip('/')}/api/auth/google/callback"
+
+
+@router.get("/auth/google")
+async def google_oauth_redirect():
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(501, "Google OAuth is not configured")
+    state = _create_oauth_state()
+    params = urlencode({
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": _google_redirect_uri(),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "offline",
+        "prompt": "select_account",
+    })
+    return RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}", status_code=302)
+
+
+@router.get("/auth/google/callback")
+async def google_oauth_callback(code: str = "", state: str = "", error: str = ""):
+    error_redirect = f"{OAUTH_FRONTEND_URL}/auth/callback?error="
+
+    if error:
+        return RedirectResponse(f"{error_redirect}{error}", status_code=302)
+    if not code or not state:
+        return RedirectResponse(f"{error_redirect}missing_params", status_code=302)
+    if not _validate_oauth_state(state):
+        return RedirectResponse(f"{error_redirect}invalid_state", status_code=302)
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            token_resp = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": _google_redirect_uri(),
+                },
+            )
+            token_data = token_resp.json()
+
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return RedirectResponse(f"{error_redirect}token_exchange_failed", status_code=302)
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            user_resp = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            g_user = user_resp.json()
+
+        google_id = str(g_user.get("id", ""))
+        email = g_user.get("email")
+        display_name = g_user.get("name")
+        avatar_url = g_user.get("picture")
+
+        if not email:
+            return RedirectResponse(f"{error_redirect}no_email", status_code=302)
+        if not g_user.get("verified_email", False):
+            return RedirectResponse(f"{error_redirect}email_not_verified", status_code=302)
+
+        jwt_token = await _handle_oauth_user(email, "google", google_id, display_name, avatar_url)
+        return RedirectResponse(f"{OAUTH_FRONTEND_URL}/auth/callback?token={jwt_token}", status_code=302)
+
+    except Exception as e:
+        logger.error(f"Google OAuth error: {e}", exc_info=True)
+        return RedirectResponse(f"{error_redirect}server_error", status_code=302)
 
 
 # --- HELPER FOR PROJECT OWNERSHIP CHECK ---
@@ -142,7 +360,6 @@ async def ws_broadcast(msg_type: str, project_id: str, data: dict):
 orchestrator.set_ws_callback(ws_broadcast)
 
 
-from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from app.services.rate_limiter import rate_limiter
 from app.services.resource_budget import resource_budget, ResourceBudgetExceededError
 
@@ -648,9 +865,6 @@ async def share_project(project_id: str, req: ShareRequest, current_user: dict =
         "share_type": req.share_type,
         "message": f"Project data sent to n8n for {req.share_type} sharing.",
     }
-
-
-import secrets
 
 
 class ReviseRequest(BaseModel):

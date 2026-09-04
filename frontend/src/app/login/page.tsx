@@ -1,18 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/Toast";
+import SocialLoginButtons from "@/components/SocialLoginButtons";
 
-export default function LoginPage() {
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  no_email: "Could not get your email from the provider.",
+  invalid_state: "Security check failed. Please try again.",
+  token_exchange_failed: "Authentication failed. Please try again.",
+  server_error: "An unexpected error occurred. Please try again.",
+  callback_failed: "Could not complete sign in. Please try again.",
+  email_not_verified: "Your email is not verified with this provider.",
+  no_token: "No authentication token received. Please try again.",
+  missing_params: "Authentication response was incomplete. Please try again.",
+};
+
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const { login, user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+
+  useEffect(() => {
+    const oauthError = searchParams.get("oauth_error");
+    if (oauthError) {
+      toast("error", "Sign in failed", OAUTH_ERROR_MESSAGES[oauthError] || oauthError);
+    }
+  }, [searchParams, toast]);
 
   if (user) {
     router.push("/");
@@ -71,6 +91,7 @@ export default function LoginPage() {
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
+          <SocialLoginButtons />
         </form>
         <p className="text-center text-sm text-[var(--text-muted)] mt-4">
           Don&apos;t have an account?{" "}
@@ -78,5 +99,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }
