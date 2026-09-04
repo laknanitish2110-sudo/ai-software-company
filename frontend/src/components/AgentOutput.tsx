@@ -127,7 +127,7 @@ function BulletList({ items }: { items: unknown }) {
   );
 }
 
-function renderCEOOutput(c: Record<string, unknown>) {
+function renderCEOOutput(c: Record<string, any>) {
   return (
     <div className="space-y-4">
       {c.project_name && <div className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{safeText(c.project_name)}</div>}
@@ -148,7 +148,7 @@ function renderCEOOutput(c: Record<string, unknown>) {
   );
 }
 
-function renderBAOutput(c: Record<string, unknown>) {
+function renderBAOutput(c: Record<string, any>) {
   return (
     <div className="space-y-4">
       {c.problem_analysis && <Section title="Problem Analysis"><TextBlock text={c.problem_analysis} /></Section>}
@@ -178,7 +178,7 @@ function renderBAOutput(c: Record<string, unknown>) {
   );
 }
 
-function renderResearcherOutput(c: Record<string, unknown>) {
+function renderResearcherOutput(c: Record<string, any>) {
   return (
     <div className="space-y-4">
       {c.existing_products && <Section title="Existing Products & Competitors">{renderValue(c.existing_products)}</Section>}
@@ -193,7 +193,7 @@ function renderResearcherOutput(c: Record<string, unknown>) {
   );
 }
 
-function renderArchitectOutput(c: Record<string, unknown>) {
+function renderArchitectOutput(c: Record<string, any>) {
   return (
     <div className="space-y-4">
       {c.system_type && (
@@ -215,7 +215,7 @@ function renderArchitectOutput(c: Record<string, unknown>) {
   );
 }
 
-function renderEngineerOutput(c: Record<string, unknown>) {
+function renderEngineerOutput(c: Record<string, any>) {
   const files = c.files as Array<{ filename?: string; content?: string; language?: string }> | undefined;
   return (
     <div className="space-y-4">
@@ -245,7 +245,7 @@ function renderEngineerOutput(c: Record<string, unknown>) {
   );
 }
 
-function renderPPTOutput(c: Record<string, unknown>) {
+function renderPPTOutput(c: Record<string, any>) {
   const slides = c.slides as Array<{ title?: string; content?: string; bullet_points?: string[] }> | undefined;
   return (
     <div className="space-y-4">
