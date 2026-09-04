@@ -681,6 +681,8 @@ export default function Dashboard({ projectId }: Props) {
                   : event.type === "agent_completed" || event.type === "project_completed" ? "var(--success)"
                   : event.type === "error" ? "var(--danger)"
                   : event.type === "peer_review_completed" ? "var(--accent)"
+                  : event.type === "sandbox_started" || event.type === "sandbox_completed" ? "#f59e0b"
+                  : event.type === "domain_memory" ? "#8b5cf6"
                   : "var(--text-muted)";
 
                 return (

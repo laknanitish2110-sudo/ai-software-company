@@ -362,7 +362,11 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
         except Exception:
             pass
 
-    filtered_memory = {k: v for k, v in memory.items() if k != "workflow_recommendations"}
+    domain_learnings = memory.get("_domain_learnings", "")
+    if domain_learnings:
+        parts.append(domain_learnings)
+
+    filtered_memory = {k: v for k, v in memory.items() if k not in ("workflow_recommendations", "_domain_learnings")}
     if filtered_memory:
         parts.append(f"## Shared Project Memory\n```json\n{json.dumps(filtered_memory, indent=2)}\n```")
 

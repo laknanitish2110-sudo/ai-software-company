@@ -572,6 +572,21 @@ async def download_shared_file(token: str, file_type: str):
         raise HTTPException(400, f"Unknown file type: {file_type}")
 
 
+@router.get("/domain-learnings")
+async def list_domain_learnings(current_user: dict = Depends(get_current_user)):
+    from app.core.database import query_domain_learnings
+    learnings = await query_domain_learnings(keywords=[], limit=50)
+    return {"learnings": learnings, "count": len(learnings)}
+
+
+@router.get("/projects/{project_id}/learnings")
+async def get_project_domain_learnings(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    from app.core.database import get_project_learnings
+    learnings = await get_project_learnings(project_id)
+    return {"learnings": learnings, "count": len(learnings)}
+
+
 @router.post("/demo/save/{project_id}")
 async def save_demo_cache(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])

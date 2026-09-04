@@ -90,6 +90,19 @@ class Orchestrator:
 
                 heartbeat = LockHeartbeat(project_id, token, ttl_seconds=60, interval_seconds=15)
                 heartbeat.start()
+
+                # Step 0: Query domain memory for relevant past learnings
+                try:
+                    from app.services.domain_memory import get_relevant_learnings
+                    domain_context = await get_relevant_learnings(problem_statement, project_id=project_id)
+                    if domain_context:
+                        await set_memory(project_id, "_domain_learnings", domain_context, "domain_memory")
+                        await self._notify("domain_memory", project_id, {
+                            "message": "Loaded learnings from past projects to guide this run."
+                        })
+                except Exception as e:
+                    logger.warning(f"Domain memory query failed (non-critical): {e}")
+
                 # Step 1: CEO analyzes problem
                 await self._notify("agent_started", project_id, {
                     "role": "ceo",
@@ -322,6 +335,17 @@ class Orchestrator:
                         })
 
                     await update_project_status(project_id, ProjectStatus.COMPLETED.value)
+
+                    # Extract domain learnings for future projects
+                    try:
+                        from app.services.domain_memory import extract_learnings
+                        saved_learnings = await extract_learnings(project_id)
+                        if saved_learnings:
+                            await self._notify("domain_memory", project_id, {
+                                "message": f"Extracted {len(saved_learnings)} learnings for future projects."
+                            })
+                    except Exception as e:
+                        logger.warning(f"Domain learning extraction failed (non-critical): {e}")
 
                     try:
                         await send_agent_event("project_completed", project_id, "all", None, None)

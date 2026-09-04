@@ -213,6 +213,18 @@ async def init_db():
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (project_id) REFERENCES projects(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS domain_learnings (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    domain TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    source_role TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (project_id) REFERENCES projects(id)
+                );
             """)
         else:
             # PostgreSQL DDL
@@ -279,6 +291,17 @@ async def init_db():
                     id VARCHAR(255) PRIMARY KEY,
                     project_id VARCHAR(255) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                     token VARCHAR(255) NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS domain_learnings (
+                    id VARCHAR(255) PRIMARY KEY,
+                    project_id VARCHAR(255) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    category VARCHAR(255) NOT NULL,
+                    domain VARCHAR(255) NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    source_role VARCHAR(255) NOT NULL,
                     created_at TEXT NOT NULL
                 );
             """)
@@ -614,5 +637,56 @@ async def get_project_by_share_token(token: str) -> dict | None:
             (token,),
         )
         return await cursor.fetchone()
+    finally:
+        await db.close()
+
+
+# --- DOMAIN LEARNINGS (cross-project memory) ---
+
+async def save_domain_learning(project_id: str, category: str, domain: str, title: str, content: str, source_role: str) -> dict:
+    db = await get_db()
+    try:
+        learning_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            "INSERT INTO domain_learnings (id, project_id, category, domain, title, content, source_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (learning_id, project_id, category, domain, title, content, source_role, ts),
+        )
+        await db.commit()
+        return {"id": learning_id, "project_id": project_id, "category": category, "domain": domain, "title": title, "content": content}
+    finally:
+        await db.close()
+
+
+async def query_domain_learnings(keywords: list[str], exclude_project_id: str | None = None, limit: int = 10) -> list[dict]:
+    db = await get_db()
+    try:
+        conditions = []
+        params = []
+        for kw in keywords:
+            conditions.append("(LOWER(domain) LIKE ? OR LOWER(title) LIKE ? OR LOWER(content) LIKE ?)")
+            pattern = f"%{kw.lower()}%"
+            params.extend([pattern, pattern, pattern])
+        where = " OR ".join(conditions) if conditions else "1=1"
+        if exclude_project_id:
+            where = f"({where}) AND project_id != ?"
+            params.append(exclude_project_id)
+        cursor = await db.execute(
+            f"SELECT * FROM domain_learnings WHERE {where} ORDER BY created_at DESC LIMIT ?",
+            (*params, limit),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def get_project_learnings(project_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM domain_learnings WHERE project_id = ? ORDER BY created_at DESC",
+            (project_id,),
+        )
+        return await cursor.fetchall()
     finally:
         await db.close()

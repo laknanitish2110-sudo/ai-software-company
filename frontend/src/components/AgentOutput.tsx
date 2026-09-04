@@ -96,6 +96,203 @@ function safeText(v: unknown): string {
   return String(v ?? "");
 }
 
+// --- Role-specific human-readable renderers ---
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-4">
+      <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--accent)" }}>{title}</h4>
+      <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{children}</div>
+    </div>
+  );
+}
+
+function TextBlock({ text }: { text: unknown }) {
+  const s = safeText(text);
+  if (!s || s === "undefined") return null;
+  return <p className="leading-relaxed">{s}</p>;
+}
+
+function BulletList({ items }: { items: unknown }) {
+  if (!Array.isArray(items) || items.length === 0) return <span style={{ color: "var(--text-muted)" }}>None</span>;
+  return (
+    <ul className="space-y-1 ml-1">
+      {items.map((item, i) => (
+        <li key={i} className="flex items-start gap-2">
+          <span className="mt-1.5 shrink-0" style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />
+          <span>{typeof item === "object" && item !== null ? safeText(item) : String(item)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function renderCEOOutput(c: Record<string, unknown>) {
+  return (
+    <div className="space-y-4">
+      {c.project_name && <div className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{safeText(c.project_name)}</div>}
+      {c.vision && <Section title="Vision"><TextBlock text={c.vision} /></Section>}
+      {c.problem_summary && <Section title="Problem Summary"><TextBlock text={c.problem_summary} /></Section>}
+      {c.problem_analysis && <Section title="Problem Analysis"><TextBlock text={c.problem_analysis} /></Section>}
+      {c.target_users && <Section title="Target Users">{typeof c.target_users === "string" ? <TextBlock text={c.target_users} /> : <BulletList items={c.target_users} />}</Section>}
+      {c.success_criteria && <Section title="Success Criteria"><BulletList items={c.success_criteria} /></Section>}
+      {c.components && <Section title="Components"><BulletList items={c.components} /></Section>}
+      {c.task_assignments && <Section title="Task Assignments">{renderValue(c.task_assignments)}</Section>}
+      {c.priority && <Section title="Priority"><TextBlock text={c.priority} /></Section>}
+      {c.deliverable_type && (
+        <div className="inline-block px-3 py-1 rounded-full text-xs font-semibold" style={{ background: "var(--accent-bg)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}>
+          Deliverable: {safeText(c.deliverable_type)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderBAOutput(c: Record<string, unknown>) {
+  return (
+    <div className="space-y-4">
+      {c.problem_analysis && <Section title="Problem Analysis"><TextBlock text={c.problem_analysis} /></Section>}
+      {c.stakeholders && <Section title="Stakeholders"><BulletList items={c.stakeholders} /></Section>}
+      {c.user_personas && <Section title="User Personas">{renderValue(c.user_personas)}</Section>}
+      {c.objectives && <Section title="Objectives"><BulletList items={c.objectives} /></Section>}
+      {c.scope && <Section title="Scope"><TextBlock text={c.scope} /></Section>}
+      {c.functional_requirements && <Section title="Functional Requirements"><BulletList items={c.functional_requirements} /></Section>}
+      {c.non_functional_requirements && <Section title="Non-Functional Requirements"><BulletList items={c.non_functional_requirements} /></Section>}
+      {c.user_stories && <Section title="User Stories"><BulletList items={c.user_stories} /></Section>}
+      {c.constraints && <Section title="Constraints"><BulletList items={c.constraints} /></Section>}
+      {c.acceptance_criteria && <Section title="Acceptance Criteria"><BulletList items={c.acceptance_criteria} /></Section>}
+      {c.risks && (
+        <Section title="Risks">
+          {Array.isArray(c.risks) ? (
+            <div className="space-y-2">
+              {(c.risks as unknown[]).map((risk, i) => (
+                <div key={i} className="p-2 rounded-lg" style={{ background: "rgba(237,95,116,0.04)", border: "1px solid rgba(237,95,116,0.1)" }}>
+                  {typeof risk === "object" && risk !== null ? renderValue(risk) : <span>{String(risk)}</span>}
+                </div>
+              ))}
+            </div>
+          ) : <TextBlock text={c.risks} />}
+        </Section>
+      )}
+    </div>
+  );
+}
+
+function renderResearcherOutput(c: Record<string, unknown>) {
+  return (
+    <div className="space-y-4">
+      {c.existing_products && <Section title="Existing Products & Competitors">{renderValue(c.existing_products)}</Section>}
+      {c.comparison_matrix && <Section title="Comparison Matrix">{renderValue(c.comparison_matrix)}</Section>}
+      {c.relevant_apis && <Section title="Relevant APIs"><BulletList items={c.relevant_apis} /></Section>}
+      {c.open_source_tools && <Section title="Open Source Tools"><BulletList items={c.open_source_tools} /></Section>}
+      {c.ai_frameworks && <Section title="AI Frameworks"><BulletList items={c.ai_frameworks} /></Section>}
+      {c.industry_best_practices && <Section title="Industry Best Practices"><BulletList items={c.industry_best_practices} /></Section>}
+      {c.innovation_opportunities && <Section title="Innovation Opportunities"><BulletList items={c.innovation_opportunities} /></Section>}
+      {c.recommended_approach && <Section title="Recommended Approach"><TextBlock text={c.recommended_approach} /></Section>}
+    </div>
+  );
+}
+
+function renderArchitectOutput(c: Record<string, unknown>) {
+  return (
+    <div className="space-y-4">
+      {c.system_type && (
+        <div className="inline-block px-3 py-1 rounded-full text-xs font-semibold mb-2" style={{ background: "var(--accent-bg)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}>
+          {safeText(c.system_type)}
+        </div>
+      )}
+      {c.architecture_overview && <Section title="Architecture Overview"><TextBlock text={c.architecture_overview} /></Section>}
+      {c.tech_stack && <Section title="Tech Stack">{renderValue(c.tech_stack)}</Section>}
+      {c.frontend_architecture && <Section title="Frontend Architecture">{renderValue(c.frontend_architecture)}</Section>}
+      {c.backend_architecture && <Section title="Backend Architecture">{renderValue(c.backend_architecture)}</Section>}
+      {c.database_design && <Section title="Database Design">{renderValue(c.database_design)}</Section>}
+      {c.api_design && <Section title="API Design">{renderValue(c.api_design)}</Section>}
+      {c.folder_structure && <Section title="Folder Structure"><pre className="text-xs p-3 rounded-lg overflow-x-auto" style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)" }}>{safeText(c.folder_structure)}</pre></Section>}
+      {c.deployment_strategy && <Section title="Deployment Strategy"><TextBlock text={c.deployment_strategy} /></Section>}
+      {c.security_considerations && <Section title="Security Considerations"><BulletList items={c.security_considerations} /></Section>}
+      {c.additional_notes && <Section title="Additional Notes"><TextBlock text={c.additional_notes} /></Section>}
+    </div>
+  );
+}
+
+function renderEngineerOutput(c: Record<string, unknown>) {
+  const files = c.files as Array<{ filename?: string; content?: string; language?: string }> | undefined;
+  return (
+    <div className="space-y-4">
+      {c.implementation_summary && <Section title="Implementation Summary"><TextBlock text={c.implementation_summary} /></Section>}
+      {c.setup_instructions && <Section title="Setup Instructions"><TextBlock text={c.setup_instructions} /></Section>}
+      {files && Array.isArray(files) && (
+        <Section title={`Generated Files (${files.length})`}>
+          <div className="space-y-3">
+            {files.map((file, i) => (
+              <div key={i} className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                <div className="px-3 py-1.5 text-xs font-mono font-semibold" style={{ background: "var(--bg-elevated)", color: "var(--accent)" }}>
+                  {file.filename || `file-${i + 1}`}
+                </div>
+                {file.content && (
+                  <pre className="text-xs p-3 overflow-x-auto max-h-60" style={{ background: "var(--bg-base)", color: "var(--text-secondary)", margin: 0 }}>
+                    {file.content.length > 2000 ? file.content.slice(0, 2000) + "\n... (truncated)" : file.content}
+                  </pre>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+      {c.dependencies && <Section title="Dependencies">{renderValue(c.dependencies)}</Section>}
+      {c.testing_notes && <Section title="Testing Notes"><TextBlock text={c.testing_notes} /></Section>}
+    </div>
+  );
+}
+
+function renderPPTOutput(c: Record<string, unknown>) {
+  const slides = c.slides as Array<{ title?: string; content?: string; bullet_points?: string[] }> | undefined;
+  return (
+    <div className="space-y-4">
+      {c.report_data && <Section title="Report">{renderValue(c.report_data)}</Section>}
+      {slides && Array.isArray(slides) && (
+        <Section title={`Presentation Slides (${slides.length})`}>
+          <div className="grid gap-3">
+            {slides.map((slide, i) => (
+              <div key={i} className="p-3 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                <div className="font-semibold text-sm mb-1" style={{ color: "var(--text-primary)" }}>
+                  Slide {i + 1}: {slide.title || "Untitled"}
+                </div>
+                {slide.content && <p className="text-xs mb-1" style={{ color: "var(--text-secondary)" }}>{slide.content}</p>}
+                {slide.bullet_points && <BulletList items={slide.bullet_points} />}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+      {c.executive_summary && <Section title="Executive Summary"><TextBlock text={c.executive_summary} /></Section>}
+    </div>
+  );
+}
+
+function renderRawResponse(raw: string) {
+  const paragraphs = raw.split(/\n{2,}/).filter(p => p.trim());
+  if (paragraphs.length <= 1) {
+    return <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{raw}</p>;
+  }
+  return (
+    <div className="space-y-3">
+      {paragraphs.map((p, i) => (
+        <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{p.trim()}</p>
+      ))}
+    </div>
+  );
+}
+
+const ROLE_RENDERERS: Record<string, (c: Record<string, unknown>) => React.ReactNode> = {
+  ceo: renderCEOOutput,
+  business_analyst: renderBAOutput,
+  researcher: renderResearcherOutput,
+  architect: renderArchitectOutput,
+  engineer: renderEngineerOutput,
+  ppt: renderPPTOutput,
+};
+
 function PeerReviewSection({ review }: { review: PeerReview }) {
   const reviewerConfig = AGENT_CONFIG[review.reviewer];
 
@@ -260,16 +457,29 @@ export default function AgentOutput({
       {expanded && (
         <div className="px-5 pb-5" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="mt-4 space-y-4">
-            {Object.entries(displayContent)
-              .filter(([key]) => key !== "_parse_error")
-              .map(([key, value]) => (
-                <div key={key} className="animate-slide-in">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--accent)" }}>
-                    {key.replace(/_/g, " ")}
-                  </h4>
-                  <div className="text-sm">{renderValue(value)}</div>
+            {hasParseError && typeof content.raw_response === "string" && content.raw_response ? (
+              <div className="animate-slide-in">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--warning-bg)", color: "var(--warning)", border: "1px solid var(--warning-border)" }}>
+                    Unstructured response
+                  </span>
                 </div>
-              ))}
+                {renderRawResponse(content.raw_response as string)}
+              </div>
+            ) : ROLE_RENDERERS[role] ? (
+              <div className="animate-slide-in">{ROLE_RENDERERS[role](displayContent)}</div>
+            ) : (
+              Object.entries(displayContent)
+                .filter(([key]) => key !== "_parse_error")
+                .map(([key, value]) => (
+                  <div key={key} className="animate-slide-in">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--accent)" }}>
+                      {key.replace(/_/g, " ")}
+                    </h4>
+                    <div className="text-sm">{renderValue(value)}</div>
+                  </div>
+                ))
+            )}
           </div>
 
           {peerReview && <PeerReviewSection review={peerReview} />}
