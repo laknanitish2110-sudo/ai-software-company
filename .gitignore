@@ -28,8 +28,8 @@ out/
 # Generated outputs (large, per-run)
 generated_projects/
 
-# PPTX templates (large binary files)
-backend/assets/templates/*.pptx
+# PPTX templates — tracked (needed for production)
+# backend/assets/templates/*.pptx
 
 # Test files
 test_*.pptx
