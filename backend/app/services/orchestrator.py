@@ -66,11 +66,16 @@ class Orchestrator:
             raise ValueError(f"PROJECT_EXECUTION_IN_PROGRESS: Execution is already running for project {project_id}.")
         return token
 
-    async def start_project(self, problem_statement: str, user_id: str = "legacy_owner", auto_approve: bool = False, execution_id: Optional[str] = None) -> dict:
+    async def start_project(self, problem_statement: str, user_id: str = "legacy_owner", auto_approve: bool = False, execution_id: Optional[str] = None, route: str = "full") -> dict:
+        from app.services.task_router import get_route_agents, PIPELINE_ROUTES
+        if route not in PIPELINE_ROUTES:
+            route = "full"
+
         project = await create_project(problem_statement, user_id=user_id)
         project_id = project["id"]
 
         await set_memory(project_id, "problem_statement", problem_statement, "founder")
+        await set_memory(project_id, "pipeline_route", route, "system")
 
         if auto_approve:
             await set_memory(project_id, "auto_approve", "true", "founder")
@@ -79,6 +84,9 @@ class Orchestrator:
             await set_memory(project_id, "active_execution_id", execution_id, "system")
 
         lock_token = await self.register_project_execution(project_id)
+
+        route_agents = get_route_agents(route)
+        first_post_ceo = AgentRole(route_agents[1])
 
         async def _run_pipeline():
             token = lock_token
@@ -90,6 +98,12 @@ class Orchestrator:
 
                 heartbeat = LockHeartbeat(project_id, token, ttl_seconds=60, interval_seconds=15)
                 heartbeat.start()
+
+                await self._notify("route_selected", project_id, {
+                    "route": route,
+                    "agents": route_agents,
+                    "message": f"Pipeline route: {PIPELINE_ROUTES[route]['name']} ({len(route_agents)} agents)"
+                })
 
                 # Step 0: Query domain memory for relevant past learnings
                 try:
@@ -165,7 +179,7 @@ class Orchestrator:
                 except Exception as e:
                     logger.warning(f"Workflow analysis failed (non-critical): {e}")
 
-                await self._start_next_agent(project_id, AgentRole.BUSINESS_ANALYST, execution_id=execution_id)
+                await self._start_next_agent(project_id, first_post_ceo, execution_id=execution_id)
             except Exception as e:
                 logger.error(f"Pipeline startup failed: {e}")
                 await self._notify("error", project_id, {
@@ -390,6 +404,58 @@ class Orchestrator:
         task = asyncio.create_task(_run())
         self._running_tasks[project_id] = task
 
+    async def _finalize_project(self, project_id: str, execution_id: Optional[str] = None):
+        try:
+            from app.core.database import get_project_outputs, get_memory as get_mem
+            all_outputs = await get_project_outputs(project_id)
+            all_memory = await get_mem(project_id)
+            proj = await get_project(project_id)
+            generate_docx(project_id, proj, all_outputs, all_memory)
+            await self._notify("docx_generated", project_id, {
+                "message": "Project report (.docx) generated and ready for download!"
+            })
+        except Exception as e:
+            await self._notify("error", project_id, {
+                "message": f"DOCX generation error: {str(e)}"
+            })
+
+        await update_project_status(project_id, ProjectStatus.COMPLETED.value)
+
+        try:
+            from app.services.domain_memory import extract_learnings
+            saved_learnings = await extract_learnings(project_id)
+            if saved_learnings:
+                await self._notify("domain_memory", project_id, {
+                    "message": f"Extracted {len(saved_learnings)} learnings for future projects."
+                })
+        except Exception as e:
+            logger.warning(f"Domain learning extraction failed (non-critical): {e}")
+
+        try:
+            await send_agent_event("project_completed", project_id, "all", None, None)
+        except Exception:
+            pass
+
+        try:
+            proj_data = await get_project(project_id)
+            p_name = proj_data.get("problem_statement", "Project")[:60] if proj_data else "Project"
+            mem = await get_memory(project_id)
+            route = mem.get("pipeline_route", "full")
+            from app.services.task_router import get_route_agents
+            agents_in_route = get_route_agents(route)
+            delivs = ["report.docx"]
+            if "engineer" in agents_in_route:
+                delivs.insert(0, "code.zip")
+            if "ppt" in agents_in_route:
+                delivs.append("presentation.pptx")
+            await send_deliverables_ready(project_id, p_name, delivs)
+        except Exception:
+            pass
+
+        await self._notify("project_completed", project_id, {
+            "message": "All work is complete! Your project is ready."
+        })
+
     async def handle_approval(self, project_id: str, output_id: str, approved: bool, feedback: str | None = None, execution_id: Optional[str] = None):
         exec_id = execution_id
         if not exec_id:
@@ -405,26 +471,18 @@ class Orchestrator:
 
             status = project["status"]
 
-            current_role = None
+            current_role_enum = None
             for r in PIPELINE_ORDER:
                 rs = REVIEW_STAGES.get(r)
                 if rs and status == rs.value:
-                    current_role = r.value
+                    current_role_enum = r
                     break
             try:
-                await send_approval_event(project_id, current_role or "unknown", True)
+                await send_approval_event(project_id, current_role_enum.value if current_role_enum else "unknown", True)
             except Exception:
                 pass
 
-            next_role = None
-
-            if status == ProjectStatus.BA_REVIEW.value:
-                next_role = AgentRole.RESEARCHER
-            elif status == ProjectStatus.RESEARCH_REVIEW.value:
-                next_role = AgentRole.ARCHITECT
-            elif status == ProjectStatus.ARCHITECT_REVIEW.value:
-                next_role = AgentRole.ENGINEER
-            elif status == ProjectStatus.ENGINEER_REVIEW.value:
+            if status == ProjectStatus.ENGINEER_REVIEW.value:
                 engineer_output = await get_latest_output(project_id, AgentRole.ENGINEER.value)
                 if engineer_output and isinstance(engineer_output.get("content"), dict):
                     content = engineer_output["content"]
@@ -451,13 +509,31 @@ class Orchestrator:
                             await self._notify("error", project_id, {
                                 "message": f"Workflow JSON generation error: {str(e)}"
                             })
-                next_role = AgentRole.PPT
+
+            next_role = None
+            if current_role_enum:
+                mem_data = await get_memory(project_id)
+                route_name = mem_data.get("pipeline_route", "full")
+                from app.services.task_router import get_route_agents
+                route_agents = get_route_agents(route_name)
+
+                try:
+                    idx = route_agents.index(current_role_enum.value)
+                    if idx + 1 < len(route_agents):
+                        next_role = AgentRole(route_agents[idx + 1])
+                except ValueError:
+                    pass
 
             if next_role:
                 await self._notify("approval_accepted", project_id, {
                     "message": f"Approved! Moving to {next_role.value.replace('_', ' ').title()}..."
                 })
                 await self._start_next_agent(project_id, next_role, execution_id=exec_id)
+            else:
+                await self._notify("approval_accepted", project_id, {
+                    "message": "Approved! Finalizing project..."
+                })
+                await self._finalize_project(project_id, execution_id=exec_id)
         else:
             await update_output_status(output_id, "rejected")
 

@@ -12,27 +12,37 @@ import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
 import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache, reviseAgent, generateShareLink, ReconnectingWebSocket } from "@/lib/api";
-import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS } from "@/lib/constants";
+import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS, ROUTE_CONFIG } from "@/lib/constants";
 
 interface Props {
   projectId: string;
 }
 
-function getStageInfo(status: string): { current: number; label: string } {
-  const map: Record<string, { current: number; label: string }> = {
-    created: { current: 1, label: "CEO Analysis" },
-    ba_working: { current: 2, label: "Business Analysis" },
-    ba_review: { current: 2, label: "BA Review" },
-    research_working: { current: 3, label: "Research" },
-    research_review: { current: 3, label: "Research Review" },
-    architect_working: { current: 4, label: "Architecture" },
-    architect_review: { current: 4, label: "Architecture Review" },
-    engineer_working: { current: 5, label: "Engineering" },
-    engineer_review: { current: 5, label: "Engineering Review" },
-    ppt_working: { current: 6, label: "Presentation" },
-    completed: { current: 7, label: "All Complete" },
-  };
-  return map[status] || { current: 0, label: status };
+const STATUS_TO_AGENT: Record<string, string> = {
+  created: "ceo",
+  ba_working: "business_analyst",
+  ba_review: "business_analyst",
+  research_working: "researcher",
+  research_review: "researcher",
+  architect_working: "architect",
+  architect_review: "architect",
+  engineer_working: "engineer",
+  engineer_review: "engineer",
+  ppt_working: "ppt",
+};
+
+function getStageInfo(status: string, routeAgents: string[]): { current: number; label: string } {
+  if (status === "completed") {
+    return { current: routeAgents.length + 1, label: "All Complete" };
+  }
+  const agent = STATUS_TO_AGENT[status];
+  if (!agent) return { current: 0, label: status };
+  const idx = routeAgents.indexOf(agent);
+  if (idx < 0) return { current: 0, label: status };
+  const isReview = status.includes("_review");
+  const config = AGENT_CONFIG[agent];
+  const label = config?.label || agent;
+  return { current: idx + 1, label: isReview ? `${label} Review` : label };
 }
 
 function formatPipelineTime(seconds: number): string {
@@ -238,7 +248,10 @@ export default function Dashboard({ projectId }: Props) {
   const { project, outputs, memory } = state;
   const pendingOutput = outputs.find((o) => o.status === "pending");
   const statusLabel = STATUS_LABELS[project.status] || project.status;
-  const stageInfo = getStageInfo(project.status);
+  const routeName = memory?.pipeline_route || "full";
+  const routeAgents = ROUTE_CONFIG[routeName]?.agents || PIPELINE_ORDER;
+  const routeInfo = ROUTE_CONFIG[routeName];
+  const stageInfo = getStageInfo(project.status, routeAgents);
   const isAutoPilot = memory?.auto_approve === "true";
 
   function getPeerReview(role: string) {
@@ -318,6 +331,20 @@ export default function Dashboard({ projectId }: Props) {
               <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Pipeline
               </span>
+              {routeInfo && routeName !== "full" && (
+                <span style={{
+                  fontSize: 10,
+                  padding: "2px 8px",
+                  borderRadius: 10,
+                  background: "var(--accent-bg)",
+                  color: "var(--accent)",
+                  border: "1px solid var(--accent-border)",
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
+                }}>
+                  {routeInfo.icon} {routeInfo.name}
+                </span>
+              )}
               {isAutoPilot && (
                 <span style={{
                   fontSize: 10,
@@ -341,7 +368,7 @@ export default function Dashboard({ projectId }: Props) {
                 fontSize: 12, fontWeight: 700, fontFamily: "monospace",
                 color: isCompleted ? "var(--success)" : "var(--accent)",
               }}>
-                {isCompleted ? "6/6" : `${stageInfo.current}/6`}
+                {isCompleted ? `${routeAgents.length}/${routeAgents.length}` : `${stageInfo.current}/${routeAgents.length}`}
               </span>
               {pipelineElapsed > 0 && (
                 <span style={{
@@ -357,8 +384,9 @@ export default function Dashboard({ projectId }: Props) {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center" }}>
-            {PIPELINE_ORDER.flatMap((role, i) => {
+            {routeAgents.flatMap((role, i) => {
               const config = AGENT_CONFIG[role];
+              if (!config) return [];
               const isDone = stageInfo.current > i + 1;
               const isActive = stageInfo.current === i + 1 && !isCompleted;
               const isReview = isActive && project.status.includes("_review");
@@ -400,10 +428,10 @@ export default function Dashboard({ projectId }: Props) {
             })}
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, padding: "0 2px" }}>
-            {PIPELINE_ORDER.map((role) => {
+            {routeAgents.map((role, idx) => {
               const config = AGENT_CONFIG[role];
+              if (!config) return null;
               const modelInfo = MODEL_LABELS[role];
-              const idx = PIPELINE_ORDER.indexOf(role);
               const isDone = stageInfo.current > idx + 1;
               const isActive = stageInfo.current === idx + 1 && !isCompleted;
               return (
@@ -627,19 +655,23 @@ export default function Dashboard({ projectId }: Props) {
                       : "The CEO is reviewing your problem statement"}
                   </div>
                   <div className="flex justify-center gap-2">
-                    {["CEO", "BA", "Research", "Architect", "Engineer", "PPT"].map((label, i) => (
-                      <span
-                        key={label}
-                        className="text-xs px-2.5 py-1 rounded-full"
-                        style={{
-                          background: i === 0 && !streamingAgent ? "var(--accent-bg)" : "var(--bg-elevated)",
-                          color: i === 0 && !streamingAgent ? "var(--accent)" : "var(--text-muted)",
-                          border: `1px solid ${i === 0 && !streamingAgent ? "var(--accent-border)" : "var(--border)"}`,
-                        }}
-                      >
-                        {label}
-                      </span>
-                    ))}
+                    {routeAgents.map((role, i) => {
+                      const config = AGENT_CONFIG[role];
+                      const label = config?.label?.split(" ")[0] || role;
+                      return (
+                        <span
+                          key={role}
+                          className="text-xs px-2.5 py-1 rounded-full"
+                          style={{
+                            background: i === 0 && !streamingAgent ? "var(--accent-bg)" : "var(--bg-elevated)",
+                            color: i === 0 && !streamingAgent ? "var(--accent)" : "var(--text-muted)",
+                            border: `1px solid ${i === 0 && !streamingAgent ? "var(--accent-border)" : "var(--border)"}`,
+                          }}
+                        >
+                          {label}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -683,6 +715,7 @@ export default function Dashboard({ projectId }: Props) {
                   : event.type === "peer_review_completed" ? "var(--accent)"
                   : event.type === "sandbox_started" || event.type === "sandbox_completed" ? "#f59e0b"
                   : event.type === "domain_memory" ? "#8b5cf6"
+                  : event.type === "route_selected" ? "#6366f1"
                   : "var(--text-muted)";
 
                 return (

@@ -86,10 +86,12 @@ async function checkedJson<T>(res: Response, fallbackMsg: string): Promise<T> {
 export async function createProject(
   problemStatement: string,
   autoApprove: boolean = false,
-  domain?: string | null
+  domain?: string | null,
+  route?: string | null
 ): Promise<Project> {
   const body: Record<string, unknown> = { problem_statement: problemStatement, auto_approve: autoApprove };
   if (domain) body.domain = domain;
+  if (route) body.route = route;
   const res = await fetchWithTimeout(`${API_BASE}/projects`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),

@@ -147,6 +147,12 @@ from app.services.resource_budget import resource_budget, ResourceBudgetExceeded
 
 # --- PROTECTED PROJECT ENDPOINTS ---
 
+@router.post("/classify")
+async def classify_task_endpoint(req: CreateProjectRequest):
+    from app.services.task_router import classify_task
+    return classify_task(req.problem_statement)
+
+
 @router.post("/projects")
 async def create_project_endpoint(req: CreateProjectRequest, current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
@@ -158,7 +164,8 @@ async def create_project_endpoint(req: CreateProjectRequest, current_user: dict 
         project = await orchestrator.start_project(
             req.problem_statement,
             user_id=user_id,
-            auto_approve=req.auto_approve
+            auto_approve=req.auto_approve,
+            route=req.route or "full",
         )
         return project
     except RedisUnavailableError as e:

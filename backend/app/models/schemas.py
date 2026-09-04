@@ -59,6 +59,7 @@ WORKING_STAGES = {
 class CreateProjectRequest(BaseModel):
     problem_statement: str = Field(..., min_length=10, max_length=5000)
     auto_approve: bool = False
+    route: str | None = None
 
 
 class ApprovalRequest(BaseModel):
