@@ -145,3 +145,32 @@ def get_generated_file_contents(project_id: str) -> list[dict]:
                 "language": language,
             })
     return files
+
+
+def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
+    """Apply file changes from Engineer chat iteration. Regenerates ZIP."""
+    project_dir = PROJECTS_DIR / project_id
+    if not project_dir.exists():
+        return {"status": "error", "message": "Project files not found"}
+
+    updated = []
+    resolved_root = project_dir.resolve()
+    for entry in file_updates:
+        path = entry.get("path", "").lstrip("/").lstrip("\\")
+        content = entry.get("content", "")
+        if not path or not content:
+            continue
+        full_path = (project_dir / path).resolve()
+        if not str(full_path).startswith(str(resolved_root)):
+            continue
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content, encoding="utf-8")
+        updated.append(path)
+
+    zip_path = PROJECTS_DIR / f"{project_id}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in project_dir.rglob("*"):
+            if file.is_file():
+                zf.write(file, file.relative_to(project_dir))
+
+    return {"status": "ok", "updated_files": updated, "count": len(updated)}

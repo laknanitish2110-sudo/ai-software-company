@@ -225,6 +225,14 @@ async def init_db():
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (project_id) REFERENCES projects(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS user_settings (
+                    user_id TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, key)
+                );
             """)
         else:
             # PostgreSQL DDL
@@ -303,6 +311,14 @@ async def init_db():
                     content TEXT NOT NULL,
                     source_role VARCHAR(255) NOT NULL,
                     created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS user_settings (
+                    user_id VARCHAR(255) NOT NULL,
+                    key VARCHAR(255) NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, key)
                 );
             """)
         await db.commit()
@@ -688,5 +704,32 @@ async def get_project_learnings(project_id: str) -> list[dict]:
             (project_id,),
         )
         return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def set_user_setting(user_id: str, key: str, value: str):
+    db = await get_db()
+    try:
+        ts = now_iso()
+        await db.execute(
+            "INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(user_id, key) DO UPDATE SET value = ?, updated_at = ?",
+            (user_id, key, value, ts, value, ts),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_user_setting(user_id: str, key: str) -> str | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT value FROM user_settings WHERE user_id = ? AND key = ?",
+            (user_id, key),
+        )
+        row = await cursor.fetchone()
+        return row["value"] if row else None
     finally:
         await db.close()

@@ -281,12 +281,22 @@ class Orchestrator:
                         val_json = final_val_res.model_dump_json() if hasattr(final_val_res, "model_dump_json") else json.dumps(final_val_res.dict())
                         await set_memory(project_id, "final_validation_result", val_json, "repair_loop")
 
+                        val_data = json.loads(val_json)
                         await self._notify("sandbox_completed", project_id, {
                             "role": "sandbox",
                             "status": final_val_res.final_status,
                             "attempts_used": final_val_res.attempts_used,
-                            "message": f"Repair Loop finished ({final_val_res.final_status}) after {final_val_res.attempts_used} attempt(s): {final_val_res.reason}"
+                            "message": f"Repair Loop finished ({final_val_res.final_status}) after {final_val_res.attempts_used} attempt(s): {final_val_res.reason}",
+                            "validation_result": val_data,
                         })
+
+                        preview_url = val_data.get("final_execution_result", {}).get("preview_url") if val_data.get("final_execution_result") else None
+                        if preview_url:
+                            await self._notify("sandbox_preview_ready", project_id, {
+                                "role": "sandbox",
+                                "preview_url": preview_url,
+                                "message": "Live preview available!",
+                            })
                     except Exception as sbx_err:
                         logger.warning(f"Sandbox/QA repair loop execution failed: {sbx_err}")
                         await self._notify("error", project_id, {
@@ -405,6 +415,12 @@ class Orchestrator:
         self._running_tasks[project_id] = task
 
     async def _finalize_project(self, project_id: str, execution_id: Optional[str] = None):
+        try:
+            from app.services.sandbox_manager import sandbox_manager
+            await sandbox_manager.kill(project_id)
+        except Exception:
+            pass
+
         try:
             from app.core.database import get_project_outputs, get_memory as get_mem
             all_outputs = await get_project_outputs(project_id)

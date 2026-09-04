@@ -5,13 +5,15 @@ import Link from "next/link";
 import AgentCanvas from "./AgentCanvas";
 import AgentIntrospection from "./AgentIntrospection";
 import AgentOutputCard from "./AgentOutput";
+import BuildStatus, { ValidationResult } from "./BuildStatus";
 import CallEmployee from "./CallEmployee";
 import CodePreview from "./CodePreview";
+import GitHubPush from "./GitHubPush";
 import ArchitectureDiagram from "./ArchitectureDiagram";
 import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
-import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache, reviseAgent, generateShareLink, ReconnectingWebSocket } from "@/lib/api";
+import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, stopPreview, ReconnectingWebSocket } from "@/lib/api";
 import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS, ROUTE_CONFIG } from "@/lib/constants";
 
 interface Props {
@@ -76,12 +78,23 @@ export default function Dashboard({ projectId }: Props) {
   const [pipelineElapsed, setPipelineElapsed] = useState(0);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [copyingLink, setCopyingLink] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [showGitHubPush, setShowGitHubPush] = useState(false);
   const { toast } = useToast();
 
   const refreshState = useCallback(async () => {
     try {
       const s = await getProjectState(projectId);
       setState(s);
+      if (s.memory?.final_validation_result) {
+        try { setValidationResult(JSON.parse(s.memory.final_validation_result)); } catch {}
+      }
+      getPreviewStatus(projectId).then(p => {
+        if (p.active && p.preview_url) setPreviewUrl(p.preview_url);
+        else setPreviewUrl(null);
+      }).catch(() => {});
     } catch {
       toast("warning", "Connection issue", "Could not refresh project state from the backend.");
     }
@@ -147,6 +160,14 @@ export default function Dashboard({ projectId }: Props) {
         setStreamTokens(0);
         setStreamText("");
         setAgentStartTime(null);
+      }
+
+      if (msg.type === "sandbox_completed" && (msg.data as Record<string, unknown>).validation_result) {
+        setValidationResult((msg.data as Record<string, unknown>).validation_result as ValidationResult);
+      }
+
+      if (msg.type === "sandbox_preview_ready" && (msg.data as Record<string, unknown>).preview_url) {
+        setPreviewUrl((msg.data as Record<string, unknown>).preview_url as string);
       }
 
       setEvents((prev) => {
@@ -508,6 +529,20 @@ export default function Dashboard({ projectId }: Props) {
                 <span>👁️</span> View Code in Browser
               </button>
             )}
+            {previewUrl && (
+              <button onClick={() => setShowPreview(true)}
+                      className="btn-success text-sm py-2.5 px-5 flex items-center gap-2"
+                      style={{ background: "#10b981", borderColor: "#059669" }}>
+                <span>🌐</span> Live Preview
+              </button>
+            )}
+            {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
+              <button onClick={() => setShowGitHubPush(true)}
+                      className="btn-ghost text-sm py-2.5 px-5 flex items-center gap-2"
+                      style={{ borderColor: "rgba(36,41,47,0.4)", color: "var(--text-primary)" }}>
+                <span>🐙</span> Push to GitHub
+              </button>
+            )}
             {outputs.find((o) => o.role === "architect") && (
               <button onClick={() => setShowArchDiagram(true)}
                       className="btn-ghost text-sm py-2.5 px-5 flex items-center gap-2"
@@ -691,6 +726,19 @@ export default function Dashboard({ projectId }: Props) {
                 </div>
               ))}
 
+              {validationResult && (
+                <div className="mt-4 animate-fade-in">
+                  <BuildStatus validationResult={validationResult} />
+                  {previewUrl && !isCompleted && (
+                    <button onClick={() => setShowPreview(true)}
+                            className="mt-2 btn-success text-sm py-2 px-4 flex items-center gap-2"
+                            style={{ background: "#10b981", borderColor: "#059669" }}>
+                      <span>🌐</span> Live Preview
+                    </button>
+                  )}
+                </div>
+              )}
+
             </div>
           ) : (
             <CallEmployee projectId={projectId} />
@@ -744,10 +792,46 @@ export default function Dashboard({ projectId }: Props) {
         />
       )}
 
+      {showPreview && previewUrl && (
+        <div className="card animate-fade-in" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "10px 16px", borderBottom: "1px solid var(--border)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Live Preview</span>
+              <a href={previewUrl} target="_blank" rel="noopener noreferrer"
+                 style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none" }}>
+                Open in new tab ↗
+              </a>
+            </div>
+            <button onClick={async () => {
+              setShowPreview(false);
+              try { await stopPreview(projectId); } catch {}
+              setPreviewUrl(null);
+            }}
+              style={{ fontSize: 12, color: "var(--danger)", background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
+              Stop Preview
+            </button>
+          </div>
+          <iframe src={previewUrl} style={{ width: "100%", height: 500, border: "none" }}
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+        </div>
+      )}
+
       {showCodePreview && (
         <CodePreview
           projectId={projectId}
           onClose={() => setShowCodePreview(false)}
+        />
+      )}
+
+      {showGitHubPush && (
+        <GitHubPush
+          projectId={projectId}
+          problemStatement={project.problem_statement}
+          onClose={() => setShowGitHubPush(false)}
         />
       )}
 

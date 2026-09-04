@@ -410,3 +410,96 @@ export function connectWebSocket(
     },
   };
 }
+
+export async function callEmployeeStream(
+  projectId: string,
+  role: string,
+  message: string,
+  onToken: (token: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/call/stream`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ role, message }),
+  });
+
+  if (!res.ok || !res.body) {
+    onError("Stream connection failed");
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.token) onToken(data.token);
+          if (data.done) onDone();
+          if (data.error) onError(data.error);
+        } catch { /* skip malformed SSE lines */ }
+      }
+    }
+  }
+  onDone();
+}
+
+export async function applyFileChanges(projectId: string, files: { path: string; content: string }[]): Promise<{ status: string; updated_files: string[]; count: number }> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/files/apply`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ files }),
+  });
+  return checkedJson(res, "Failed to apply file changes");
+}
+
+export async function saveGitHubToken(token: string): Promise<{ status: string; github_username: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/settings/github-token`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ token }),
+  });
+  return checkedJson(res, "Failed to save GitHub token");
+}
+
+export async function checkGitHubToken(): Promise<{ has_token: boolean; github_username?: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/settings/github-token`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to check GitHub token");
+}
+
+export async function pushToGitHub(
+  projectId: string,
+  repoName: string,
+  description?: string,
+  isPrivate?: boolean,
+): Promise<{ status: string; repo_url: string; commit_sha: string; files_pushed: number }> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/push-to-github`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ repo_name: repoName, description: description || "", private: isPrivate || false }),
+  });
+  return checkedJson(res, "Failed to push to GitHub");
+}
+
+export async function getPreviewStatus(projectId: string): Promise<{ active: boolean; preview_url: string | null; timeout_seconds: number }> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/preview`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to check preview status");
+}
+
+export async function stopPreview(projectId: string): Promise<{ status: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/preview/stop`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to stop preview");
+}

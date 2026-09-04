@@ -42,6 +42,7 @@ class ExecutionResult(BaseModel):
     failed_stage: Optional[str] = None
     duration_ms: int = 0
     error_signature: Optional[str] = None
+    preview_url: Optional[str] = None
     stages: Dict[str, StageResult] = Field(default_factory=lambda: {
         "SANDBOX_INIT": StageResult(),
         "INSTALL": StageResult(),
@@ -407,10 +408,27 @@ class E2BSandboxRunner(BaseSandboxRunner):
             result.error_signature = _generate_error_signature("SETUP", str(e))
         finally:
             if sbx:
-                try:
-                    await asyncio.to_thread(sbx.kill)
-                except Exception:
-                    pass
+                if result.overall_status == "PASSED" and plan.commands.health_check:
+                    try:
+                        from app.services.sandbox_manager import sandbox_manager
+                        hc = plan.commands.health_check
+                        hc_port = hc.port if isinstance(hc, HealthCheckSpec) else 3000
+                        preview_url = await asyncio.to_thread(sbx.get_host, hc_port)
+                        if not preview_url.startswith("http"):
+                            preview_url = f"https://{preview_url}"
+                        result.preview_url = preview_url
+                        sandbox_manager.register(project_id, sbx, preview_url, hc_port)
+                    except Exception as e:
+                        logger.warning(f"Could not get preview URL, killing sandbox: {e}")
+                        try:
+                            await asyncio.to_thread(sbx.kill)
+                        except Exception:
+                            pass
+                else:
+                    try:
+                        await asyncio.to_thread(sbx.kill)
+                    except Exception:
+                        pass
 
         result.duration_ms = int((time.time() - start_time) * 1000)
         return result

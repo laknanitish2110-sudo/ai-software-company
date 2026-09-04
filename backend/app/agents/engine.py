@@ -608,3 +608,71 @@ Be specific, helpful, and concise. You have full access to the project state.
     await save_conversation(project_id, role.value, conversation)
 
     return raw_text
+
+
+async def call_employee_stream(project_id: str, role: AgentRole, message: str):
+    """Streaming version of call_employee. Yields SSE-formatted chunks."""
+    project = await get_project(project_id)
+    if not project:
+        yield f"data: {json.dumps({'error': 'Project not found'})}\n\n"
+        return
+
+    outputs = await get_project_outputs(project_id)
+    memory = await get_memory(project_id)
+    context = _build_context(project, outputs, memory)
+
+    conversation = await get_conversation(project_id, role.value)
+    conversation.append({"role": "user", "content": message})
+
+    role_extra = ""
+    if role == AgentRole.ENGINEER:
+        role_extra = """
+
+ITERATION MODE: The Founder is asking you to modify the existing code.
+When they ask for changes:
+1. Identify which file(s) need to change
+2. Provide the COMPLETE updated file content for each changed file
+3. Format each file update as:
+   === FILE: path/to/file.ext ===
+   <complete file content here>
+   === END FILE ===
+4. Explain what you changed and why
+
+This is pair programming. Be precise. Give complete files, not snippets."""
+
+    system_prompt = f"""{SYSTEM_PROMPTS[role]}
+
+You are in a direct conversation with the Founder. Answer their questions based on your expertise and the project context below.
+Be specific, helpful, and concise. You have full access to the project state.
+{role_extra}
+
+{context}"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend([{"role": m["role"], "content": m["content"]} for m in conversation])
+
+    chat_model = MODEL_MAP.get(role.value, SMART_MODEL)
+    chat_provider = PROVIDER_MAP.get(role.value, "openrouter")
+    client = get_client(chat_provider)
+
+    full_response = ""
+    try:
+        stream = await client.chat.completions.create(
+            model=chat_model,
+            messages=messages,
+            max_tokens=4096,
+            stream=True,
+        )
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                token = chunk.choices[0].delta.content
+                full_response += token
+                yield f"data: {json.dumps({'token': token})}\n\n"
+    except Exception as e:
+        logger.error(f"Streaming call_employee error: {e}")
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    conversation.append({"role": "assistant", "content": full_response})
+    await save_conversation(project_id, role.value, conversation)
+
+    yield f"data: {json.dumps({'done': True})}\n\n"

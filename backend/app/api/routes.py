@@ -1,3 +1,4 @@
+import os
 import json
 import asyncio
 import logging
@@ -141,7 +142,7 @@ async def ws_broadcast(msg_type: str, project_id: str, data: dict):
 orchestrator.set_ws_callback(ws_broadcast)
 
 
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from app.services.rate_limiter import rate_limiter
 from app.services.resource_budget import resource_budget, ResourceBudgetExceededError
 
@@ -317,6 +318,35 @@ async def call_employee_endpoint(project_id: str, req: CallEmployeeRequest, curr
         raise HTTPException(500, "Internal server error")
 
 
+@router.post("/projects/{project_id}/call/stream")
+async def call_employee_stream_endpoint(project_id: str, req: CallEmployeeRequest, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    try:
+        allowed, retry_after = await rate_limiter.check_rate_limit(user_id=current_user["id"], action="call")
+        if not allowed:
+            return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+    except Exception:
+        pass
+    from app.agents.engine import call_employee_stream
+    return StreamingResponse(
+        call_employee_stream(project_id, req.role, req.message),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+class ApplyFileChangesRequest(BaseModel):
+    files: list[dict]
+
+
+@router.post("/projects/{project_id}/files/apply")
+async def apply_file_changes(project_id: str, req: ApplyFileChangesRequest, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    from app.services.file_generator import apply_file_updates
+    result = apply_file_updates(project_id, req.files)
+    return result
+
+
 @router.get("/projects/{project_id}/conversation/{role}")
 async def get_employee_conversation(project_id: str, role: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
@@ -447,6 +477,124 @@ async def get_file_contents(project_id: str, current_user: dict = Depends(get_cu
     from app.services.file_generator import get_generated_file_contents
     files = get_generated_file_contents(project_id)
     return {"project_id": project_id, "files": files, "count": len(files)}
+
+
+@router.get("/projects/{project_id}/preview")
+async def get_preview_status(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    from app.services.sandbox_manager import sandbox_manager
+    url = sandbox_manager.get_preview_url(project_id)
+    return {
+        "active": url is not None,
+        "preview_url": url,
+        "timeout_seconds": int(os.getenv("SANDBOX_PREVIEW_TIMEOUT", "600")),
+    }
+
+
+@router.post("/projects/{project_id}/preview/stop")
+async def stop_preview(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    from app.services.sandbox_manager import sandbox_manager
+    await sandbox_manager.kill(project_id)
+    return {"status": "stopped"}
+
+
+class GitHubTokenRequest(BaseModel):
+    token: str
+
+
+class GitHubPushRequest(BaseModel):
+    repo_name: str
+    description: str = ""
+    private: bool = False
+
+
+@router.post("/settings/github-token")
+async def save_github_token(req: GitHubTokenRequest, current_user: dict = Depends(get_current_user)):
+    from app.services.github_service import GitHubService, GitHubPushError, obfuscate_token
+    from app.core.database import set_user_setting
+    from app.core.config import JWT_SECRET
+
+    gh = GitHubService(req.token)
+    try:
+        user_info = await gh.validate_token()
+    except GitHubPushError as e:
+        raise HTTPException(400, str(e))
+
+    encrypted = obfuscate_token(req.token, JWT_SECRET)
+    await set_user_setting(current_user["id"], "github_token", encrypted)
+    return {"status": "ok", "github_username": user_info.get("login")}
+
+
+@router.get("/settings/github-token")
+async def check_github_token(current_user: dict = Depends(get_current_user)):
+    from app.core.database import get_user_setting
+    token_enc = await get_user_setting(current_user["id"], "github_token")
+    if token_enc:
+        from app.services.github_service import GitHubService, deobfuscate_token
+        from app.core.config import JWT_SECRET
+        try:
+            decrypted = deobfuscate_token(token_enc, JWT_SECRET)
+            gh = GitHubService(decrypted)
+            user_info = await gh.validate_token()
+            return {"has_token": True, "github_username": user_info.get("login")}
+        except Exception:
+            return {"has_token": False}
+    return {"has_token": False}
+
+
+@router.post("/projects/{project_id}/push-to-github")
+async def push_to_github(project_id: str, req: GitHubPushRequest, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    from app.core.database import get_user_setting
+    from app.services.github_service import GitHubService, GitHubPushError, deobfuscate_token
+    from app.services.file_generator import get_generated_file_contents
+    from app.core.config import JWT_SECRET
+
+    token_enc = await get_user_setting(current_user["id"], "github_token")
+    if not token_enc:
+        raise HTTPException(400, "No GitHub token configured. Save your token first.")
+
+    try:
+        token = deobfuscate_token(token_enc, JWT_SECRET)
+    except Exception:
+        raise HTTPException(400, "Stored GitHub token is corrupted. Please save a new token.")
+
+    gh = GitHubService(token)
+    files = get_generated_file_contents(project_id)
+    if not files:
+        raise HTTPException(404, "No generated files found for this project.")
+
+    pushable_files = [
+        {"path": f["path"], "content": f["content"]}
+        for f in files
+        if f.get("content") and f["content"] != "(binary file)"
+    ]
+
+    try:
+        user_info = await gh.validate_token()
+        owner = user_info["login"]
+        repo_data = await gh.create_repo(
+            name=req.repo_name,
+            description=req.description,
+            private=req.private,
+        )
+        commit_sha = await gh.push_files(
+            owner=owner,
+            repo=req.repo_name,
+            files=pushable_files,
+        )
+        return {
+            "status": "ok",
+            "repo_url": repo_data["html_url"],
+            "commit_sha": commit_sha,
+            "files_pushed": len(pushable_files),
+        }
+    except GitHubPushError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"GitHub push error: {e}", exc_info=True)
+        raise HTTPException(500, "GitHub push failed. Please try again.")
 
 
 class ShareRequest(BaseModel):

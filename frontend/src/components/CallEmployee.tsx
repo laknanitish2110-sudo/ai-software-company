@@ -3,17 +3,36 @@
 import { useState, useRef, useEffect } from "react";
 import { AGENT_CONFIG } from "@/lib/constants";
 import { useToast } from "./Toast";
-import { callEmployee, getConversation } from "@/lib/api";
+import { callEmployeeStream, getConversation, applyFileChanges } from "@/lib/api";
 
 interface Props {
   projectId: string;
 }
 
+interface ChatMessage {
+  role: string;
+  content: string;
+  timestamp?: string;
+  hasFileBlocks?: boolean;
+}
+
+function parseFileBlocks(text: string): { path: string; content: string }[] {
+  const blocks: { path: string; content: string }[] = [];
+  const regex = /=== FILE: (.+?) ===\n([\s\S]*?)(?:=== END FILE ===|(?==== FILE:)|$)/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const content = match[2].trim();
+    if (content) blocks.push({ path: match[1].trim(), content });
+  }
+  return blocks;
+}
+
 export default function CallEmployee({ projectId }: Props) {
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -24,7 +43,11 @@ export default function CallEmployee({ projectId }: Props) {
   useEffect(() => {
     if (selectedRole) {
       getConversation(projectId, selectedRole).then((data) => {
-        setMessages(data.messages || []);
+        const msgs: ChatMessage[] = (data.messages || []).map((m: { role: string; content: string }) => ({
+          ...m,
+          hasFileBlocks: m.role === "assistant" && parseFileBlocks(m.content).length > 0,
+        }));
+        setMessages(msgs);
       });
     }
   }, [selectedRole, projectId]);
@@ -34,23 +57,57 @@ export default function CallEmployee({ projectId }: Props) {
 
     const userMsg = message;
     setMessage("");
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setMessages((prev) => [...prev, { role: "user", content: userMsg, timestamp: new Date().toLocaleTimeString() }]);
     setLoading(true);
 
+    setMessages((prev) => [...prev, { role: "assistant", content: "", timestamp: new Date().toLocaleTimeString() }]);
+
     try {
-      const response = await callEmployee(projectId, selectedRole, userMsg);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: response.response },
-      ]);
+      await callEmployeeStream(
+        projectId, selectedRole, userMsg,
+        (token) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === "assistant") {
+              updated[updated.length - 1] = { ...last, content: last.content + token };
+            }
+            return updated;
+          });
+        },
+        () => {
+          setLoading(false);
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === "assistant") {
+              updated[updated.length - 1] = { ...last, hasFileBlocks: parseFileBlocks(last.content).length > 0 };
+            }
+            return updated;
+          });
+        },
+        (error) => {
+          toast("error", "Connection failed", error);
+          setLoading(false);
+        }
+      );
     } catch {
-      toast("error", "Connection failed", `Could not reach ${AGENT_CONFIG[selectedRole]?.label || "this employee"}. Check that the backend is running.`);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Sorry, I couldn't process that request. The backend may be offline — please try again." },
-      ]);
-    } finally {
+      toast("error", "Connection failed", `Could not reach ${AGENT_CONFIG[selectedRole]?.label || "this employee"}. Backend may be offline.`);
       setLoading(false);
+    }
+  }
+
+  async function handleApplyFiles(content: string) {
+    const blocks = parseFileBlocks(content);
+    if (blocks.length === 0) return;
+    setApplying(true);
+    try {
+      const result = await applyFileChanges(projectId, blocks);
+      toast("success", "Files updated", `Applied changes to ${result.count} file(s): ${result.updated_files.join(", ")}`);
+    } catch (e) {
+      toast("error", "Apply failed", e instanceof Error ? e.message : "Could not apply file changes.");
+    } finally {
+      setApplying(false);
     }
   }
 
@@ -127,26 +184,41 @@ export default function CallEmployee({ projectId }: Props) {
             key={i}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}
           >
-            <div
-              className="max-w-[80%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed"
-              style={msg.role === "user"
-                ? { background: "linear-gradient(135deg, #635bff, #7a73ff)", color: "white", borderBottomRightRadius: 6 }
-                : { background: "var(--bg-elevated)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderBottomLeftRadius: 6 }
-              }
-            >
-              {msg.content}
+            <div className="max-w-[80%]">
+              <div
+                className="px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed"
+                style={msg.role === "user"
+                  ? { background: "linear-gradient(135deg, #635bff, #7a73ff)", color: "white", borderBottomRightRadius: 6 }
+                  : { background: "var(--bg-elevated)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderBottomLeftRadius: 6 }
+                }
+              >
+                {msg.content}
+                {loading && i === messages.length - 1 && msg.role === "assistant" && (
+                  <span className="inline-block w-1.5 h-4 ml-0.5 animate-pulse" style={{ background: "var(--accent)", borderRadius: 1 }} />
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                {msg.timestamp && (
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{msg.timestamp}</span>
+                )}
+                {msg.hasFileBlocks && msg.role === "assistant" && (
+                  <button
+                    onClick={() => handleApplyFiles(msg.content)}
+                    disabled={applying}
+                    className="text-xs px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+                    style={{
+                      background: "var(--success-bg)",
+                      color: "var(--success)",
+                      border: "1px solid var(--success-border)",
+                    }}
+                  >
+                    {applying ? "Applying..." : "Apply File Changes"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}
-        {loading && (
-          <div className="flex justify-start animate-fade-in">
-            <div className="px-4 py-3 rounded-2xl flex items-center gap-2"
-                 style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderBottomLeftRadius: 6 }}>
-              <span className="dot-loading"><span /><span /><span /></span>
-              <span className="text-sm" style={{ color: "var(--text-muted)" }}>{config.label} is thinking</span>
-            </div>
-          </div>
-        )}
         <div ref={chatEndRef} />
       </div>
 
