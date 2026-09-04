@@ -138,6 +138,36 @@ export function classifyTask(problemStatement: string): string {
   return suggested;
 }
 
+const ROUTE_COMPLEXITY: Record<string, number> = {
+  quick_build: 1, standard: 2, full: 3, research: 2, report: 1,
+};
+const CODE_ROUTES = new Set(["quick_build", "standard", "full"]);
+const NON_CODE_ROUTES = new Set(["research", "report"]);
+
+export function getRouteGuardrail(
+  selectedRoute: string | null,
+  suggestedRoute: string
+): string | null {
+  if (!selectedRoute || selectedRoute === suggestedRoute) return null;
+
+  const selComplexity = ROUTE_COMPLEXITY[selectedRoute] ?? 2;
+  const sugComplexity = ROUTE_COMPLEXITY[suggestedRoute] ?? 2;
+
+  if (CODE_ROUTES.has(selectedRoute) && NON_CODE_ROUTES.has(suggestedRoute)) {
+    return `This looks like a ${ROUTE_CONFIG[suggestedRoute].name.toLowerCase()} task, not a coding project. Consider switching to ${ROUTE_CONFIG[suggestedRoute].name}.`;
+  }
+  if (NON_CODE_ROUTES.has(selectedRoute) && CODE_ROUTES.has(suggestedRoute)) {
+    return `This looks like it needs code. ${ROUTE_CONFIG[selectedRoute].name} won't produce any — consider ${ROUTE_CONFIG[suggestedRoute].name}.`;
+  }
+  if (selComplexity < sugComplexity && sugComplexity - selComplexity >= 2) {
+    return `This looks complex enough for ${ROUTE_CONFIG[suggestedRoute].name}. Quick Build may produce incomplete results.`;
+  }
+  if (selComplexity > sugComplexity && selComplexity - sugComplexity >= 2) {
+    return `This is simple enough for ${ROUTE_CONFIG[suggestedRoute].name}. Full Pipeline might be overkill.`;
+  }
+  return null;
+}
+
 export const STATUS_LABELS: Record<string, string> = {
   created: "CEO is analyzing...",
   ba_working: "Business Analyst is working",

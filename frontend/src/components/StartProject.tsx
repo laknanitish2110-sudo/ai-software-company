@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { ROUTE_CONFIG, classifyTask, AGENT_CONFIG } from "@/lib/constants";
+import { ROUTE_CONFIG, classifyTask, AGENT_CONFIG, getRouteGuardrail } from "@/lib/constants";
 
 interface RecentProject {
   id: string;
@@ -68,6 +68,10 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
   }, [problem]);
 
   const activeRoute = selectedRoute || suggestedRoute;
+
+  const guardrailWarning = useMemo(() => {
+    return getRouteGuardrail(selectedRoute, suggestedRoute);
+  }, [selectedRoute, suggestedRoute]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -163,6 +167,30 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
                     );
                   })}
                 </div>
+
+                {guardrailWarning && (
+                  <div
+                    className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg text-xs animate-fade-in"
+                    style={{
+                      background: "var(--warning-bg, #fef3c7)",
+                      color: "var(--warning, #d97706)",
+                      border: "1px solid var(--warning-border, #fde68a)",
+                    }}
+                  >
+                    <span className="shrink-0 mt-px">&#9888;</span>
+                    <span>
+                      {guardrailWarning}{" "}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRoute(null)}
+                        className="underline font-medium"
+                        style={{ color: "inherit" }}
+                      >
+                        Use recommended
+                      </button>
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 

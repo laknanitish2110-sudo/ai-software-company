@@ -34,6 +34,7 @@ from app.agents.prompts import (
     PPT_SYSTEM_PROMPT,
     CROSS_REVIEW_PROMPT,
     REVIEW_CRITERIA,
+    ROUTE_PROMPT_ADDENDUMS,
 )
 from app.models.schemas import AgentRole
 from app.services.web_search import research_topic
@@ -383,6 +384,11 @@ async def run_agent(project_id: str, role: AgentRole, progress_callback=None, st
 
     context = _build_context(project, outputs, memory)
     system_prompt = SYSTEM_PROMPTS[role]
+
+    route_name = memory.get("pipeline_route", "full")
+    route_addendums = ROUTE_PROMPT_ADDENDUMS.get(route_name, {})
+    if role.value in route_addendums:
+        system_prompt = system_prompt + route_addendums[role.value]
 
     if progress_callback:
         await progress_callback(f"{ROLE_LABELS[role]} is analyzing the project...")
