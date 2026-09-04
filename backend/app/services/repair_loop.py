@@ -133,7 +133,9 @@ class RepairLoopService:
                             final_execution_result=exec_result.model_dump() if hasattr(exec_result, "model_dump") else exec_result.dict(),
                             final_qa_report=qa_report.model_dump() if hasattr(qa_report, "model_dump") else qa_report.dict(),
                             repair_history=[],
-                            reason="Project passed all Definition of Done criteria cleanly on Attempt 1."
+                            reason="Project passed all Definition of Done criteria cleanly on Attempt 1.",
+                            final_files=current_files,
+                            build_artifacts=getattr(exec_result, "build_artifacts", None),
                         )
                 else:
                     # Post-repair comparison against baseline
@@ -154,7 +156,9 @@ class RepairLoopService:
                             final_qa_report=qa_report.model_dump() if hasattr(qa_report, "model_dump") else qa_report.dict(),
                             repair_history=history,
                             regression_results=regression_history,
-                            reason=f"Project repaired and validated on Attempt {attempt}."
+                            reason=f"Project repaired and validated on Attempt {attempt}.",
+                            final_files=current_files,
+                            build_artifacts=getattr(exec_result, "build_artifacts", None),
                         )
 
                 # Step 4: Check if Attempt Limit Reached
@@ -167,7 +171,8 @@ class RepairLoopService:
                         final_qa_report=qa_report.model_dump() if hasattr(qa_report, "model_dump") else qa_report.dict(),
                         repair_history=history,
                         regression_results=regression_history,
-                        reason=f"Reached maximum repair attempts limit ({MAX_REPAIR_ATTEMPTS}) without achieving full validation."
+                        reason=f"Reached maximum repair attempts limit ({MAX_REPAIR_ATTEMPTS}) without achieving full validation.",
+                        final_files=current_files,
                     )
 
                 # Step 5: Build Repair Context & Generate Targeted Patch
@@ -227,7 +232,8 @@ class RepairLoopService:
                 final_qa_report=last_qa_report.model_dump() if hasattr(last_qa_report, "model_dump") else None,
                 repair_history=history,
                 regression_results=regression_history,
-                reason="Max repair attempts exhausted."
+                reason="Max repair attempts exhausted.",
+                final_files=current_files,
             )
 
         finally:

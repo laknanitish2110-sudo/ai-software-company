@@ -281,6 +281,17 @@ class Orchestrator:
                         val_json = final_val_res.model_dump_json() if hasattr(final_val_res, "model_dump_json") else json.dumps(final_val_res.dict())
                         await set_memory(project_id, "final_validation_result", val_json, "repair_loop")
 
+                        if final_val_res.final_files:
+                            await set_memory(project_id, "repaired_files", json.dumps(final_val_res.final_files), "repair_loop")
+
+                        if final_val_res.build_artifacts:
+                            try:
+                                from app.services.file_generator import generate_deployable_bundle
+                                generate_deployable_bundle(project_id, final_val_res.build_artifacts)
+                                await set_memory(project_id, "has_deployable_bundle", "true", "repair_loop")
+                            except Exception as bundle_err:
+                                logger.warning(f"Deployable bundle creation failed: {bundle_err}")
+
                         val_data = json.loads(val_json)
                         await self._notify("sandbox_completed", project_id, {
                             "role": "sandbox",
@@ -501,7 +512,17 @@ class Orchestrator:
             if status == ProjectStatus.ENGINEER_REVIEW.value:
                 engineer_output = await get_latest_output(project_id, AgentRole.ENGINEER.value)
                 if engineer_output and isinstance(engineer_output.get("content"), dict):
-                    content = engineer_output["content"]
+                    content = dict(engineer_output["content"])
+                    mem = await get_memory(project_id)
+                    repaired_json = mem.get("repaired_files")
+                    if repaired_json:
+                        try:
+                            repaired = json.loads(repaired_json)
+                            if repaired:
+                                content["files"] = repaired
+                                logger.info(f"Using {len(repaired)} repaired files for project {project_id}")
+                        except Exception:
+                            pass
                     if content.get("files"):
                         try:
                             zip_path = generate_project_files(project_id, content)

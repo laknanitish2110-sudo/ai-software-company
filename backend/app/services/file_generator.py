@@ -147,6 +147,51 @@ def get_generated_file_contents(project_id: str) -> list[dict]:
     return files
 
 
+def generate_deployable_bundle(project_id: str, artifacts: list[dict]) -> str:
+    """Create a ZIP of built artifacts (dist/, build/ contents) from sandbox execution."""
+    ensure_projects_dir()
+
+    bundle_dir = PROJECTS_DIR / f"{project_id}_bundle"
+    if bundle_dir.exists():
+        shutil.rmtree(bundle_dir)
+    bundle_dir.mkdir(parents=True)
+
+    resolved_root = bundle_dir.resolve()
+    for entry in artifacts:
+        file_path = entry.get("path", "")
+        content = entry.get("content", "")
+        if not file_path or not content:
+            continue
+
+        file_path = file_path.lstrip("/").lstrip("\\")
+        full_path = (bundle_dir / file_path).resolve()
+
+        try:
+            if not full_path.is_relative_to(resolved_root):
+                continue
+        except AttributeError:
+            if not str(full_path).startswith(str(resolved_root)):
+                continue
+
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content, encoding="utf-8")
+
+    zip_path = PROJECTS_DIR / f"{project_id}_bundle.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in bundle_dir.rglob("*"):
+            if file.is_file():
+                zf.write(file, file.relative_to(bundle_dir))
+
+    return str(zip_path)
+
+
+def get_deployable_bundle_path(project_id: str) -> str | None:
+    zip_path = PROJECTS_DIR / f"{project_id}_bundle.zip"
+    if zip_path.exists():
+        return str(zip_path)
+    return None
+
+
 def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
     """Apply file changes from Engineer chat iteration. Regenerates ZIP."""
     project_dir = PROJECTS_DIR / project_id

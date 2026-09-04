@@ -109,6 +109,8 @@ class FinalValidationResult(BaseModel):
     repair_history: List[RepairAttempt] = Field(default_factory=list)
     regression_results: List[Dict[str, Any]] = Field(default_factory=list)
     reason: str = ""
+    final_files: Optional[List[Dict[str, Any]]] = None
+    build_artifacts: Optional[List[Dict[str, str]]] = None
 
 
 class HealthCheckSpec(BaseModel):

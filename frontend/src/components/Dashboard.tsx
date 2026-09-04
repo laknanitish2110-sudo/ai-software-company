@@ -13,7 +13,7 @@ import ArchitectureDiagram from "./ArchitectureDiagram";
 import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
-import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, shareProject, getIntegrationStatus, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, stopPreview, ReconnectingWebSocket } from "@/lib/api";
+import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, downloadBundle, shareProject, getIntegrationStatus, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, stopPreview, ReconnectingWebSocket } from "@/lib/api";
 import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS, ROUTE_CONFIG } from "@/lib/constants";
 
 interface Props {
@@ -489,6 +489,15 @@ export default function Dashboard({ projectId }: Props) {
               }}
                       className="btn-success text-sm py-2.5 px-5 flex items-center gap-2">
                 <span>📦</span> Download Code (.zip)
+              </button>
+            )}
+            {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && validationResult?.final_status === "VALIDATED" && (
+              <button onClick={async () => {
+                try { await downloadBundle(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "No deployable bundle found."); }
+              }}
+                      className="btn-success text-sm py-2.5 px-5 flex items-center gap-2"
+                      style={{ background: "#8b5cf6", borderColor: "#7c3aed" }}>
+                <span>🚀</span> Deployable Bundle (.zip)
               </button>
             )}
             {(deliverableType === "workflow" || deliverableType === "hybrid") && (

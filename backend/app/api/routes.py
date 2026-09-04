@@ -636,6 +636,20 @@ async def download_code(project_id: str, current_user: dict = Depends(get_curren
     )
 
 
+@router.get("/projects/{project_id}/download/bundle")
+async def download_bundle(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
+    from app.services.file_generator import get_deployable_bundle_path
+    bundle_path = get_deployable_bundle_path(project_id)
+    if not bundle_path:
+        raise HTTPException(404, "No deployable bundle available. Build must succeed first.")
+    return FileResponse(
+        bundle_path,
+        media_type="application/zip",
+        filename=f"project-{project_id}-bundle.zip",
+    )
+
+
 @router.get("/projects/{project_id}/download/pptx")
 async def download_pptx(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])

@@ -220,6 +220,13 @@ export function downloadDocx(projectId: string) {
   );
 }
 
+export function downloadBundle(projectId: string) {
+  return safeDownload(
+    `${API_BASE}/projects/${projectId}/download/bundle`,
+    "No deployable bundle available. Build must succeed first."
+  );
+}
+
 export function downloadWorkflow(projectId: string) {
   return safeDownload(
     `${API_BASE}/projects/${projectId}/download/workflow`,

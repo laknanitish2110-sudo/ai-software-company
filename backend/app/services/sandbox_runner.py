@@ -52,6 +52,7 @@ class ExecutionResult(BaseModel):
         "HEALTH_CHECK": StageResult(),
     })
     environment_used: Dict[str, str] = Field(default_factory=dict)
+    build_artifacts: Optional[List[Dict[str, str]]] = None
 
 
 def _truncate_log(text: str, max_size: int = MAX_LOG_SIZE) -> str:
@@ -68,6 +69,74 @@ def _generate_error_signature(failed_stage: str, stderr: str) -> str:
     first_lines = "\n".join([line for line in stderr.split("\n") if line.strip()][:5])
     raw = f"{failed_stage}:{first_lines}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:16]
+
+
+MAX_ARTIFACT_FILE_SIZE = 500 * 1024  # 500KB per file
+MAX_ARTIFACT_FILES = 200
+MAX_ARTIFACT_TOTAL = 50 * 1024 * 1024  # 50MB total
+
+async def _extract_build_artifacts(sbx, project_type: str) -> List[Dict[str, str]]:
+    """Extract built output (dist/, build/, out/) from E2B sandbox after successful build."""
+    candidate_dirs = ["dist", "build", "out"]
+    if project_type == "node":
+        candidate_dirs = ["dist", "build", ".next/static", "out"]
+
+    artifacts = []
+    total_size = 0
+
+    for d in candidate_dirs:
+        full_path = f"/home/user/{d}"
+        try:
+            entries = await asyncio.to_thread(sbx.files.list, full_path)
+        except Exception:
+            continue
+
+        file_paths = []
+        _collect_file_paths(entries, full_path, file_paths)
+
+        for fpath in file_paths:
+            if len(artifacts) >= MAX_ARTIFACT_FILES:
+                break
+            try:
+                content = await asyncio.to_thread(sbx.files.read, fpath)
+                if isinstance(content, bytes):
+                    if len(content) > MAX_ARTIFACT_FILE_SIZE:
+                        continue
+                    total_size += len(content)
+                    if total_size > MAX_ARTIFACT_TOTAL:
+                        break
+                    try:
+                        content = content.decode("utf-8")
+                    except UnicodeDecodeError:
+                        continue
+                else:
+                    content = str(content)
+                    if len(content) > MAX_ARTIFACT_FILE_SIZE:
+                        continue
+                    total_size += len(content)
+                    if total_size > MAX_ARTIFACT_TOTAL:
+                        break
+
+                rel_path = fpath.replace("/home/user/", "", 1)
+                artifacts.append({"path": rel_path, "content": content})
+            except Exception:
+                continue
+
+    return artifacts
+
+
+def _collect_file_paths(entries, base_path: str, out: list):
+    """Recursively collect file paths from E2B directory listing."""
+    for entry in entries:
+        name = getattr(entry, "name", str(entry))
+        entry_type = getattr(entry, "type", "file")
+        full = f"{base_path}/{name}"
+        if entry_type == "dir":
+            children = getattr(entry, "children", None)
+            if children:
+                _collect_file_paths(children, full, out)
+        else:
+            out.append(full)
 
 
 class BaseSandboxRunner:
@@ -400,6 +469,13 @@ class E2BSandboxRunner(BaseSandboxRunner):
 
             if not overall_failed:
                 result.overall_status = "PASSED"
+                try:
+                    artifacts = await _extract_build_artifacts(sbx, plan.project_type)
+                    if artifacts:
+                        result.build_artifacts = artifacts
+                        logger.info(f"Extracted {len(artifacts)} build artifacts from E2B sandbox")
+                except Exception as art_err:
+                    logger.warning(f"Build artifact extraction failed (non-fatal): {art_err}")
 
         except Exception as e:
             logger.error(f"E2B sandbox execution error: {e}")
