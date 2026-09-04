@@ -2,7 +2,7 @@
 
 A multi-agent AI pipeline that simulates a full software company — from problem analysis to working code, architecture diagrams, and investor-ready presentations. Built for the **LaunchpadX Hackathon 2026**.
 
-**Live Demo:** [http://200.141.8.126:3000](http://200.141.8.126:3000)
+**Live Demo:** [https://ai-software-company-gold.vercel.app](https://ai-software-company-gold.vercel.app)
 
 ## How It Works
 
