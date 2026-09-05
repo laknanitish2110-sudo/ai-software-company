@@ -107,10 +107,19 @@ export default function AgentCanvas({
         border: "1px solid #1a1f3a",
       }}
     >
+      <style>{`
+        @keyframes canvasPulse {
+          0%, 100% { opacity: 0.6; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.3); }
+        }
+        .agent-node { transition: transform 0.15s ease; }
+        .agent-node:hover { transform: scale(1.04); }
+        .agent-node:hover .node-hover-ring { opacity: 0.3 !important; }
+      `}</style>
       {/* Header */}
       <div
         style={{
-          padding: "12px 20px",
+          padding: "14px 20px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -133,18 +142,28 @@ export default function AgentCanvas({
                 : completedCount === 6
                   ? "0 0 8px #0bbf8c"
                   : "none",
+              animation: streamingAgent ? "canvasPulse 2s infinite" : undefined,
             }}
           />
           <span
             style={{
-              color: "rgba(255,255,255,0.85)",
+              color: "rgba(255,255,255,0.9)",
               fontSize: 13,
-              fontWeight: 600,
-              letterSpacing: "0.02em",
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase" as const,
             }}
           >
-            Live Agent Canvas
+            Company HQ
           </span>
+          {completedCount === 6 && (
+            <span style={{
+              fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+              background: "rgba(11,191,140,0.15)", color: "#0bbf8c", border: "1px solid rgba(11,191,140,0.3)",
+            }}>
+              ALL SHIPPED
+            </span>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           {streamingAgent && (
@@ -153,25 +172,30 @@ export default function AgentCanvas({
                 color: "#a5a0ff",
                 fontSize: 11,
                 fontFamily: "monospace",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
               }}
             >
-              {AGENT_CONFIG[streamingAgent]?.label} working...
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#635bff", display: "inline-block",
+                             animation: "canvasPulse 1s infinite" }} />
+              {AGENT_CONFIG[streamingAgent]?.label} working
             </span>
           )}
           <span
             style={{
-              color: "rgba(255,255,255,0.35)",
+              color: "rgba(255,255,255,0.5)",
               fontSize: 11,
-              fontFamily: "monospace",
+              fontWeight: 600,
             }}
           >
             {completedCount}/6
           </span>
           <div
             style={{
-              width: 60,
-              height: 4,
-              borderRadius: 2,
+              width: 80,
+              height: 5,
+              borderRadius: 3,
               background: "rgba(255,255,255,0.06)",
               overflow: "hidden",
             }}
@@ -180,7 +204,7 @@ export default function AgentCanvas({
               style={{
                 width: `${(completedCount / 6) * 100}%`,
                 height: "100%",
-                borderRadius: 2,
+                borderRadius: 3,
                 background:
                   completedCount === 6
                     ? "#0bbf8c"
@@ -189,6 +213,11 @@ export default function AgentCanvas({
               }}
             />
           </div>
+          {elapsed > 0 && (
+            <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 10, fontFamily: "monospace" }}>
+              {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
+            </span>
+          )}
         </div>
       </div>
 
@@ -231,14 +260,14 @@ export default function AgentCanvas({
         {/* Center watermark */}
         <text
           x="340"
-          y="200"
+          y="195"
           textAnchor="middle"
-          fill="rgba(255,255,255,0.035)"
-          fontSize="26"
+          fill="rgba(255,255,255,0.03)"
+          fontSize="22"
           fontWeight="700"
-          letterSpacing="0.2em"
+          letterSpacing="0.25em"
         >
-          AI SOFTWARE CO
+          YOUR AI COMPANY
         </text>
 
         {/* Connections */}
@@ -421,12 +450,28 @@ export default function AgentCanvas({
                       text: "rgba(255,255,255,0.25)",
                     };
 
+          const clickable = onNodeClick && (state === "done" || state === "review");
+
           return (
             <g
               key={role}
+              className="agent-node"
               onClick={() => onNodeClick?.(role)}
               style={{ cursor: onNodeClick ? "pointer" : undefined }}
             >
+              {/* Hover ring — visible on mouse over via CSS */}
+              <circle
+                className="node-hover-ring"
+                cx={x}
+                cy={y}
+                r={R + 3}
+                fill="none"
+                stroke="rgba(255,255,255,0.15)"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+                opacity={0}
+              />
+
               {/* Pulsing glow ring (active only) */}
               {state === "active" && (
                 <circle
@@ -582,19 +627,33 @@ export default function AgentCanvas({
                 opacity={state === "waiting" ? 0.3 : 0.7}
               >
                 {state === "done"
-                  ? "Complete"
+                  ? "Shipped"
                   : state === "active"
                     ? "Working..."
                     : state === "review"
-                      ? "Awaiting Review"
+                      ? "Needs Review"
                       : "Standby"}
               </text>
+
+              {/* Click hint for actionable nodes */}
+              {clickable && (
+                <text
+                  x={x}
+                  y={y + R + 44}
+                  textAnchor="middle"
+                  fill="rgba(165,160,255,0.5)"
+                  fontSize="8"
+                  fontFamily="monospace"
+                >
+                  click to view
+                </text>
+              )}
 
               {/* Model/Provider badge */}
               {MODEL_LABELS[role] && (
                 <text
                   x={x}
-                  y={y + R + 46}
+                  y={y + R + (clickable ? 56 : 46)}
                   textAnchor="middle"
                   fill={MODEL_LABELS[role].providerColor}
                   fontSize="8"
