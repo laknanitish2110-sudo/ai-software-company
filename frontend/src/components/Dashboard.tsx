@@ -9,12 +9,14 @@ import BuildStatus, { ValidationResult } from "./BuildStatus";
 import CallEmployee from "./CallEmployee";
 import CodePreview from "./CodePreview";
 import GitHubPush from "./GitHubPush";
+import VersionTimeline from "./VersionTimeline";
+import QuickImprove from "./QuickImprove";
 import ArchitectureDiagram from "./ArchitectureDiagram";
 import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
-import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, downloadBundle, shareProject, getIntegrationStatus, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, stopPreview, ReconnectingWebSocket } from "@/lib/api";
-import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS, ROUTE_CONFIG } from "@/lib/constants";
+import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, downloadBundle, shareProject, getIntegrationStatus, getModelConfig, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, stopPreview, ReconnectingWebSocket } from "@/lib/api";
+import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS, ROUTE_CONFIG, updateModelLabels } from "@/lib/constants";
 
 interface Props {
   projectId: string;
@@ -113,6 +115,9 @@ export default function Dashboard({ projectId }: Props) {
   useEffect(() => {
     getIntegrationStatus()
       .then((s) => setN8nConnected(s.n8n_connected))
+      .catch(() => {});
+    getModelConfig()
+      .then((cfg) => updateModelLabels(cfg.agents))
       .catch(() => {});
   }, []);
 
@@ -577,6 +582,21 @@ export default function Dashboard({ projectId }: Props) {
               })}
             </div>
           </div>
+
+          {/* Version Timeline */}
+          <VersionTimeline
+            events={events}
+            projectStatus={project.status}
+            createdAt={project.created_at}
+          />
+
+          {/* Quick Improve */}
+          {isCompleted && (
+            <QuickImprove
+              projectId={projectId}
+              onImprove={handleRevise}
+            />
+          )}
 
           {/* Ship Section (collapsible) */}
           {isCompleted && (

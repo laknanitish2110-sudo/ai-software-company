@@ -49,14 +49,23 @@ export const PIPELINE_ORDER = [
   "ppt",
 ];
 
-export const MODEL_LABELS: Record<string, { model: string; provider: string; providerColor: string }> = {
-  ceo: { model: "Gemini Flash", provider: "Google", providerColor: "#4285f4" },
-  business_analyst: { model: "Claude Sonnet", provider: "Anthropic", providerColor: "#d4a27f" },
-  researcher: { model: "Gemini Flash", provider: "Google", providerColor: "#4285f4" },
-  architect: { model: "Claude Sonnet", provider: "Anthropic", providerColor: "#d4a27f" },
-  engineer: { model: "GPT-4o", provider: "OpenAI", providerColor: "#10a37f" },
-  ppt: { model: "Gemini Flash", provider: "Google", providerColor: "#4285f4" },
+// Static fallback — overridden at runtime by /api/models when backend is available
+export let MODEL_LABELS: Record<string, { model: string; provider: string; providerColor: string }> = {
+  ceo: { model: "GPT-4.1", provider: "OpenAI", providerColor: "#10a37f" },
+  business_analyst: { model: "GPT-4.1", provider: "OpenAI", providerColor: "#10a37f" },
+  researcher: { model: "Gemini 2.5 Pro", provider: "Google", providerColor: "#4285f4" },
+  architect: { model: "Claude Sonnet 4", provider: "Anthropic", providerColor: "#d4a27f" },
+  engineer: { model: "GPT-4.1", provider: "OpenAI", providerColor: "#10a37f" },
+  ppt: { model: "Gemini 2.5 Flash", provider: "Google", providerColor: "#4285f4" },
 };
+
+export function updateModelLabels(agents: Record<string, { display: { model: string; provider: string; providerColor: string } }>) {
+  for (const [role, info] of Object.entries(agents)) {
+    if (info.display?.model) {
+      MODEL_LABELS[role] = info.display;
+    }
+  }
+}
 
 export const ROUTE_CONFIG: Record<string, {
   name: string;

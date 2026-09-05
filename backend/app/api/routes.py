@@ -840,6 +840,29 @@ async def integration_status(current_user: dict = Depends(get_current_user)):
     }
 
 
+@router.get("/models")
+async def get_models(current_user: dict = Depends(get_current_user)):
+    """Return the current model configuration for all agents."""
+    from app.core.config import MODEL_MAP, PROVIDER_MAP, MODEL_INFO, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY
+    agents = {}
+    for role in ["ceo", "business_analyst", "researcher", "architect", "engineer", "ppt"]:
+        info = MODEL_INFO.get(role, {})
+        agents[role] = {
+            "model": MODEL_MAP.get(role, "unknown"),
+            "provider": PROVIDER_MAP.get(role, "openrouter"),
+            "display": info,
+        }
+    return {
+        "agents": agents,
+        "providers": {
+            "openrouter": True,
+            "openai": bool(OPENAI_API_KEY),
+            "anthropic": bool(ANTHROPIC_API_KEY),
+            "gemini": bool(GEMINI_API_KEY),
+        },
+    }
+
+
 @router.post("/projects/{project_id}/share")
 async def share_project(project_id: str, req: ShareRequest, current_user: dict = Depends(get_current_user)):
     project = await _verify_project_owner(project_id, current_user["id"])

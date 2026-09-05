@@ -14,6 +14,8 @@ OPENROUTER_BASE_URL = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1").
 OPENROUTER_KEYS = [k for k in [OPENROUTER_API_KEY, OPENROUTER_API_KEY_2, OPENROUTER_API_KEY_3, OPENROUTER_API_KEY_4, OPENROUTER_API_KEY_5, OPENROUTER_API_KEY_6] if k]
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = "https://api.openai.com/v1"
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1/"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
@@ -112,41 +114,65 @@ def _or(n: int) -> str:
         return "openrouter"
     return f"openrouter{n}"
 
-# 6 keys = 1 dedicated key per agent, zero sharing
-# Key 1: CEO           | Key 2: BA            | Key 3: Researcher
-# Key 4: Architect     | Key 5: Engineer fb   | Key 6: PPT
-# Cross-reviews rotate through keys not currently in use
+# ── Specialized model defaults per agent ──────────────────────────────
+# Best model for each job — not one model for all.
+# When provider-specific keys are available, agents use them directly.
+# Otherwise fall back to OpenRouter (free or paid depending on config).
+
+def _best_provider(preferred: str, role_idx: int) -> str:
+    """Pick the best available provider for an agent."""
+    if preferred == "openai" and OPENAI_API_KEY:
+        return "openai"
+    if preferred == "anthropic" and ANTHROPIC_API_KEY:
+        return "anthropic"
+    if preferred == "gemini" and GEMINI_API_KEY:
+        return "gemini"
+    return _or(role_idx)
+
+# 6 OR keys = 1 dedicated key per agent, zero sharing
+# Key 1: CEO  |  Key 2: BA  |  Key 3: Researcher
+# Key 4: Architect  |  Key 5: Engineer fb  |  Key 6: PPT
 PROVIDER_MAP = {
-    "ceo": os.getenv("PROVIDER_CEO", _or(1)),
-    "business_analyst": os.getenv("PROVIDER_BA", _or(2)),
-    "researcher": os.getenv("PROVIDER_RESEARCHER", _or(3)),
-    "architect": os.getenv("PROVIDER_ARCHITECT", _or(4)),
-    "engineer": os.getenv("PROVIDER_ENGINEER", "openai" if OPENAI_API_KEY else _or(5)),
-    "ppt": os.getenv("PROVIDER_PPT", _or(6)),
-    "cross_review": os.getenv("PROVIDER_REVIEW", _or(5)),
-    "fixer": os.getenv("PROVIDER_FIXER", "openai" if OPENAI_API_KEY else _or(5)),
+    "ceo":              os.getenv("PROVIDER_CEO",        _best_provider("openai", 1)),
+    "business_analyst": os.getenv("PROVIDER_BA",         _best_provider("openai", 2)),
+    "researcher":       os.getenv("PROVIDER_RESEARCHER", _best_provider("gemini", 3)),
+    "architect":        os.getenv("PROVIDER_ARCHITECT",  _best_provider("anthropic", 4)),
+    "engineer":         os.getenv("PROVIDER_ENGINEER",   _best_provider("openai", 5)),
+    "ppt":              os.getenv("PROVIDER_PPT",        _best_provider("gemini", 6)),
+    "cross_review":     os.getenv("PROVIDER_REVIEW",     _best_provider("anthropic", 5)),
+    "fixer":            os.getenv("PROVIDER_FIXER",      _best_provider("openai", 5)),
 }
 
+# Recommended models per role (env vars override everything)
+_CEO_MODEL = "openai/gpt-4.1" if not OPENAI_API_KEY else "gpt-4.1"
+_BA_MODEL = "openai/gpt-4.1" if not OPENAI_API_KEY else "gpt-4.1"
+_RESEARCHER_MODEL = "google/gemini-2.5-pro" if not GEMINI_API_KEY else "gemini-2.5-pro"
+_ARCHITECT_MODEL = "anthropic/claude-sonnet-4" if not ANTHROPIC_API_KEY else "claude-sonnet-4-20250514"
+_ENGINEER_MODEL = "openai/gpt-4.1" if not OPENAI_API_KEY else "gpt-4.1"
+_PPT_MODEL = "google/gemini-2.5-flash" if not GEMINI_API_KEY else "gemini-2.5-flash"
+_REVIEW_MODEL = "anthropic/claude-sonnet-4" if not ANTHROPIC_API_KEY else "claude-sonnet-4-20250514"
+_FIXER_MODEL = "openai/gpt-4.1" if not OPENAI_API_KEY else "gpt-4.1"
+
 MODEL_MAP = {
-    "ceo": os.getenv("MODEL_CEO", "openrouter/free"),
-    "business_analyst": os.getenv("MODEL_BA", SMART_MODEL),
-    "researcher": os.getenv("MODEL_RESEARCHER", "openrouter/free"),
-    "architect": os.getenv("MODEL_ARCHITECT", SMART_MODEL),
-    "engineer": os.getenv("MODEL_ENGINEER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
-    "ppt": os.getenv("MODEL_PPT", "openrouter/free"),
-    "cross_review": os.getenv("MODEL_REVIEW", "openrouter/free"),
-    "fixer": os.getenv("MODEL_FIXER", "gpt-4o" if OPENAI_API_KEY else SMART_MODEL),
+    "ceo":              os.getenv("MODEL_CEO",       _CEO_MODEL),
+    "business_analyst": os.getenv("MODEL_BA",        _BA_MODEL),
+    "researcher":       os.getenv("MODEL_RESEARCHER", _RESEARCHER_MODEL),
+    "architect":        os.getenv("MODEL_ARCHITECT",  _ARCHITECT_MODEL),
+    "engineer":         os.getenv("MODEL_ENGINEER",   _ENGINEER_MODEL),
+    "ppt":              os.getenv("MODEL_PPT",        _PPT_MODEL),
+    "cross_review":     os.getenv("MODEL_REVIEW",     _REVIEW_MODEL),
+    "fixer":            os.getenv("MODEL_FIXER",      _FIXER_MODEL),
 }
 
 FALLBACK_MAP = {
-    "ceo": os.getenv("FALLBACK_CEO", FALLBACK_MODEL),
-    "business_analyst": os.getenv("FALLBACK_BA", FALLBACK_MODEL),
-    "researcher": os.getenv("FALLBACK_RESEARCHER", FALLBACK_MODEL),
-    "architect": os.getenv("FALLBACK_ARCHITECT", FALLBACK_MODEL),
-    "engineer": os.getenv("FALLBACK_ENGINEER", SMART_MODEL),
-    "ppt": os.getenv("FALLBACK_PPT", FALLBACK_MODEL),
-    "cross_review": os.getenv("FALLBACK_REVIEW", FALLBACK_MODEL),
-    "fixer": os.getenv("FALLBACK_FIXER", SMART_MODEL),
+    "ceo":              os.getenv("FALLBACK_CEO",        FALLBACK_MODEL),
+    "business_analyst": os.getenv("FALLBACK_BA",         FALLBACK_MODEL),
+    "researcher":       os.getenv("FALLBACK_RESEARCHER",  FALLBACK_MODEL),
+    "architect":        os.getenv("FALLBACK_ARCHITECT",   FALLBACK_MODEL),
+    "engineer":         os.getenv("FALLBACK_ENGINEER",    SMART_MODEL),
+    "ppt":              os.getenv("FALLBACK_PPT",         FALLBACK_MODEL),
+    "cross_review":     os.getenv("FALLBACK_REVIEW",      FALLBACK_MODEL),
+    "fixer":            os.getenv("FALLBACK_FIXER",       SMART_MODEL),
 }
 
 # Fallback provider: each agent falls back to a DIFFERENT dedicated key
@@ -161,5 +187,38 @@ FALLBACK_PROVIDER_MAP = {
     "fixer": _or(4),
 }
 
+# ── Model metadata for frontend display ──────────────────────────────
+def _model_display(model_id: str) -> dict:
+    """Extract human-readable label and provider from a model identifier."""
+    m = model_id.lower()
+    if "gpt-4.1" in m or "gpt-5" in m or "gpt-4o" in m or "codex" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.upper(), "provider": "OpenAI", "providerColor": "#10a37f"}
+    if "claude" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.replace("anthropic/", "").title(), "provider": "Anthropic", "providerColor": "#d4a27f"}
+    if "gemini" in m or "gemma" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.title(), "provider": "Google", "providerColor": "#4285f4"}
+    if "nemotron" in m or "nvidia" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.split(":")[0].title(), "provider": "Nvidia", "providerColor": "#76b900"}
+    if "deepseek" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.split(":")[0].title(), "provider": "DeepSeek", "providerColor": "#5b7ee5"}
+    if "cohere" in m or "north" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.split(":")[0].title(), "provider": "Cohere", "providerColor": "#d18ee2"}
+    if "openrouter/free" in m:
+        return {"model": "Auto (Free)", "provider": "OpenRouter", "providerColor": "#6366f1"}
+    return {"model": model_id.split("/")[-1] if "/" in model_id else model_id, "provider": "OpenRouter", "providerColor": "#6366f1"}
+
+MODEL_INFO = {role: _model_display(model) for role, model in MODEL_MAP.items()}
+
 import logging as _logging
-_logging.getLogger(__name__).info(f"OpenRouter keys loaded: {len(OPENROUTER_KEYS)}/6 | OpenAI: {'yes' if OPENAI_API_KEY else 'no'}")
+_logging.getLogger(__name__).info(
+    f"Model router: OpenRouter keys={len(OPENROUTER_KEYS)}/6 | "
+    f"OpenAI={'yes' if OPENAI_API_KEY else 'no'} | "
+    f"Anthropic={'yes' if ANTHROPIC_API_KEY else 'no'} | "
+    f"Gemini={'yes' if GEMINI_API_KEY else 'no'}"
+)

@@ -242,6 +242,14 @@ export async function getIntegrationStatus(): Promise<{
   return checkedJson(res, "Failed to check integration status");
 }
 
+export async function getModelConfig(): Promise<{
+  agents: Record<string, { model: string; provider: string; display: { model: string; provider: string; providerColor: string } }>;
+  providers: Record<string, boolean>;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/models`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to fetch model config");
+}
+
 export async function shareProject(
   projectId: string,
   shareType: "drive" | "sheets" | "email" | "all"

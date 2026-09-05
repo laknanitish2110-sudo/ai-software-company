@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import inspect
 import asyncio
@@ -10,6 +11,7 @@ from openai import AsyncOpenAI, OpenAI, RateLimitError, AuthenticationError, API
 from app.core.config import (
     OPENROUTER_API_KEY, OPENROUTER_KEYS, OPENROUTER_BASE_URL,
     OPENAI_API_KEY, OPENAI_BASE_URL,
+    ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL,
     GEMINI_API_KEY, GEMINI_BASE_URL,
     SMART_MODEL, MODEL_MAP, FALLBACK_MAP,
     PROVIDER_MAP, FALLBACK_PROVIDER_MAP,
@@ -50,6 +52,8 @@ def get_client(provider: str = "openrouter") -> Any:
     if provider not in _clients:
         if provider == "openai" and OPENAI_API_KEY:
             _clients[provider] = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        elif provider == "anthropic" and ANTHROPIC_API_KEY:
+            _clients[provider] = AsyncOpenAI(base_url=ANTHROPIC_BASE_URL, api_key=ANTHROPIC_API_KEY)
         elif provider == "gemini" and GEMINI_API_KEY:
             _clients[provider] = AsyncOpenAI(base_url=GEMINI_BASE_URL, api_key=GEMINI_API_KEY)
         elif provider in _OR_KEY_MAP:
@@ -137,15 +141,26 @@ def _sanitize_error(err_str: str) -> str:
 
 
 def resolve_model_name(model: str, provider: str = "openrouter") -> str:
-    """Ensures OpenRouter models use openrouter/free or :free suffix when running on free OpenRouter keys."""
+    """Resolve model identifiers for each provider.
+
+    For OpenRouter: passes the model through as-is (user controls paid vs free
+    via their env config). Only adds :free if SMART_MODEL is still the default
+    'openrouter/free', signaling no paid key is configured.
+    For direct providers (openai, anthropic, gemini): passes through unchanged.
+    """
     if not model:
         return "openrouter/free"
     model_str = model.strip()
-    if provider.startswith("openrouter") or provider == "openrouter":
-        if model_str in ("google/gemini-2.5-flash", "google/gemma-3-27b-it", "anthropic/claude-sonnet-4"):
-            return "openrouter/free"
-        if not model_str.endswith(":free") and not model_str.startswith("openrouter/") and "/" in model_str:
-            return f"{model_str}:free"
+    if provider in ("openai", "anthropic", "gemini"):
+        return model_str
+    if provider.startswith("openrouter"):
+        if model_str.startswith("openrouter/"):
+            return model_str
+        if model_str.endswith(":free"):
+            return model_str
+        # User explicitly set a model via env var — respect it
+        if os.getenv("OPENROUTER_API_KEY", ""):
+            return model_str
     return model_str
 
 
