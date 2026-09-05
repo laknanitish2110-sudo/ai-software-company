@@ -18,6 +18,11 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1/"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "").strip()
+NVIDIA_API_KEY_2 = os.getenv("NVIDIA_API_KEY_2", "").strip()
+NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").strip()
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "").strip()
 DATABASE_PATH = os.getenv("DATABASE_PATH", "company.db")
@@ -127,6 +132,12 @@ def _best_provider(preferred: str, role_idx: int) -> str:
         return "anthropic"
     if preferred == "gemini" and GEMINI_API_KEY:
         return "gemini"
+    if preferred == "nvidia" and NVIDIA_API_KEY:
+        return "nvidia"
+    if preferred == "nvidia2" and (NVIDIA_API_KEY_2 or NVIDIA_API_KEY):
+        return "nvidia2"
+    if preferred == "groq" and GROQ_API_KEY:
+        return "groq"
     return _or(role_idx)
 
 # 6 OR keys = 1 dedicated key per agent, zero sharing
@@ -169,16 +180,18 @@ FALLBACK_MAP = {
     "fixer":            os.getenv("FALLBACK_FIXER",       SMART_MODEL),
 }
 
-# Fallback provider: each agent falls back to a DIFFERENT dedicated key
+# Fallback provider: cross-provider resilience — if primary is Nvidia, fallback is OpenRouter and vice versa
+def _fallback_provider(primary: str) -> str:
+    """Pick a fallback provider on different infrastructure than the primary."""
+    if primary in ("nvidia", "nvidia2"):
+        return "openrouter"
+    if primary == "openrouter" or primary.startswith("openrouter"):
+        return "nvidia" if NVIDIA_API_KEY else _or(1)
+    return "openrouter"
+
 FALLBACK_PROVIDER_MAP = {
-    "ceo": _or(6),
-    "business_analyst": _or(5),
-    "researcher": _or(4),
-    "architect": _or(3),
-    "engineer": _or(6),
-    "ppt": _or(1),
-    "cross_review": _or(2),
-    "fixer": _or(4),
+    role: os.getenv(f"FALLBACK_PROVIDER_{role.upper()}", _fallback_provider(PROVIDER_MAP.get(role, "openrouter")))
+    for role in ["ceo", "business_analyst", "researcher", "architect", "engineer", "ppt", "cross_review", "fixer"]
 }
 
 # ── Model metadata for frontend display ──────────────────────────────
@@ -200,9 +213,15 @@ def _model_display(model_id: str) -> dict:
     if "deepseek" in m:
         label = model_id.split("/")[-1] if "/" in model_id else model_id
         return {"model": label.split(":")[0].title(), "provider": "DeepSeek", "providerColor": "#5b7ee5"}
+    if "kimi" in m or "moonshot" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.split(":")[0].upper(), "provider": "Moonshot", "providerColor": "#00d4aa"}
     if "cohere" in m or "north" in m:
         label = model_id.split("/")[-1] if "/" in model_id else model_id
         return {"model": label.split(":")[0].title(), "provider": "Cohere", "providerColor": "#d18ee2"}
+    if "groq" in m or "llama" in m or "mixtral" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.split(":")[0].title(), "provider": "Groq", "providerColor": "#f55036"}
     if "openrouter/free" in m:
         return {"model": "Auto (Free)", "provider": "OpenRouter", "providerColor": "#6366f1"}
     return {"model": model_id.split("/")[-1] if "/" in model_id else model_id, "provider": "OpenRouter", "providerColor": "#6366f1"}
@@ -224,6 +243,17 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "anthropic/claude-sonnet-4":                   {"input": 3.00, "output": 15.00},
     "google/gemini-2.5-pro":                      {"input": 1.25, "output": 10.00},
     "google/gemini-2.5-flash":                    {"input": 0.15, "output": 0.60},
+    # Groq free tier
+    "llama-3.3-70b-versatile":                    {"input": 0.0, "output": 0.0},
+    "llama-3.1-8b-instant":                       {"input": 0.0, "output": 0.0},
+    "mixtral-8x7b-32768":                         {"input": 0.0, "output": 0.0},
+    "gemma2-9b-it":                               {"input": 0.0, "output": 0.0},
+    # Nvidia direct free tier
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1":    {"input": 0.0, "output": 0.0},
+    "meta/llama-3.1-70b-instruct":                {"input": 0.0, "output": 0.0},
+    "mistralai/mistral-large-2-instruct":         {"input": 0.0, "output": 0.0},
+    "deepseek-ai/deepseek-v4-pro-0813":           {"input": 0.0, "output": 0.0},
+    "moonshotai/kimi-k3":                         {"input": 0.0, "output": 0.0},
 }
 
 # Token budget per project (0 = unlimited, which is default for free tier)
@@ -247,5 +277,7 @@ _logging.getLogger(__name__).info(
     f"Model router: OpenRouter keys={len(OPENROUTER_KEYS)}/6 | "
     f"OpenAI={'yes' if OPENAI_API_KEY else 'no'} | "
     f"Anthropic={'yes' if ANTHROPIC_API_KEY else 'no'} | "
-    f"Gemini={'yes' if GEMINI_API_KEY else 'no'}"
+    f"Gemini={'yes' if GEMINI_API_KEY else 'no'} | "
+    f"Nvidia={'yes' if NVIDIA_API_KEY else 'no'} | "
+    f"Groq={'yes' if GROQ_API_KEY else 'no'}"
 )

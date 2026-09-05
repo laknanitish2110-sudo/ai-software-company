@@ -13,6 +13,8 @@ from app.core.config import (
     OPENAI_API_KEY, OPENAI_BASE_URL,
     ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL,
     GEMINI_API_KEY, GEMINI_BASE_URL,
+    NVIDIA_API_KEY, NVIDIA_API_KEY_2, NVIDIA_BASE_URL,
+    GROQ_API_KEY, GROQ_BASE_URL,
     SMART_MODEL, MODEL_MAP, FALLBACK_MAP,
     PROVIDER_MAP, FALLBACK_PROVIDER_MAP,
 )
@@ -56,6 +58,12 @@ def get_client(provider: str = "openrouter") -> Any:
             _clients[provider] = AsyncOpenAI(base_url=ANTHROPIC_BASE_URL, api_key=ANTHROPIC_API_KEY)
         elif provider == "gemini" and GEMINI_API_KEY:
             _clients[provider] = AsyncOpenAI(base_url=GEMINI_BASE_URL, api_key=GEMINI_API_KEY)
+        elif provider == "nvidia" and NVIDIA_API_KEY:
+            _clients[provider] = AsyncOpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
+        elif provider == "nvidia2" and (NVIDIA_API_KEY_2 or NVIDIA_API_KEY):
+            _clients[provider] = AsyncOpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY_2 or NVIDIA_API_KEY)
+        elif provider == "groq" and GROQ_API_KEY:
+            _clients[provider] = AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
         elif provider in _OR_KEY_MAP:
             idx = _OR_KEY_MAP[provider]
             key = OPENROUTER_KEYS[idx] if idx < len(OPENROUTER_KEYS) and OPENROUTER_KEYS[idx] else (OPENROUTER_KEYS[0] if OPENROUTER_KEYS else OPENROUTER_API_KEY)
@@ -151,7 +159,7 @@ def resolve_model_name(model: str, provider: str = "openrouter") -> str:
     if not model:
         return "openrouter/free"
     model_str = model.strip()
-    if provider in ("openai", "anthropic", "gemini"):
+    if provider in ("openai", "anthropic", "gemini", "nvidia", "nvidia2", "groq"):
         return model_str
     if provider.startswith("openrouter"):
         if model_str.startswith("openrouter/"):

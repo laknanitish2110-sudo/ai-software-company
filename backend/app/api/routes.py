@@ -859,7 +859,7 @@ async def integration_status(current_user: dict = Depends(get_current_user)):
 @router.get("/models")
 async def get_models(current_user: dict = Depends(get_current_user)):
     """Return the current model configuration for all agents."""
-    from app.core.config import MODEL_MAP, PROVIDER_MAP, MODEL_INFO, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY
+    from app.core.config import MODEL_MAP, PROVIDER_MAP, MODEL_INFO, OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, NVIDIA_API_KEY, GROQ_API_KEY
     agents = {}
     for role in ["ceo", "business_analyst", "researcher", "architect", "engineer", "ppt"]:
         info = MODEL_INFO.get(role, {})
@@ -875,6 +875,8 @@ async def get_models(current_user: dict = Depends(get_current_user)):
             "openai": bool(OPENAI_API_KEY),
             "anthropic": bool(ANTHROPIC_API_KEY),
             "gemini": bool(GEMINI_API_KEY),
+            "nvidia": bool(NVIDIA_API_KEY),
+            "groq": bool(GROQ_API_KEY),
         },
     }
 
