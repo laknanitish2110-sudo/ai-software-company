@@ -38,6 +38,7 @@ from app.agents.fixer import generate_targeted_patch
 from app.services.patch_applier import PatchApplier
 from app.services.regression_checker import capture_baseline, compare_execution_baseline
 from app.services.repair_loop import RepairLoopService
+from app.services.security_gate import scan_files as security_scan_files
 
 
 WSCallback = Callable[[str, str, dict], Awaitable[None]]
@@ -314,6 +315,28 @@ class Orchestrator:
                             "role": "sandbox",
                             "message": f"Sandbox/QA execution error: {str(sbx_err)}"
                         })
+
+                if role == AgentRole.ENGINEER and isinstance(output.get("content"), dict):
+                    try:
+                        eng_files = output["content"].get("files", [])
+                        mem_data = await get_memory(project_id)
+                        repaired_json = mem_data.get("repaired_files")
+                        if repaired_json:
+                            try:
+                                repaired = json.loads(repaired_json)
+                                if repaired:
+                                    eng_files = repaired
+                            except Exception:
+                                pass
+                        if eng_files:
+                            scan_result = security_scan_files(eng_files)
+                            await set_memory(project_id, "security_scan", json.dumps(scan_result.to_dict()), "security_gate")
+                            scan_dict = scan_result.to_dict()
+                            scan_dict["role"] = "engineer"
+                            scan_dict["message"] = scan_result.summary
+                            await self._notify("security_scan", project_id, scan_dict)
+                    except Exception as sec_err:
+                        logger.warning(f"Security scan failed (non-critical): {sec_err}")
 
                 review_status = REVIEW_STAGES.get(role)
                 if review_status:

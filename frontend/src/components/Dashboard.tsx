@@ -12,6 +12,7 @@ import GitHubPush from "./GitHubPush";
 import VersionTimeline from "./VersionTimeline";
 import QuickImprove from "./QuickImprove";
 import CostMonitor from "./CostMonitor";
+import SecurityBadge, { SecurityScanEvent } from "./SecurityBadge";
 import ArchitectureDiagram from "./ArchitectureDiagram";
 import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
@@ -87,6 +88,7 @@ export default function Dashboard({ projectId }: Props) {
   const [showGitHubPush, setShowGitHubPush] = useState(false);
   const [shipOpen, setShipOpen] = useState(false);
   const [costEvent, setCostEvent] = useState<{ role: string; tokens: number } | null>(null);
+  const [securityScan, setSecurityScan] = useState<SecurityScanEvent | null>(null);
   const { toast } = useToast();
 
   const refreshState = useCallback(async () => {
@@ -95,6 +97,9 @@ export default function Dashboard({ projectId }: Props) {
       setState(s);
       if (s.memory?.final_validation_result) {
         try { setValidationResult(JSON.parse(s.memory.final_validation_result)); } catch {}
+      }
+      if (s.memory?.security_scan) {
+        try { setSecurityScan(JSON.parse(s.memory.security_scan)); } catch {}
       }
       getPreviewStatus(projectId).then(p => {
         if (p.active && p.preview_url) setPreviewUrl(p.preview_url);
@@ -180,6 +185,11 @@ export default function Dashboard({ projectId }: Props) {
 
       if (msg.type === "cost_update") {
         setCostEvent({ role: (msg.data as Record<string, unknown>).role as string, tokens: (msg.data as Record<string, unknown>).tokens as number });
+        return;
+      }
+
+      if (msg.type === "security_scan") {
+        setSecurityScan(msg.data as unknown as SecurityScanEvent);
         return;
       }
 
@@ -592,6 +602,9 @@ export default function Dashboard({ projectId }: Props) {
 
           {/* Cost Governor */}
           <CostMonitor projectId={projectId} costEvent={costEvent} />
+
+          {/* Security Gate */}
+          {securityScan && <SecurityBadge scan={securityScan} />}
 
           {/* Version Timeline */}
           <VersionTimeline

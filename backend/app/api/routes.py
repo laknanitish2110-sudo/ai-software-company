@@ -812,6 +812,11 @@ async def push_to_github(project_id: str, req: GitHubPushRequest, current_user: 
         if f.get("content") and f["content"] != "(binary file)"
     ]
 
+    from app.services.security_gate import scan_files as security_scan
+    scan_result = security_scan(pushable_files)
+    if scan_result.status == "FAIL":
+        raise HTTPException(400, f"Security scan blocked push: {scan_result.summary}. Fix critical issues before pushing to GitHub.")
+
     try:
         user_info = await gh.validate_token()
         owner = user_info["login"]
@@ -830,6 +835,7 @@ async def push_to_github(project_id: str, req: GitHubPushRequest, current_user: 
             "repo_url": repo_data["html_url"],
             "commit_sha": commit_sha,
             "files_pushed": len(pushable_files),
+            "security_scan": scan_result.to_dict(),
         }
     except GitHubPushError as e:
         raise HTTPException(400, str(e))
