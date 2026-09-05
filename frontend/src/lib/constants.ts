@@ -51,12 +51,12 @@ export const PIPELINE_ORDER = [
 
 // Static fallback — overridden at runtime by /api/models when backend is available
 export let MODEL_LABELS: Record<string, { model: string; provider: string; providerColor: string }> = {
-  ceo: { model: "GPT-4.1", provider: "OpenAI", providerColor: "#10a37f" },
-  business_analyst: { model: "GPT-4.1", provider: "OpenAI", providerColor: "#10a37f" },
-  researcher: { model: "Gemini 2.5 Pro", provider: "Google", providerColor: "#4285f4" },
-  architect: { model: "Claude Sonnet 4", provider: "Anthropic", providerColor: "#d4a27f" },
-  engineer: { model: "GPT-4.1", provider: "OpenAI", providerColor: "#10a37f" },
-  ppt: { model: "Gemini 2.5 Flash", provider: "Google", providerColor: "#4285f4" },
+  ceo: { model: "DeepSeek V3", provider: "DeepSeek", providerColor: "#5b7ee5" },
+  business_analyst: { model: "Nemotron 120B", provider: "Nvidia", providerColor: "#76b900" },
+  researcher: { model: "Nemotron 120B", provider: "Nvidia", providerColor: "#76b900" },
+  architect: { model: "DeepSeek V3", provider: "DeepSeek", providerColor: "#5b7ee5" },
+  engineer: { model: "DeepSeek V3", provider: "DeepSeek", providerColor: "#5b7ee5" },
+  ppt: { model: "Nemotron Lightning", provider: "Nvidia", providerColor: "#76b900" },
 };
 
 export function updateModelLabels(agents: Record<string, { display: { model: string; provider: string; providerColor: string } }>) {

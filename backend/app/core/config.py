@@ -24,8 +24,8 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "company.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 REDIS_URL = os.getenv("REDIS_URL", "").strip()
 TASK_WORKER_ENGINE = os.getenv("TASK_WORKER_ENGINE", "in_process").strip().lower()
-SMART_MODEL = os.getenv("SMART_MODEL", "openrouter/free")
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "openrouter/free")
+SMART_MODEL = os.getenv("SMART_MODEL", "deepseek/deepseek-chat-v3-0324:free")
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "nvidia/nemotron-3.5-lightning:free")
 
 DEFAULT_DEV_JWT_SECRET = "dev_secret_jwt_key_change_in_production_998877"
 KNOWN_INSECURE_SECRETS = {
@@ -115,9 +115,9 @@ def _or(n: int) -> str:
     return f"openrouter{n}"
 
 # ── Specialized model defaults per agent ──────────────────────────────
-# Best model for each job — not one model for all.
-# When provider-specific keys are available, agents use them directly.
-# Otherwise fall back to OpenRouter (free or paid depending on config).
+# Best FREE models for each job — specialized via OpenRouter free tier.
+# DeepSeek V3 for reasoning/coding, Nemotron 120B for analysis, Lightning for speed.
+# When provider-specific keys are available, agents can use them directly.
 
 def _best_provider(preferred: str, role_idx: int) -> str:
     """Pick the best available provider for an agent."""
@@ -133,35 +133,29 @@ def _best_provider(preferred: str, role_idx: int) -> str:
 # Key 1: CEO  |  Key 2: BA  |  Key 3: Researcher
 # Key 4: Architect  |  Key 5: Engineer fb  |  Key 6: PPT
 PROVIDER_MAP = {
-    "ceo":              os.getenv("PROVIDER_CEO",        _best_provider("openai", 1)),
-    "business_analyst": os.getenv("PROVIDER_BA",         _best_provider("openai", 2)),
-    "researcher":       os.getenv("PROVIDER_RESEARCHER", _best_provider("gemini", 3)),
-    "architect":        os.getenv("PROVIDER_ARCHITECT",  _best_provider("anthropic", 4)),
-    "engineer":         os.getenv("PROVIDER_ENGINEER",   _best_provider("openai", 5)),
-    "ppt":              os.getenv("PROVIDER_PPT",        _best_provider("gemini", 6)),
-    "cross_review":     os.getenv("PROVIDER_REVIEW",     _best_provider("anthropic", 5)),
-    "fixer":            os.getenv("PROVIDER_FIXER",      _best_provider("openai", 5)),
+    "ceo":              os.getenv("PROVIDER_CEO",        _or(1)),
+    "business_analyst": os.getenv("PROVIDER_BA",         _or(2)),
+    "researcher":       os.getenv("PROVIDER_RESEARCHER", _or(3)),
+    "architect":        os.getenv("PROVIDER_ARCHITECT",  _or(4)),
+    "engineer":         os.getenv("PROVIDER_ENGINEER",   _or(5)),
+    "ppt":              os.getenv("PROVIDER_PPT",        _or(6)),
+    "cross_review":     os.getenv("PROVIDER_REVIEW",     _or(5)),
+    "fixer":            os.getenv("PROVIDER_FIXER",      _or(5)),
 }
 
-# Recommended models per role (env vars override everything)
-_CEO_MODEL = "openai/gpt-4.1" if not OPENAI_API_KEY else "gpt-4.1"
-_BA_MODEL = "openai/gpt-4.1" if not OPENAI_API_KEY else "gpt-4.1"
-_RESEARCHER_MODEL = "google/gemini-2.5-pro" if not GEMINI_API_KEY else "gemini-2.5-pro"
-_ARCHITECT_MODEL = "anthropic/claude-sonnet-4" if not ANTHROPIC_API_KEY else "claude-sonnet-4-20250514"
-_ENGINEER_MODEL = "openai/gpt-4.1" if not OPENAI_API_KEY else "gpt-4.1"
-_PPT_MODEL = "google/gemini-2.5-flash" if not GEMINI_API_KEY else "gemini-2.5-flash"
-_REVIEW_MODEL = "anthropic/claude-sonnet-4" if not ANTHROPIC_API_KEY else "claude-sonnet-4-20250514"
-_FIXER_MODEL = "openai/gpt-4.1" if not OPENAI_API_KEY else "gpt-4.1"
-
+# Best free models per role — all OpenRouter free tier
+# DeepSeek V3: best free model for reasoning + coding (671B MoE)
+# Nemotron 120B: strong analysis, large param count
+# Nemotron Lightning: fast, good for simple generation tasks
 MODEL_MAP = {
-    "ceo":              os.getenv("MODEL_CEO",       _CEO_MODEL),
-    "business_analyst": os.getenv("MODEL_BA",        _BA_MODEL),
-    "researcher":       os.getenv("MODEL_RESEARCHER", _RESEARCHER_MODEL),
-    "architect":        os.getenv("MODEL_ARCHITECT",  _ARCHITECT_MODEL),
-    "engineer":         os.getenv("MODEL_ENGINEER",   _ENGINEER_MODEL),
-    "ppt":              os.getenv("MODEL_PPT",        _PPT_MODEL),
-    "cross_review":     os.getenv("MODEL_REVIEW",     _REVIEW_MODEL),
-    "fixer":            os.getenv("MODEL_FIXER",      _FIXER_MODEL),
+    "ceo":              os.getenv("MODEL_CEO",        "deepseek/deepseek-chat-v3-0324:free"),
+    "business_analyst": os.getenv("MODEL_BA",         "nvidia/nemotron-3-super-120b-a12b:free"),
+    "researcher":       os.getenv("MODEL_RESEARCHER", "nvidia/nemotron-3-super-120b-a12b:free"),
+    "architect":        os.getenv("MODEL_ARCHITECT",  "deepseek/deepseek-chat-v3-0324:free"),
+    "engineer":         os.getenv("MODEL_ENGINEER",   "deepseek/deepseek-chat-v3-0324:free"),
+    "ppt":              os.getenv("MODEL_PPT",        "nvidia/nemotron-3.5-lightning:free"),
+    "cross_review":     os.getenv("MODEL_REVIEW",     "nvidia/nemotron-3-super-120b-a12b:free"),
+    "fixer":            os.getenv("MODEL_FIXER",      "deepseek/deepseek-chat-v3-0324:free"),
 }
 
 FALLBACK_MAP = {
