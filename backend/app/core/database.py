@@ -233,6 +233,21 @@ async def init_db():
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (user_id, key)
                 );
+
+                CREATE TABLE IF NOT EXISTS cost_tracking (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_tokens INTEGER NOT NULL DEFAULT 0,
+                    estimated_cost REAL NOT NULL DEFAULT 0.0,
+                    call_type TEXT NOT NULL DEFAULT 'agent',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (project_id) REFERENCES projects(id)
+                );
             """)
         else:
             # PostgreSQL DDL
@@ -319,6 +334,20 @@ async def init_db():
                     value TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (user_id, key)
+                );
+
+                CREATE TABLE IF NOT EXISTS cost_tracking (
+                    id VARCHAR(255) PRIMARY KEY,
+                    project_id VARCHAR(255) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    role VARCHAR(255) NOT NULL,
+                    model VARCHAR(512) NOT NULL,
+                    provider VARCHAR(255) NOT NULL,
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_tokens INTEGER NOT NULL DEFAULT 0,
+                    estimated_cost REAL NOT NULL DEFAULT 0.0,
+                    call_type VARCHAR(64) NOT NULL DEFAULT 'agent',
+                    created_at TEXT NOT NULL
                 );
             """)
         await db.commit()
@@ -810,5 +839,89 @@ async def get_user_setting(user_id: str, key: str) -> str | None:
         )
         row = await cursor.fetchone()
         return row["value"] if row else None
+    finally:
+        await db.close()
+
+
+# --- COST TRACKING ---
+
+async def record_cost(
+    project_id: str,
+    role: str,
+    model: str,
+    provider: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    estimated_cost: float,
+    call_type: str = "agent",
+) -> dict:
+    db = await get_db()
+    try:
+        cost_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO cost_tracking
+               (id, project_id, role, model, provider, prompt_tokens, completion_tokens, total_tokens, estimated_cost, call_type, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (cost_id, project_id, role, model, provider, prompt_tokens, completion_tokens, total_tokens, estimated_cost, call_type, ts),
+        )
+        await db.commit()
+        return {
+            "id": cost_id, "project_id": project_id, "role": role, "model": model,
+            "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens, "estimated_cost": estimated_cost,
+            "call_type": call_type, "created_at": ts,
+        }
+    finally:
+        await db.close()
+
+
+async def get_project_costs(project_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM cost_tracking WHERE project_id = ? ORDER BY created_at ASC",
+            (project_id,),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def get_project_cost_summary(project_id: str) -> dict:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT
+                 COUNT(*) as total_calls,
+                 COALESCE(SUM(prompt_tokens), 0) as total_prompt_tokens,
+                 COALESCE(SUM(completion_tokens), 0) as total_completion_tokens,
+                 COALESCE(SUM(total_tokens), 0) as total_tokens,
+                 COALESCE(SUM(estimated_cost), 0.0) as total_cost
+               FROM cost_tracking WHERE project_id = ?""",
+            (project_id,),
+        )
+        summary = await cursor.fetchone()
+
+        cursor2 = await db.execute(
+            """SELECT role,
+                 COUNT(*) as calls,
+                 COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+                 COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+                 COALESCE(SUM(total_tokens), 0) as total_tokens,
+                 COALESCE(SUM(estimated_cost), 0.0) as estimated_cost,
+                 MAX(model) as model
+               FROM cost_tracking WHERE project_id = ?
+               GROUP BY role ORDER BY MIN(created_at) ASC""",
+            (project_id,),
+        )
+        per_agent = await cursor2.fetchall()
+
+        return {
+            "project_id": project_id,
+            "totals": dict(summary) if summary else {},
+            "per_agent": [dict(r) for r in per_agent],
+        }
     finally:
         await db.close()

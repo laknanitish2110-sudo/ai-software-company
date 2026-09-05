@@ -120,6 +120,38 @@ export async function getProjectBudget(
   return checkedJson(res, "Failed to load budget");
 }
 
+export interface CostSummary {
+  project_id: string;
+  totals: {
+    total_calls: number;
+    total_prompt_tokens: number;
+    total_completion_tokens: number;
+    total_tokens: number;
+    total_cost: number;
+  };
+  per_agent: Array<{
+    role: string;
+    calls: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    estimated_cost: number;
+    model: string;
+  }>;
+  budget: {
+    llm_calls: number;
+    total_tokens: number;
+    max_llm_calls: number;
+    max_tokens: number;
+    budget_status: string;
+  };
+}
+
+export async function getProjectCosts(projectId: string): Promise<CostSummary> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/costs`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load costs");
+}
+
 export async function getProjectExecutions(
   projectId: string
 ): Promise<Record<string, unknown>[]> {

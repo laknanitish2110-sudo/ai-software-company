@@ -164,6 +164,16 @@ def resolve_model_name(model: str, provider: str = "openrouter") -> str:
     return model_str
 
 
+def _extract_usage(response) -> dict:
+    """Extract token usage from an OpenAI-compatible response object."""
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    if hasattr(response, "usage") and response.usage:
+        usage["prompt_tokens"] = getattr(response.usage, "prompt_tokens", 0) or 0
+        usage["completion_tokens"] = getattr(response.usage, "completion_tokens", 0) or 0
+        usage["total_tokens"] = getattr(response.usage, "total_tokens", 0) or 0
+    return usage
+
+
 async def _llm_call_single(
     model: str,
     messages: list[dict],
@@ -171,7 +181,8 @@ async def _llm_call_single(
     timeout: int,
     stream_callback=None,
     provider: str = "openrouter",
-) -> str:
+) -> tuple[str, dict]:
+    """Returns (response_text, usage_dict)."""
     client = get_client(provider)
     create_func = client.chat.completions.create
 
@@ -180,12 +191,14 @@ async def _llm_call_single(
 
     if stream_callback:
         collected = []
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         if is_async_client:
             response = await create_func(
                 model=target_model,
                 max_tokens=max_tokens,
                 messages=messages,
                 stream=True,
+                stream_options={"include_usage": True},
                 timeout=timeout,
             )
             async for chunk in response:
@@ -193,6 +206,8 @@ async def _llm_call_single(
                     token = chunk.choices[0].delta.content
                     collected.append(token)
                     await stream_callback(token)
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = _extract_usage(chunk)
         else:
             def _sync_stream():
                 return create_func(
@@ -200,6 +215,7 @@ async def _llm_call_single(
                     max_tokens=max_tokens,
                     messages=messages,
                     stream=True,
+                    stream_options={"include_usage": True},
                     timeout=timeout,
                 )
             response = await asyncio.to_thread(_sync_stream)
@@ -209,16 +225,23 @@ async def _llm_call_single(
                         token = chunk.choices[0].delta.content
                         collected.append(token)
                         await stream_callback(token)
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        usage = _extract_usage(chunk)
             else:
                 for chunk in response:
                     if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                         token = chunk.choices[0].delta.content
                         collected.append(token)
                         await stream_callback(token)
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        usage = _extract_usage(chunk)
         result = "".join(collected)
         if not result.strip():
             raise RuntimeError("Model returned empty response after streaming")
-        return result
+        if usage["total_tokens"] == 0:
+            usage["completion_tokens"] = len(result) // 4
+            usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+        return result, usage
     else:
         if is_async_client:
             response = await create_func(
@@ -240,11 +263,17 @@ async def _llm_call_single(
         if inspect.isawaitable(response):
             response = await response
 
+        usage = _extract_usage(response)
+
         if hasattr(response, "choices") and response.choices:
             choice = response.choices[0]
             if hasattr(choice, "message") and hasattr(choice.message, "content"):
-                return (choice.message.content or "").strip()
-        return str(response).strip()
+                text = (choice.message.content or "").strip()
+                if usage["total_tokens"] == 0:
+                    usage["completion_tokens"] = len(text) // 4
+                    usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+                return text, usage
+        return str(response).strip(), usage
 
 
 def _all_or_providers(exclude: str) -> list[str]:
@@ -265,8 +294,9 @@ async def _llm_call_with_retry(
     provider: str = "openrouter",
     fallback_provider: str = "openrouter",
     project_id: str | None = None,
-) -> tuple[str, str]:
-    """Returns (response_text, model_used)."""
+    role: str | None = None,
+) -> tuple[str, str, dict]:
+    """Returns (response_text, model_used, usage_dict)."""
     if project_id:
         await resource_budget.check_llm_budget(project_id)
 
@@ -288,10 +318,13 @@ async def _llm_call_with_retry(
 
     for attempt in range(MAX_RETRIES):
         try:
-            text = await _llm_call_single(model, messages, max_tokens, timeout, stream_callback, provider=provider)
+            text, usage = await _llm_call_single(model, messages, max_tokens, timeout, stream_callback, provider=provider)
             if project_id:
-                await resource_budget.record_llm_call(project_id)
-            return text, f"{provider}/{model}"
+                await resource_budget.record_llm_call(
+                    project_id, tokens=usage.get("total_tokens", 0), role=role,
+                    model=model, provider=provider, usage=usage,
+                )
+            return text, f"{provider}/{model}", usage
         except Exception as e:
             last_error = e
             clean_err = _sanitize_error(str(e))
@@ -313,8 +346,13 @@ async def _llm_call_with_retry(
         tried.add(fb_prov)
         logger.warning(f"Trying key {fb_prov} with model {fb_model}")
         try:
-            text = await _llm_call_single(fb_model, messages, max_tokens, timeout, stream_callback, provider=fb_prov)
-            return text, f"{fb_prov}/{fb_model}"
+            text, usage = await _llm_call_single(fb_model, messages, max_tokens, timeout, stream_callback, provider=fb_prov)
+            if project_id:
+                await resource_budget.record_llm_call(
+                    project_id, tokens=usage.get("total_tokens", 0), role=role,
+                    model=fb_model, provider=fb_prov, usage=usage,
+                )
+            return text, f"{fb_prov}/{fb_model}", usage
         except Exception as e:
             last_error = e
             clean_err = _sanitize_error(str(e))
@@ -440,7 +478,7 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
 
     start_time = time.time()
 
-    raw_text, model_used = await _llm_call_with_retry(
+    raw_text, model_used, usage = await _llm_call_with_retry(
         model=agent_model,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -452,6 +490,7 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
         fallback_model=fallback,
         provider=agent_provider,
         fallback_provider=fallback_provider,
+        role=role.value,
     )
 
     elapsed = round(time.time() - start_time, 1)
@@ -459,7 +498,7 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
     used_fallback = model_used != expected_key
     if used_fallback:
         logger.warning(f"{ROLE_LABELS[role]} used FALLBACK {model_used} (primary {expected_key} failed)")
-    logger.info(f"{ROLE_LABELS[role]} completed in {elapsed}s using {model_used}")
+    logger.info(f"{ROLE_LABELS[role]} completed in {elapsed}s using {model_used} | tokens: {usage.get('total_tokens', 0)}")
 
     await set_memory(project_id, f"introspection_{role.value}", json.dumps({
         "model": model_used,
@@ -469,6 +508,9 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
         "max_tokens": max_tokens,
         "timeout": timeout,
         "context_length": len(user_message),
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "completion_tokens": usage.get("completion_tokens", 0),
+        "total_tokens": usage.get("total_tokens", 0),
     }), role.value)
 
     repaired = _repair_json(raw_text)
@@ -480,7 +522,7 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
 
     output = await save_agent_output(project_id, role.value, content)
 
-    output["_timing"] = {"elapsed_seconds": elapsed, "model": model_used, "used_fallback": used_fallback}
+    output["_timing"] = {"elapsed_seconds": elapsed, "model": model_used, "used_fallback": used_fallback, "tokens": usage}
 
     summary_key = f"{role.value}_summary"
     if isinstance(content, dict):
@@ -528,7 +570,7 @@ async def cross_review(project_id: str, reviewed_role: AgentRole, output_content
     review_fb_provider = FALLBACK_PROVIDER_MAP.get("cross_review", "openrouter")
 
     try:
-        raw_text, _ = await _llm_call_with_retry(
+        raw_text, _, _ = await _llm_call_with_retry(
             model=review_model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPTS[reviewer_role]},
@@ -539,6 +581,8 @@ async def cross_review(project_id: str, reviewed_role: AgentRole, output_content
             fallback_model=review_fallback,
             provider=review_provider,
             fallback_provider=review_fb_provider,
+            project_id=project_id,
+            role="cross_review",
         )
     except Exception as e:
         logger.warning(f"Cross-review failed (non-critical), skipping: {e}")
@@ -609,7 +653,7 @@ Be specific, helpful, and concise. You have full access to the project state.
     chat_provider = PROVIDER_MAP.get(role.value, "openrouter")
     chat_fb_provider = FALLBACK_PROVIDER_MAP.get(role.value, "openrouter")
 
-    raw_text, _ = await _llm_call_with_retry(
+    raw_text, _, _ = await _llm_call_with_retry(
         model=chat_model,
         messages=messages,
         max_tokens=4096,
@@ -617,6 +661,8 @@ Be specific, helpful, and concise. You have full access to the project state.
         fallback_model=chat_fallback,
         provider=chat_provider,
         fallback_provider=chat_fb_provider,
+        project_id=project_id,
+        role=role.value,
     )
 
     conversation.append({"role": "assistant", "content": raw_text})

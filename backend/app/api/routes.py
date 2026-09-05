@@ -412,6 +412,16 @@ async def get_project_budget_endpoint(project_id: str, current_user: dict = Depe
     return await resource_budget.get_budget_status(project_id)
 
 
+@router.get("/projects/{project_id}/costs")
+async def get_project_costs_endpoint(project_id: str, current_user: dict = Depends(get_current_user)):
+    from app.core.database import get_project_cost_summary
+    await _verify_project_owner(project_id, current_user["id"])
+    summary = await get_project_cost_summary(project_id)
+    budget = await resource_budget.get_budget_status(project_id)
+    summary["budget"] = budget
+    return summary
+
+
 @router.get("/projects/{project_id}/executions")
 async def get_project_executions_endpoint(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])

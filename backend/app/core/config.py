@@ -209,6 +209,39 @@ def _model_display(model_id: str) -> dict:
 
 MODEL_INFO = {role: _model_display(model) for role, model in MODEL_MAP.items()}
 
+# ── Cost Governor: per-model pricing ($ per 1M tokens) ──────────────
+# Free-tier models have zero cost; pricing here for budget tracking
+# and future paid-model support. Input/output split where available.
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    # Free models — $0
+    "deepseek/deepseek-chat-v3-0324:free":        {"input": 0.0, "output": 0.0},
+    "nvidia/nemotron-3-super-120b-a12b:free":     {"input": 0.0, "output": 0.0},
+    "nvidia/nemotron-3.5-lightning:free":          {"input": 0.0, "output": 0.0},
+    # Paid models (if keys ever added) — per-1M-token pricing
+    "deepseek/deepseek-chat-v3-0324":             {"input": 0.27, "output": 1.10},
+    "openai/gpt-4.1":                             {"input": 2.00, "output": 8.00},
+    "openai/gpt-4o":                              {"input": 2.50, "output": 10.00},
+    "anthropic/claude-sonnet-4":                   {"input": 3.00, "output": 15.00},
+    "google/gemini-2.5-pro":                      {"input": 1.25, "output": 10.00},
+    "google/gemini-2.5-flash":                    {"input": 0.15, "output": 0.60},
+}
+
+# Token budget per project (0 = unlimited, which is default for free tier)
+MAX_TOKENS_PER_PROJECT = int(os.getenv("MAX_TOKENS_PER_PROJECT", "500000"))
+MAX_COST_PER_PROJECT = float(os.getenv("MAX_COST_PER_PROJECT", "0.0"))
+
+def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Estimate cost in dollars for a single LLM call."""
+    pricing = MODEL_PRICING.get(model)
+    if not pricing:
+        for key, val in MODEL_PRICING.items():
+            if key.split("/")[-1].split(":")[0] in model:
+                pricing = val
+                break
+    if not pricing:
+        pricing = {"input": 0.0, "output": 0.0}
+    return (prompt_tokens * pricing["input"] + completion_tokens * pricing["output"]) / 1_000_000
+
 import logging as _logging
 _logging.getLogger(__name__).info(
     f"Model router: OpenRouter keys={len(OPENROUTER_KEYS)}/6 | "

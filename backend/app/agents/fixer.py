@@ -178,7 +178,7 @@ async def generate_targeted_patch(
             fallback = FALLBACK_MAP.get("fixer", SMART_MODEL)
             fallback_provider = FALLBACK_PROVIDER_MAP.get("fixer", "openrouter")
 
-            raw_response, _ = await _llm_call_with_retry(
+            raw_response, _, _ = await _llm_call_with_retry(
                 model=model,
                 messages=messages,
                 max_tokens=8000,
@@ -186,7 +186,8 @@ async def generate_targeted_patch(
                 fallback_model=fallback,
                 provider=provider,
                 fallback_provider=fallback_provider,
-                project_id=repair_ctx.project_id
+                project_id=repair_ctx.project_id,
+                role="fixer",
             )
     except Exception as e:
         logger.warning(f"Fixer Agent LLM call failed for project {repair_ctx.project_id}: {e}")
