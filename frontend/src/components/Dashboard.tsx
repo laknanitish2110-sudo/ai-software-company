@@ -9,7 +9,6 @@ import BuildStatus, { ValidationResult } from "./BuildStatus";
 import CallEmployee from "./CallEmployee";
 import CodePreview from "./CodePreview";
 import GitHubPush from "./GitHubPush";
-import VersionTimeline from "./VersionTimeline";
 import CostMonitor from "./CostMonitor";
 import SecurityBadge, { SecurityScanEvent } from "./SecurityBadge";
 import ArchitectureDiagram from "./ArchitectureDiagram";
@@ -65,7 +64,6 @@ function formatPipelineTime(seconds: number): string {
 export default function Dashboard({ projectId }: Props) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [events, setEvents] = useState<{ type: string; message: string; time: string }[]>([]);
-  const [activeTab, setActiveTab] = useState<"outputs" | "chat">("outputs");
   const [n8nConnected, setN8nConnected] = useState(false);
   const [sharing, setSharing] = useState<string | null>(null);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
@@ -85,9 +83,10 @@ export default function Dashboard({ projectId }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showGitHubPush, setShowGitHubPush] = useState(false);
-  const [shipOpen, setShipOpen] = useState(false);
   const [costEvent, setCostEvent] = useState<{ role: string; tokens: number } | null>(null);
   const [securityScan, setSecurityScan] = useState<SecurityScanEvent | null>(null);
+  const [showChat, setShowChat] = useState(false);
+  const pendingRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const refreshState = useCallback(async () => {
@@ -217,6 +216,13 @@ export default function Dashboard({ projectId }: Props) {
     };
   }, [projectId, refreshState, debouncedRefresh]);
 
+  // Auto-scroll to pending approval
+  useEffect(() => {
+    if (!streamingAgent && pendingRef.current) {
+      pendingRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [streamingAgent, state]);
+
   async function handleApprove(outputId: string) {
     try {
       await approveOutput(projectId, outputId, true);
@@ -310,6 +316,7 @@ export default function Dashboard({ projectId }: Props) {
 
   const isCompleted = project.status === "completed";
   const deliverableType = state.memory?.deliverable_type || "code";
+  const approvedOutputs = outputs.filter(o => o.status === "approved");
 
   return (
     <div className="min-h-screen p-4 lg:p-6" style={{ maxWidth: 1400, margin: "0 auto" }}>
@@ -392,24 +399,36 @@ export default function Dashboard({ projectId }: Props) {
         <p className="text-sm mt-1 truncate" style={{ color: "var(--text-secondary)", maxWidth: 700 }}>{project.problem_statement}</p>
       </div>
 
-      {/* ===== Two-column Build Room layout ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      {/* ===== Split Layout: Canvas Left, Everything Right ===== */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
 
-        {/* LEFT COLUMN — Canvas + Stream + Outputs */}
-        <div className="lg:col-span-8 space-y-5">
-          {/* Agent Canvas */}
-          <div className="animate-fade-in">
-            <AgentCanvas
-              status={project.status}
-              outputs={outputs}
-              streamingAgent={streamingAgent}
-              streamTokens={streamTokens}
-              elapsed={elapsed}
-              onNodeClick={(role) => setInspectingAgent(role)}
-            />
+        {/* ===== LEFT — Hero Canvas (sticky) ===== */}
+        <div className="md:col-span-5">
+          <div className="md:sticky md:top-6 space-y-4">
+            <div className="animate-fade-in">
+              <AgentCanvas
+                status={project.status}
+                outputs={outputs}
+                streamingAgent={streamingAgent}
+                streamTokens={streamTokens}
+                elapsed={elapsed}
+                onNodeClick={(role) => {
+                  const el = document.getElementById(`output-${role}`);
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              />
+            </div>
+
+            {/* Compact info below canvas */}
+            <CostMonitor projectId={projectId} costEvent={costEvent} />
+            {securityScan && <SecurityBadge scan={securityScan} />}
           </div>
+        </div>
 
-          {/* Live Stream Panel */}
+        {/* ===== RIGHT — Scrollable Feed ===== */}
+        <div className="md:col-span-7 space-y-4">
+
+          {/* Live Stream (when agent is working) */}
           {streamingAgent && (
             <div className="animate-fade-in">
               <LiveStreamPanel
@@ -421,81 +440,29 @@ export default function Dashboard({ projectId }: Props) {
             </div>
           )}
 
-          {/* Tabs */}
-          <div className="flex gap-1 animate-fade-in">
-            {(["outputs", "chat"] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className="px-5 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
-                style={{
-                  background: activeTab === tab ? "var(--accent-bg)" : "transparent",
-                  color: activeTab === tab ? "var(--accent)" : "var(--text-muted)",
-                  border: activeTab === tab ? "1px solid var(--accent-border)" : "1px solid transparent",
-                }}
-              >
-                {tab === "outputs" ? "Departments" : "Call Employee"}
-              </button>
-            ))}
-          </div>
-
-          {/* Outputs / Chat */}
-          {activeTab === "outputs" ? (
-            <div className="space-y-4">
-              {outputs.length === 0 && (
-                <div className="card p-10 text-center animate-fade-in">
-                  <div className="text-4xl mb-4">
-                    {streamingAgent ? "🔄" : "🏢"}
-                  </div>
-                  <div className="text-[15px] font-medium mb-1" style={{ color: "var(--text-primary)" }}>
-                    {streamingAgent ? "Your AI team is working..." : "Assembling your team"}
-                  </div>
-                  <div className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
-                    {streamingAgent
-                      ? `${streamingAgent.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} is preparing their deliverable`
-                      : "The CEO is reviewing your problem statement"}
-                  </div>
-                  <div className="flex justify-center gap-2">
-                    {routeAgents.map((role, i) => {
-                      const config = AGENT_CONFIG[role];
-                      const label = config?.label?.split(" ")[0] || role;
-                      return (
-                        <span
-                          key={role}
-                          className="text-xs px-2.5 py-1 rounded-full"
-                          style={{
-                            background: i === 0 && !streamingAgent ? "var(--accent-bg)" : "var(--bg-elevated)",
-                            color: i === 0 && !streamingAgent ? "var(--accent)" : "var(--text-muted)",
-                            border: `1px solid ${i === 0 && !streamingAgent ? "var(--accent-border)" : "var(--border)"}`,
-                          }}
-                        >
-                          {label}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {outputs.map((output, i) => (
-                <div key={output.id} style={{ animationDelay: `${i * 0.05}s` }}>
-                  <AgentOutputCard
-                    role={output.role}
-                    content={output.content as Record<string, unknown>}
-                    status={output.status}
-                    outputId={output.id}
-                    onApprove={handleApprove}
-                    onReject={handleReject}
-                    onRevise={handleRevise}
-                    showActions={output.status === "pending" && output.id === pendingOutput?.id}
-                    peerReview={getPeerReview(output.role)}
-                  />
-                </div>
-              ))}
-
-              {validationResult && (
-                <div className="mt-4 animate-fade-in">
+          {/* Pending Approval — always at top, highlighted */}
+          {pendingOutput && (
+            <div ref={pendingRef} className="animate-fade-in" style={{
+              border: "2px solid var(--warning)",
+              borderRadius: 14,
+              padding: 3,
+              background: "var(--warning-bg)",
+            }}>
+              <AgentOutputCard
+                role={pendingOutput.role}
+                content={pendingOutput.content as Record<string, unknown>}
+                status={pendingOutput.status}
+                outputId={pendingOutput.id}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onRevise={handleRevise}
+                showActions={true}
+                peerReview={getPeerReview(pendingOutput.role)}
+              />
+              {pendingOutput.role === "engineer" && validationResult && (
+                <div style={{ padding: "0 12px 12px" }}>
                   <BuildStatus validationResult={validationResult} />
-                  {previewUrl && !isCompleted && (
+                  {previewUrl && (
                     <button onClick={() => setShowPreview(true)}
                             className="mt-2 btn-success text-sm py-2 px-4 flex items-center gap-2"
                             style={{ background: "#10b981", borderColor: "#059669" }}>
@@ -505,140 +472,70 @@ export default function Dashboard({ projectId }: Props) {
                 </div>
               )}
             </div>
-          ) : (
-            <CallEmployee projectId={projectId} />
           )}
-        </div>
 
-        {/* RIGHT COLUMN — Activity Feed + Pipeline + Ship */}
-        <div className="lg:col-span-4 space-y-5">
-          {/* Pipeline Progress (compact) */}
-          <div className="card p-4 animate-fade-in">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Pipeline
-              </span>
-              <span style={{
-                fontSize: 11, fontWeight: 700, fontFamily: "monospace",
-                color: isCompleted ? "var(--success)" : "var(--accent)",
-              }}>
-                {isCompleted ? `${routeAgents.length}/${routeAgents.length}` : `${stageInfo.current}/${routeAgents.length}`}
-              </span>
+          {/* Completed Outputs — user scrolls to see what agents made */}
+          {approvedOutputs.map((output) => (
+            <div key={output.id} id={`output-${output.role}`} className="animate-fade-in">
+              <AgentOutputCard
+                role={output.role}
+                content={output.content as Record<string, unknown>}
+                status={output.status}
+                outputId={output.id}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onRevise={handleRevise}
+                showActions={false}
+                peerReview={getPeerReview(output.role)}
+              />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-              {routeAgents.map((role, i) => {
-                const config = AGENT_CONFIG[role];
-                if (!config) return null;
-                const isDone = stageInfo.current > i + 1;
-                const isActive = stageInfo.current === i + 1 && !isCompleted;
-                const isReview = isActive && project.status.includes("_review");
-                return (
-                  <div key={role} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                    <div style={{
-                      height: 4, width: "100%", borderRadius: 2,
-                      background: isDone ? "#0bbf8c" : isReview ? "#f5a623" : isActive ? config.color : "var(--border)",
-                      opacity: isDone || isActive || isReview ? 0.8 : 0.15,
-                      transition: "all 0.5s ease",
-                    }} />
-                    <span style={{
-                      fontSize: 8, fontWeight: 600,
-                      color: isDone ? "var(--success)" : isActive ? "var(--text-secondary)" : "var(--text-muted)",
-                      opacity: isDone || isActive ? 1 : 0.4,
-                    }}>
-                      {config.icon}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {!isCompleted && (
-              <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-secondary)" }}>
-                {stageInfo.label}
-              </div>
-            )}
-          </div>
+          ))}
 
-          {/* Activity Feed */}
-          <div className="card p-4 sticky top-6 animate-fade-in">
-            <h3 className="font-semibold mb-3 text-xs uppercase tracking-wider flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
-              <span style={{
-                width: 6, height: 6, borderRadius: "50%",
-                background: streamingAgent ? "var(--accent)" : events.length > 0 ? "var(--success)" : "var(--border)",
-                display: "inline-block",
-              }} />
-              Activity Feed
-            </h3>
-            <div className="space-y-1.5" style={{ maxHeight: 380, overflowY: "auto" }}>
-              {events.length === 0 && (
-                <div className="text-sm py-4 text-center" style={{ color: "var(--text-muted)" }}>Waiting for activity...</div>
-              )}
-              {events.slice(-30).reverse().map((event, i) => {
-                const color =
-                  event.type === "approval_needed" ? "var(--warning)"
-                  : event.type === "agent_completed" || event.type === "project_completed" ? "var(--success)"
-                  : event.type === "error" ? "var(--danger)"
-                  : event.type === "peer_review_completed" ? "var(--accent)"
-                  : event.type === "sandbox_started" || event.type === "sandbox_completed" ? "#f59e0b"
-                  : event.type === "domain_memory" ? "#8b5cf6"
-                  : event.type === "route_selected" ? "#6366f1"
-                  : "var(--text-muted)";
+          {/* Deliverables Section (when pipeline is done) */}
+          {isCompleted && (
+            <div className="space-y-4 animate-fade-in">
+              {/* Build Status */}
+              {validationResult && <BuildStatus validationResult={validationResult} />}
 
-                return (
-                  <div
-                    key={i}
-                    className="flex gap-2 text-xs py-1.5 pl-3 animate-slide-in"
-                    style={{ borderLeft: `2px solid ${color}` }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ color: "var(--text-secondary)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{event.message}</div>
-                      <div style={{ color: "var(--text-muted)", fontSize: 10 }}>{event.time}</div>
+              {/* Preview iframe */}
+              {previewUrl && (
+                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "10px 16px", borderBottom: "1px solid var(--border)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Live Preview</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <a href={previewUrl} target="_blank" rel="noopener noreferrer"
+                         style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none" }}>
+                        Open in new tab ↗
+                      </a>
+                      <button onClick={async () => {
+                        try { await stopPreview(projectId); } catch {}
+                        setPreviewUrl(null);
+                      }}
+                        style={{ fontSize: 11, color: "var(--danger)", background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
+                        Stop
+                      </button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                  <iframe src={previewUrl} style={{ width: "100%", height: 400, border: "none" }}
+                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+                </div>
+              )}
 
-          {/* Cost Governor */}
-          <CostMonitor projectId={projectId} costEvent={costEvent} />
-
-          {/* Security Gate */}
-          {securityScan && <SecurityBadge scan={securityScan} />}
-
-          {/* Version Timeline */}
-          <VersionTimeline
-            events={events}
-            projectStatus={project.status}
-            createdAt={project.created_at}
-          />
-
-          {/* Ship Section (collapsible) */}
-          {isCompleted && (
-            <div className="card animate-fade-in" style={{ overflow: "hidden" }}>
-              <button
-                onClick={() => setShipOpen(!shipOpen)}
-                className="w-full cursor-pointer"
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "12px 16px", background: "none", border: "none",
-                  color: "var(--text-primary)", fontSize: 13, fontWeight: 600,
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <span style={{ fontSize: 14 }}>🚀</span> Ship & Share
-                </span>
-                <span style={{
-                  transform: shipOpen ? "rotate(180deg)" : "rotate(0)",
-                  transition: "transform 0.2s", fontSize: 12, color: "var(--text-muted)",
-                }}>▼</span>
-              </button>
-              {shipOpen && (
-                <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* Downloads */}
+              <div className="card p-5">
+                <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Downloads</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
                     <button onClick={async () => {
                       try { await downloadCode(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download code."); }
                     }}
-                      className="btn-success text-xs py-2 px-4 flex items-center gap-2 w-full justify-center">
+                      className="btn-success text-xs py-2.5 px-4 flex items-center gap-2 w-full justify-center">
                       <span>📦</span> Download Code (.zip)
                     </button>
                   )}
@@ -646,7 +543,7 @@ export default function Dashboard({ projectId }: Props) {
                     <button onClick={async () => {
                       try { await downloadBundle(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "No deployable bundle found."); }
                     }}
-                      className="btn-success text-xs py-2 px-4 flex items-center gap-2 w-full justify-center"
+                      className="btn-success text-xs py-2.5 px-4 flex items-center gap-2 w-full justify-center"
                       style={{ background: "#8b5cf6", borderColor: "#7c3aed" }}>
                       <span>🚀</span> Deployable Bundle
                     </button>
@@ -655,7 +552,7 @@ export default function Dashboard({ projectId }: Props) {
                     <button onClick={async () => {
                       try { await downloadWorkflow(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "Workflow not found."); }
                     }}
-                      className="btn-success text-xs py-2 px-4 flex items-center gap-2 w-full justify-center"
+                      className="btn-success text-xs py-2.5 px-4 flex items-center gap-2 w-full justify-center"
                       style={{ background: "var(--accent)", borderColor: "var(--accent-border)" }}>
                       <span>⚡</span> n8n Workflow
                     </button>
@@ -664,16 +561,23 @@ export default function Dashboard({ projectId }: Props) {
                     <button onClick={async () => {
                       try { await downloadPptx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download presentation."); }
                     }}
-                      className="btn-primary text-xs py-2 px-3 flex items-center gap-1.5 flex-1 justify-center">
+                      className="btn-primary text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center">
                       <span>📊</span> PPTX
                     </button>
                     <button onClick={async () => {
                       try { await downloadDocx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download report."); }
                     }}
-                      className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 flex-1 justify-center">
+                      className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center">
                       <span>📄</span> DOCX
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="card p-5">
+                <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Actions</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <div className="flex gap-2">
                     <button onClick={async () => {
                       try {
@@ -681,55 +585,42 @@ export default function Dashboard({ projectId }: Props) {
                         toast("success", "Demo saved", "You can now use Demo Mode from the start page.");
                       } catch { toast("error", "Save failed", "Could not save demo cache."); }
                     }}
-                      className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 flex-1 justify-center"
+                      className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
                       style={{ borderColor: "var(--warning-border)", color: "var(--warning)" }}>
                       <span>💾</span> Demo
                     </button>
-                    <button
-                      onClick={handleShareLink}
-                      disabled={copyingLink}
-                      className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 flex-1 justify-center"
-                      style={{ borderColor: "rgba(99,91,255,0.4)", color: "#635bff" }}
-                    >
+                    <button onClick={handleShareLink} disabled={copyingLink}
+                      className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
+                      style={{ borderColor: "rgba(99,91,255,0.4)", color: "#635bff" }}>
                       {copyingLink ? <span className="spinner" style={{ width: 12, height: 12 }} /> : <span>🔗</span>}
-                      {shareLink ? "Copied!" : "Share"}
+                      {shareLink ? "Copied!" : "Share Link"}
                     </button>
                   </div>
                   {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
                     <div className="flex gap-2">
                       <button onClick={() => setShowCodePreview(true)}
-                        className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 flex-1 justify-center"
+                        className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
                         style={{ borderColor: "var(--accent-border)", color: "var(--accent)" }}>
                         <span>👁️</span> View Code
                       </button>
                       <button onClick={() => setShowGitHubPush(true)}
-                        className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 flex-1 justify-center"
+                        className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
                         style={{ borderColor: "rgba(36,41,47,0.4)", color: "var(--text-primary)" }}>
                         <span>🐙</span> GitHub
                       </button>
                     </div>
                   )}
-                  {previewUrl && (
-                    <button onClick={() => setShowPreview(true)}
-                      className="btn-success text-xs py-2 px-4 flex items-center gap-2 w-full justify-center"
-                      style={{ background: "#10b981", borderColor: "#059669" }}>
-                      <span>🌐</span> Live Preview
-                    </button>
-                  )}
                   {outputs.find((o) => o.role === "architect") && (
                     <button onClick={() => setShowArchDiagram(true)}
-                      className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 w-full justify-center"
+                      className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 w-full justify-center"
                       style={{ borderColor: "rgba(139,92,246,0.4)", color: "#8b5cf6" }}>
                       <span>🏗️</span> Architecture Diagram
                     </button>
                   )}
-
-                  {/* n8n Share row */}
-                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: 8, marginTop: 4 }}>
+                  {/* n8n Share */}
+                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[9px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                        n8n
-                      </span>
+                      <span className="text-[9px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>n8n</span>
                       <span style={{
                         fontSize: 9, padding: "1px 6px", borderRadius: 8,
                         background: n8nConnected ? "var(--success-bg)" : "var(--bg-elevated)",
@@ -741,12 +632,8 @@ export default function Dashboard({ projectId }: Props) {
                     </div>
                     <div className="flex gap-1.5 flex-wrap">
                       {(["drive", "sheets", "email", "all"] as const).map((t) => (
-                        <button
-                          key={t}
-                          onClick={() => handleShare(t)}
-                          disabled={!n8nConnected || sharing !== null}
-                          className="btn-ghost text-[10px] py-1.5 px-2.5 flex items-center gap-1"
-                        >
+                        <button key={t} onClick={() => handleShare(t)} disabled={!n8nConnected || sharing !== null}
+                          className="btn-ghost text-[10px] py-1.5 px-2.5 flex items-center gap-1">
                           {sharing === t ? <span className="spinner" style={{ width: 10, height: 10 }} /> :
                             t === "drive" ? "📁" : t === "sheets" ? "📊" : t === "email" ? "📧" : "🚀"}
                           {t === "drive" ? "Drive" : t === "sheets" ? "Sheets" : t === "email" ? "Email" : "All"}
@@ -754,18 +641,43 @@ export default function Dashboard({ projectId }: Props) {
                       ))}
                     </div>
                     {shareMsg && (
-                      <div className="mt-1.5 text-[10px] animate-fade-in" style={{ color: "var(--text-secondary)" }}>
-                        {shareMsg}
-                      </div>
+                      <div className="mt-1.5 text-[10px] animate-fade-in" style={{ color: "var(--text-secondary)" }}>{shareMsg}</div>
                     )}
                   </div>
                 </div>
-              )}
+              </div>
+            </div>
+          )}
+
+          {/* Call Employee */}
+          {showChat ? (
+            <div className="animate-fade-in">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Call Employee</h3>
+                <button onClick={() => setShowChat(false)} className="text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>Close</button>
+              </div>
+              <CallEmployee projectId={projectId} />
+            </div>
+          ) : (
+            <button onClick={() => setShowChat(true)}
+              className="btn-ghost text-sm py-3 px-5 w-full flex items-center justify-center gap-2 cursor-pointer"
+              style={{ borderColor: "var(--accent-border)", color: "var(--accent)" }}>
+              <span>💬</span> Call Employee
+            </button>
+          )}
+
+          {/* Waiting state — when no outputs yet */}
+          {outputs.length === 0 && !streamingAgent && (
+            <div className="card p-10 text-center animate-fade-in">
+              <div className="text-4xl mb-4">🏢</div>
+              <div className="text-[15px] font-medium mb-1" style={{ color: "var(--text-primary)" }}>Assembling your team</div>
+              <div className="text-sm" style={{ color: "var(--text-muted)" }}>The CEO is reviewing your problem statement</div>
             </div>
           )}
         </div>
       </div>
 
+      {/* ===== Modals ===== */}
       {inspectingAgent && (
         <AgentIntrospection
           projectId={projectId}
@@ -775,7 +687,7 @@ export default function Dashboard({ projectId }: Props) {
       )}
 
       {showPreview && previewUrl && (
-        <div className="card animate-fade-in" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+        <div className="card animate-fade-in" style={{ padding: 0, overflow: "hidden", position: "fixed", top: 40, left: 40, right: 40, bottom: 40, zIndex: 50 }}>
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             padding: "10px 16px", borderBottom: "1px solid var(--border)",
@@ -788,16 +700,12 @@ export default function Dashboard({ projectId }: Props) {
                 Open in new tab ↗
               </a>
             </div>
-            <button onClick={async () => {
-              setShowPreview(false);
-              try { await stopPreview(projectId); } catch {}
-              setPreviewUrl(null);
-            }}
-              style={{ fontSize: 12, color: "var(--danger)", background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
-              Stop Preview
+            <button onClick={() => setShowPreview(false)}
+              style={{ fontSize: 18, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer" }}>
+              ✕
             </button>
           </div>
-          <iframe src={previewUrl} style={{ width: "100%", height: 500, border: "none" }}
+          <iframe src={previewUrl} style={{ width: "100%", height: "calc(100% - 45px)", border: "none" }}
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
         </div>
       )}

@@ -43,8 +43,13 @@ function LoginForm() {
     }
   }, [searchParams, toast]);
 
+  useEffect(() => {
+    if (user) {
+      router.push("/");
+    }
+  }, [user, router]);
+
   if (user) {
-    router.push("/");
     return null;
   }
 
