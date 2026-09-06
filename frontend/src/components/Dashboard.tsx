@@ -399,34 +399,10 @@ export default function Dashboard({ projectId }: Props) {
         <p className="text-sm mt-1 truncate" style={{ color: "var(--text-secondary)", maxWidth: 700 }}>{project.problem_statement}</p>
       </div>
 
-      {/* ===== Split Layout: Canvas Left, Everything Right ===== */}
+      {/* ===== Split Layout: Content Left, Canvas Right ===== */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
 
-        {/* ===== LEFT — Hero Canvas (sticky) ===== */}
-        <div className="md:col-span-5">
-          <div className="md:sticky md:top-6 space-y-4">
-            <div className="animate-fade-in">
-              <AgentCanvas
-                status={project.status}
-                outputs={outputs}
-                streamingAgent={streamingAgent}
-                streamTokens={streamTokens}
-                elapsed={elapsed}
-                onNodeClick={(role) => {
-                  setInspectingAgent(role);
-                  const el = document.getElementById(`output-${role}`);
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              />
-            </div>
-
-            {/* Compact info below canvas */}
-            <CostMonitor projectId={projectId} costEvent={costEvent} />
-            {securityScan && <SecurityBadge scan={securityScan} />}
-          </div>
-        </div>
-
-        {/* ===== RIGHT — Scrollable Feed ===== */}
+        {/* ===== LEFT — Scrollable Feed ===== */}
         <div className="md:col-span-7 space-y-4">
 
           {/* Live Stream (when agent is working) */}
@@ -675,6 +651,30 @@ export default function Dashboard({ projectId }: Props) {
               <div className="text-sm" style={{ color: "var(--text-muted)" }}>The CEO is reviewing your problem statement</div>
             </div>
           )}
+        </div>
+
+        {/* ===== RIGHT — Hero Canvas (sticky) ===== */}
+        <div className="md:col-span-5">
+          <div className="md:sticky md:top-6 space-y-4">
+            <div className="animate-fade-in">
+              <AgentCanvas
+                status={project.status}
+                outputs={outputs}
+                streamingAgent={streamingAgent}
+                streamTokens={streamTokens}
+                elapsed={elapsed}
+                onNodeClick={(role) => {
+                  setInspectingAgent(role);
+                  const el = document.getElementById(`output-${role}`);
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              />
+            </div>
+
+            {/* Compact info below canvas */}
+            <CostMonitor projectId={projectId} costEvent={costEvent} />
+            {securityScan && <SecurityBadge scan={securityScan} />}
+          </div>
         </div>
       </div>
 

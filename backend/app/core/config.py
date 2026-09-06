@@ -142,31 +142,32 @@ def _best_provider(preferred: str, role_idx: int) -> str:
 
 # 6 OR keys = 1 dedicated key per agent, zero sharing
 # Key 1: CEO  |  Key 2: BA  |  Key 3: Researcher
-# Key 4: Architect  |  Key 5: Engineer fb  |  Key 6: PPT
+# Nvidia dual-key routing: Key1 = CEO, Architect, Engineer | Key2 = BA, Researcher, Review
+# OpenRouter fallback for PPT (fast Lightning model)
 PROVIDER_MAP = {
-    "ceo":              os.getenv("PROVIDER_CEO",        _or(1)),
-    "business_analyst": os.getenv("PROVIDER_BA",         _or(2)),
-    "researcher":       os.getenv("PROVIDER_RESEARCHER", _or(3)),
-    "architect":        os.getenv("PROVIDER_ARCHITECT",  _or(4)),
-    "engineer":         os.getenv("PROVIDER_ENGINEER",   _or(5)),
-    "ppt":              os.getenv("PROVIDER_PPT",        _or(6)),
-    "cross_review":     os.getenv("PROVIDER_REVIEW",     _or(5)),
-    "fixer":            os.getenv("PROVIDER_FIXER",      _or(5)),
+    "ceo":              os.getenv("PROVIDER_CEO",        "nvidia"),
+    "business_analyst": os.getenv("PROVIDER_BA",         "nvidia2"),
+    "researcher":       os.getenv("PROVIDER_RESEARCHER", "nvidia2"),
+    "architect":        os.getenv("PROVIDER_ARCHITECT",  "nvidia"),
+    "engineer":         os.getenv("PROVIDER_ENGINEER",   "nvidia"),
+    "ppt":              os.getenv("PROVIDER_PPT",        "nvidia2"),
+    "cross_review":     os.getenv("PROVIDER_REVIEW",     "nvidia2"),
+    "fixer":            os.getenv("PROVIDER_FIXER",      "nvidia"),
 }
 
-# Best free models per role — all OpenRouter free tier
-# DeepSeek V3: best free model for reasoning + coding (671B MoE)
-# Nemotron 120B: strong analysis, large param count
-# Nemotron Lightning: fast, good for simple generation tasks
+# Nvidia direct API models — no ":free" suffix, these are free-tier on Nvidia's platform
+# Ultra 550B: strongest reasoning (CEO, Architect)
+# Super 120B: strong analysis (BA, Researcher, Engineer, Review)
+# Lightning 30B: fast generation (PPT, Fixer)
 MODEL_MAP = {
-    "ceo":              os.getenv("MODEL_CEO",        "deepseek/deepseek-chat-v3-0324:free"),
-    "business_analyst": os.getenv("MODEL_BA",         "nvidia/nemotron-3-super-120b-a12b:free"),
-    "researcher":       os.getenv("MODEL_RESEARCHER", "nvidia/nemotron-3-super-120b-a12b:free"),
-    "architect":        os.getenv("MODEL_ARCHITECT",  "deepseek/deepseek-chat-v3-0324:free"),
-    "engineer":         os.getenv("MODEL_ENGINEER",   "deepseek/deepseek-chat-v3-0324:free"),
-    "ppt":              os.getenv("MODEL_PPT",        "nvidia/nemotron-3.5-lightning:free"),
-    "cross_review":     os.getenv("MODEL_REVIEW",     "nvidia/nemotron-3-super-120b-a12b:free"),
-    "fixer":            os.getenv("MODEL_FIXER",      "deepseek/deepseek-chat-v3-0324:free"),
+    "ceo":              os.getenv("MODEL_CEO",        "nvidia/nemotron-3-ultra-550b-a55b"),
+    "business_analyst": os.getenv("MODEL_BA",         "nvidia/nemotron-3-super-120b-a12b"),
+    "researcher":       os.getenv("MODEL_RESEARCHER", "nvidia/nemotron-3-super-120b-a12b"),
+    "architect":        os.getenv("MODEL_ARCHITECT",  "nvidia/nemotron-3-ultra-550b-a55b"),
+    "engineer":         os.getenv("MODEL_ENGINEER",   "nvidia/nemotron-3-super-120b-a12b"),
+    "ppt":              os.getenv("MODEL_PPT",        "nvidia/nemotron-3.5-lightning-30b-a3b"),
+    "cross_review":     os.getenv("MODEL_REVIEW",     "nvidia/nemotron-3-super-120b-a12b"),
+    "fixer":            os.getenv("MODEL_FIXER",      "nvidia/nemotron-3.5-lightning-30b-a3b"),
 }
 
 FALLBACK_MAP = {
