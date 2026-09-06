@@ -43,6 +43,7 @@ from app.agents.prompts import (
 from app.models.schemas import AgentRole
 from app.services.web_search import research_topic
 from app.services.webhook import send_research_data
+from app.services.file_generator import get_generated_file_contents
 
 logger = logging.getLogger(__name__)
 
@@ -453,6 +454,28 @@ def _build_context(project: dict, outputs: list[dict], memory: dict) -> str:
     return "\n\n".join(parts)
 
 
+def _build_existing_files_context(project_id: str, max_chars: int = 60000) -> str:
+    """Build a context block with the current generated files for iteration."""
+    files = get_generated_file_contents(project_id)
+    if not files:
+        return ""
+
+    parts = ["## Current Generated Files (modify these, don't regenerate from scratch)\n"]
+    total = 0
+    for f in files:
+        content = f.get("content", "")
+        if content == "(binary file)":
+            continue
+        header = f"### {f['path']}\n```{f.get('language', 'text')}\n{content}\n```\n"
+        if total + len(header) > max_chars:
+            parts.append(f"\n(... {len(files) - len(parts) + 1} more files truncated for context limit)")
+            break
+        parts.append(header)
+        total += len(header)
+
+    return "\n".join(parts)
+
+
 async def run_agent(project_id: str, role: AgentRole, progress_callback=None, stream_callback=None) -> dict:
     project = await get_project(project_id)
     if not project:
@@ -489,9 +512,18 @@ async def run_agent(project_id: str, role: AgentRole, progress_callback=None, st
             logger.warning(f"Web search failed, continuing without: {e}")
             extra_context = "\n\n## Web Research\nWeb search unavailable — use your training knowledge instead."
 
+    revision_context = ""
+    if role == AgentRole.ENGINEER:
+        existing_files = _build_existing_files_context(project_id)
+        if existing_files:
+            revision_feedback = memory.get("engineer_revision_feedback", "")
+            revision_context = f"\n\n{existing_files}"
+            if revision_feedback:
+                revision_context += f"\n\n## Revision Request\nThe Founder rejected the previous version with this feedback:\n{revision_feedback}\n\nIMPORTANT: You are REVISING existing code. Keep everything that works. Only modify files that need changes based on the feedback. Output the COMPLETE updated project including unchanged files."
+
     user_message = f"""Here is the current project context:
 
-{context}{extra_context}
+{context}{extra_context}{revision_context}
 
 Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, no explanation outside the JSON."""
 
@@ -549,6 +581,9 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
             content = {"raw_response": raw_text, "_parse_error": "Agent did not return valid JSON"}
 
     output = await save_agent_output(project_id, role.value, content)
+
+    if role == AgentRole.ENGINEER and memory.get("engineer_revision_feedback"):
+        await set_memory(project_id, "engineer_revision_feedback", "", "system")
 
     output["_timing"] = {"elapsed_seconds": elapsed, "model": model_used, "used_fallback": used_fallback, "tokens": usage}
 
@@ -651,9 +686,12 @@ async def call_employee(project_id: str, role: AgentRole, message: str) -> str:
 
     role_extra = ""
     if role == AgentRole.ENGINEER:
-        role_extra = """
+        existing_files = _build_existing_files_context(project_id)
+        role_extra = f"""
 
 ITERATION MODE: The Founder is asking you to modify the existing code.
+{existing_files}
+
 When they ask for changes:
 1. Identify which file(s) need to change
 2. Provide the COMPLETE updated file content for each changed file
@@ -715,9 +753,12 @@ async def call_employee_stream(project_id: str, role: AgentRole, message: str):
 
     role_extra = ""
     if role == AgentRole.ENGINEER:
-        role_extra = """
+        existing_files = _build_existing_files_context(project_id)
+        role_extra = f"""
 
 ITERATION MODE: The Founder is asking you to modify the existing code.
+{existing_files}
+
 When they ask for changes:
 1. Identify which file(s) need to change
 2. Provide the COMPLETE updated file content for each changed file
