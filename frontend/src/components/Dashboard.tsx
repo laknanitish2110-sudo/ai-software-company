@@ -622,6 +622,7 @@ export default function Dashboard({ projectId }: Props) {
                 streamingAgent={streamingAgent}
                 streamTokens={streamTokens}
                 elapsed={elapsed}
+                visibleAgents={routeAgents}
                 onNodeClick={(role) => {
                   setInspectingAgent(role);
                   const el = document.getElementById(`output-${role}`);

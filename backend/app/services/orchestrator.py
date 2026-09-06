@@ -669,11 +669,27 @@ class Orchestrator:
                 redo_role = AgentRole.ARCHITECT
             elif status == ProjectStatus.ENGINEER_REVIEW.value:
                 redo_role = AgentRole.ENGINEER
+            elif status == "completed":
+                # Post-completion revision: determine role from the rejected output
+                from app.core.database import get_project_outputs
+                all_outputs = await get_project_outputs(project_id)
+                for o in all_outputs:
+                    if o["id"] == output_id:
+                        try:
+                            redo_role = AgentRole(o["role"])
+                        except ValueError:
+                            pass
+                        break
 
             if redo_role and feedback:
                 await set_memory(project_id, f"{redo_role.value}_revision_feedback", feedback, "founder")
 
             if redo_role:
+                # Set status back to working so the pipeline re-runs correctly
+                working_status = WORKING_STAGES.get(redo_role)
+                if working_status:
+                    await update_project_status(project_id, working_status.value)
+
                 await self._notify("revision_requested", project_id, {
                     "role": redo_role.value,
                     "message": f"Revision requested. {redo_role.value.replace('_', ' ').title()} is reworking..."

@@ -9,6 +9,7 @@ interface Props {
   streamTokens: number;
   elapsed: number;
   onNodeClick?: (role: string) => void;
+  visibleAgents?: string[];
 }
 
 const R = 30;
@@ -17,7 +18,13 @@ const CENTER_X = 75;
 const START_Y = 55;
 const BRAND_X = 18;
 
-const DATA_LABELS = ["Brief", "Requirements", "Research", "Architecture", "Code"];
+const CONN_LABELS: Record<string, string> = {
+  ceo: "Brief",
+  business_analyst: "Requirements",
+  researcher: "Research",
+  architect: "Architecture",
+  engineer: "Code",
+};
 
 type StepState = "done" | "active" | "review" | "waiting";
 
@@ -82,12 +89,15 @@ export default function AgentCanvas({
   streamTokens,
   elapsed,
   onNodeClick,
+  visibleAgents,
 }: Props) {
-  const completedCount = PIPELINE_ORDER.filter(
+  const agents = visibleAgents || PIPELINE_ORDER;
+  const completedCount = agents.filter(
     (r) => getStepState(r, status, outputs) === "done"
   ).length;
+  const totalAgents = agents.length;
 
-  const totalHeight = START_Y + (PIPELINE_ORDER.length - 1) * NODE_SPACING + 65;
+  const totalHeight = START_Y + (agents.length - 1) * NODE_SPACING + 65;
 
   return (
     <div
@@ -133,8 +143,8 @@ export default function AgentCanvas({
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
             width: 8, height: 8, borderRadius: "50%",
-            background: streamingAgent ? "#635bff" : completedCount === 6 ? "#0bbf8c" : "#2a2f4a",
-            boxShadow: streamingAgent ? "0 0 10px #635bff" : completedCount === 6 ? "0 0 10px #0bbf8c" : "none",
+            background: streamingAgent ? "#635bff" : completedCount === totalAgents ? "#0bbf8c" : "#2a2f4a",
+            boxShadow: streamingAgent ? "0 0 10px #635bff" : completedCount === totalAgents ? "0 0 10px #0bbf8c" : "none",
             animation: streamingAgent ? "canvasPulse 2s infinite" : undefined,
           }} />
           <span style={{
@@ -143,7 +153,7 @@ export default function AgentCanvas({
           }}>
             Company HQ
           </span>
-          {completedCount === 6 && (
+          {completedCount === totalAgents && (
             <span style={{
               fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
               background: "rgba(11,191,140,0.15)", color: "#0bbf8c", border: "1px solid rgba(11,191,140,0.3)",
@@ -154,15 +164,15 @@ export default function AgentCanvas({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, fontWeight: 600 }}>
-            {completedCount}/6
+            {completedCount}/{totalAgents}
           </span>
           <div style={{
             width: 60, height: 5, borderRadius: 3,
             background: "rgba(255,255,255,0.06)", overflow: "hidden",
           }}>
             <div style={{
-              width: `${(completedCount / 6) * 100}%`, height: "100%", borderRadius: 3,
-              background: completedCount === 6 ? "#0bbf8c" : "linear-gradient(90deg, #635bff, #7a73ff)",
+              width: `${(completedCount / totalAgents) * 100}%`, height: "100%", borderRadius: 3,
+              background: completedCount === totalAgents ? "#0bbf8c" : "linear-gradient(90deg, #635bff, #7a73ff)",
               transition: "width 0.5s ease",
             }} />
           </div>
@@ -214,7 +224,7 @@ export default function AgentCanvas({
         <line x1={BRAND_X + 12} y1="0" x2={BRAND_X + 12} y2={totalHeight}
           stroke="rgba(99,91,255,0.4)" strokeWidth="2" />
         {/* Glowing accent dots along the brand line */}
-        {PIPELINE_ORDER.map((_, i) => (
+        {agents.map((_, i) => (
           <circle key={`bd-${i}`} cx={BRAND_X + 12} cy={START_Y + i * NODE_SPACING} r="3"
             fill="#635bff" opacity="0.7" filter="url(#brandGlow)" />
         ))}
@@ -262,8 +272,8 @@ export default function AgentCanvas({
         ))}
 
         {/* Connections */}
-        {PIPELINE_ORDER.slice(0, -1).map((role, i) => {
-          const nextRole = PIPELINE_ORDER[i + 1];
+        {agents.slice(0, -1).map((role, i) => {
+          const nextRole = agents[i + 1];
           const y1 = START_Y + i * NODE_SPACING + R;
           const y2 = START_Y + (i + 1) * NODE_SPACING - R;
           const connState = getConnState(role, nextRole, status, outputs);
@@ -309,7 +319,7 @@ export default function AgentCanvas({
               {/* Data label */}
               {(connState === "flowing" || connState === "passed") && (
                 <text x={CENTER_X + 18} y={gateY + 4} fill="rgba(255,255,255,0.3)" fontSize="9" fontFamily="monospace" fontWeight="500">
-                  {DATA_LABELS[i]}
+                  {CONN_LABELS[role] || ""}
                 </text>
               )}
 
@@ -338,7 +348,7 @@ export default function AgentCanvas({
         })}
 
         {/* Agent Nodes */}
-        {PIPELINE_ORDER.map((role, i) => {
+        {agents.map((role, i) => {
           const x = CENTER_X;
           const y = START_Y + i * NODE_SPACING;
           const config = AGENT_CONFIG[role];
