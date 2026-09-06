@@ -413,6 +413,7 @@ export default function Dashboard({ projectId }: Props) {
                 streamTokens={streamTokens}
                 elapsed={elapsed}
                 onNodeClick={(role) => {
+                  setInspectingAgent(role);
                   const el = document.getElementById(`output-${role}`);
                   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
