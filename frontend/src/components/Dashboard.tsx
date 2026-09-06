@@ -15,7 +15,7 @@ import ArchitectureDiagram from "./ArchitectureDiagram";
 import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
-import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, downloadBundle, shareProject, getIntegrationStatus, getModelConfig, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, getStaticPreviewUrl, stopPreview, ReconnectingWebSocket } from "@/lib/api";
+import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, downloadBundle, getModelConfig, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, getStaticPreviewUrl, stopPreview, ReconnectingWebSocket } from "@/lib/api";
 import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS, ROUTE_CONFIG, updateModelLabels } from "@/lib/constants";
 
 interface Props {
@@ -64,9 +64,6 @@ function formatPipelineTime(seconds: number): string {
 export default function Dashboard({ projectId }: Props) {
   const [state, setState] = useState<ProjectState | null>(null);
   const [events, setEvents] = useState<{ type: string; message: string; time: string }[]>([]);
-  const [n8nConnected, setN8nConnected] = useState(false);
-  const [sharing, setSharing] = useState<string | null>(null);
-  const [shareMsg, setShareMsg] = useState<string | null>(null);
   const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
   const [streamTokens, setStreamTokens] = useState(0);
   const [agentStartTime, setAgentStartTime] = useState<number | null>(null);
@@ -119,27 +116,10 @@ export default function Dashboard({ projectId }: Props) {
   }, [refreshState]);
 
   useEffect(() => {
-    getIntegrationStatus()
-      .then((s) => setN8nConnected(s.n8n_connected))
-      .catch(() => {});
     getModelConfig()
       .then((cfg) => updateModelLabels(cfg.agents))
       .catch(() => {});
   }, []);
-
-  async function handleShare(type: "drive" | "sheets" | "email" | "all") {
-    setSharing(type);
-    setShareMsg(null);
-    try {
-      const res = await shareProject(projectId, type);
-      setShareMsg(res.message);
-    } catch (e: unknown) {
-      setShareMsg(e instanceof Error ? e.message : "Share failed");
-    } finally {
-      setSharing(null);
-      setTimeout(() => setShareMsg(null), 4000);
-    }
-  }
 
   useEffect(() => {
     refreshState();
@@ -600,33 +580,6 @@ export default function Dashboard({ projectId }: Props) {
                       <span>🏗️</span> Architecture Diagram
                     </button>
                   )}
-                  {/* n8n Share */}
-                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[9px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>n8n</span>
-                      <span style={{
-                        fontSize: 9, padding: "1px 6px", borderRadius: 8,
-                        background: n8nConnected ? "var(--success-bg)" : "var(--bg-elevated)",
-                        color: n8nConnected ? "var(--success)" : "var(--text-muted)",
-                        border: `1px solid ${n8nConnected ? "var(--success-border)" : "var(--border)"}`,
-                      }}>
-                        {n8nConnected ? "On" : "Off"}
-                      </span>
-                    </div>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {(["drive", "sheets", "email", "all"] as const).map((t) => (
-                        <button key={t} onClick={() => handleShare(t)} disabled={!n8nConnected || sharing !== null}
-                          className="btn-ghost text-[10px] py-1.5 px-2.5 flex items-center gap-1">
-                          {sharing === t ? <span className="spinner" style={{ width: 10, height: 10 }} /> :
-                            t === "drive" ? "📁" : t === "sheets" ? "📊" : t === "email" ? "📧" : "🚀"}
-                          {t === "drive" ? "Drive" : t === "sheets" ? "Sheets" : t === "email" ? "Email" : "All"}
-                        </button>
-                      ))}
-                    </div>
-                    {shareMsg && (
-                      <div className="mt-1.5 text-[10px] animate-fade-in" style={{ color: "var(--text-secondary)" }}>{shareMsg}</div>
-                    )}
-                  </div>
                 </div>
               </div>
             </div>
