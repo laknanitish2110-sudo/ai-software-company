@@ -538,9 +538,13 @@ export async function pushToGitHub(
   return checkedJson(res, "Failed to push to GitHub");
 }
 
-export async function getPreviewStatus(projectId: string): Promise<{ active: boolean; preview_url: string | null; timeout_seconds: number }> {
+export async function getPreviewStatus(projectId: string): Promise<{ active: boolean; preview_url: string | null; has_static_preview?: boolean; timeout_seconds: number }> {
   const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}/preview`, { headers: authHeaders() });
   return checkedJson(res, "Failed to check preview status");
+}
+
+export function getStaticPreviewUrl(projectId: string): string {
+  return `${API_BASE}/projects/${projectId}/preview/static`;
 }
 
 export async function stopPreview(projectId: string): Promise<{ status: string }> {

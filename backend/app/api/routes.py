@@ -9,7 +9,7 @@ import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
 
 logger = logging.getLogger(__name__)
-from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse, StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 from app.models.schemas import (
     CreateProjectRequest,
@@ -725,11 +725,28 @@ async def get_preview_status(project_id: str, current_user: dict = Depends(get_c
     await _verify_project_owner(project_id, current_user["id"])
     from app.services.sandbox_manager import sandbox_manager
     url = sandbox_manager.get_preview_url(project_id)
+    has_static = False
+    if not url:
+        from app.services.file_generator import PROJECTS_DIR
+        index_path = PROJECTS_DIR / project_id / "index.html"
+        has_static = index_path.exists()
     return {
-        "active": url is not None,
+        "active": url is not None or has_static,
         "preview_url": url,
+        "has_static_preview": has_static,
         "timeout_seconds": int(os.getenv("SANDBOX_PREVIEW_TIMEOUT", "600")),
     }
+
+
+@router.get("/projects/{project_id}/preview/static")
+async def serve_static_preview(project_id: str):
+    from app.services.file_generator import PROJECTS_DIR
+    project_dir = PROJECTS_DIR / project_id
+    index_path = project_dir / "index.html"
+    if not index_path.exists():
+        raise HTTPException(404, "No index.html found for this project")
+    html = index_path.read_text(encoding="utf-8")
+    return HTMLResponse(content=html)
 
 
 @router.post("/projects/{project_id}/preview/stop")

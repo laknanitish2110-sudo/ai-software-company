@@ -15,7 +15,7 @@ import ArchitectureDiagram from "./ArchitectureDiagram";
 import LiveStreamPanel from "./LiveStreamPanel";
 import { useToast } from "./Toast";
 import { DashboardSkeleton } from "./Skeleton";
-import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, downloadBundle, shareProject, getIntegrationStatus, getModelConfig, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, stopPreview, ReconnectingWebSocket } from "@/lib/api";
+import { ProjectState, WSMessage, connectWebSocket, getProjectState, approveOutput, downloadCode, downloadPptx, downloadDocx, downloadWorkflow, downloadBundle, shareProject, getIntegrationStatus, getModelConfig, saveDemoCache, reviseAgent, generateShareLink, getPreviewStatus, getStaticPreviewUrl, stopPreview, ReconnectingWebSocket } from "@/lib/api";
 import { STATUS_LABELS, AGENT_CONFIG, PIPELINE_ORDER, MODEL_LABELS, ROUTE_CONFIG, updateModelLabels } from "@/lib/constants";
 
 interface Props {
@@ -100,7 +100,8 @@ export default function Dashboard({ projectId }: Props) {
         try { setSecurityScan(JSON.parse(s.memory.security_scan)); } catch {}
       }
       getPreviewStatus(projectId).then(p => {
-        if (p.active && p.preview_url) setPreviewUrl(p.preview_url);
+        if (p.preview_url) setPreviewUrl(p.preview_url);
+        else if (p.has_static_preview) setPreviewUrl(getStaticPreviewUrl(projectId));
         else setPreviewUrl(null);
       }).catch(() => {});
     } catch {
@@ -475,34 +476,39 @@ export default function Dashboard({ projectId }: Props) {
               {validationResult && <BuildStatus validationResult={validationResult} />}
 
               {/* Preview iframe */}
-              {previewUrl && (
-                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                  <div style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "10px 16px", borderBottom: "1px solid var(--border)",
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }} />
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Live Preview</span>
+              {previewUrl && (() => {
+                const isStatic = previewUrl.includes("/preview/static");
+                return (
+                  <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "10px 16px", borderBottom: "1px solid var(--border)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: isStatic ? "var(--accent)" : "var(--success)", animation: isStatic ? "none" : "pulse 2s infinite" }} />
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{isStatic ? "Preview" : "Live Preview"}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <a href={previewUrl} target="_blank" rel="noopener noreferrer"
+                           style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none" }}>
+                          Open in new tab ↗
+                        </a>
+                        {!isStatic && (
+                          <button onClick={async () => {
+                            try { await stopPreview(projectId); } catch {}
+                            setPreviewUrl(null);
+                          }}
+                            style={{ fontSize: 11, color: "var(--danger)", background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
+                            Stop
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <a href={previewUrl} target="_blank" rel="noopener noreferrer"
-                         style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none" }}>
-                        Open in new tab ↗
-                      </a>
-                      <button onClick={async () => {
-                        try { await stopPreview(projectId); } catch {}
-                        setPreviewUrl(null);
-                      }}
-                        style={{ fontSize: 11, color: "var(--danger)", background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
-                        Stop
-                      </button>
-                    </div>
+                    <iframe src={previewUrl} style={{ width: "100%", height: 400, border: "none" }}
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
                   </div>
-                  <iframe src={previewUrl} style={{ width: "100%", height: 400, border: "none" }}
-                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
-                </div>
-              )}
+                );
+              })()}
 
               {/* Downloads */}
               <div className="card p-5">
