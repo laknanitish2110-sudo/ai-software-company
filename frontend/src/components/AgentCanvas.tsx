@@ -26,6 +26,7 @@ function getStepState(
   status: string,
   outputs: Array<{ role: string; status: string }>
 ): StepState {
+  if (status === "completed") return "done";
   const output = outputs.filter((o) => o.role === role).pop();
   if (output?.status === "approved") return "done";
   const reviewMap: Record<string, string> = {
