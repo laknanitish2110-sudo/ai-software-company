@@ -114,30 +114,48 @@ RETRY_DELAYS = [2, 4, 8]
 def _repair_json(raw: str) -> str:
     text = raw.strip()
 
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines)
-
-    if "```json" in text:
-        match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
-        if match:
-            text = match.group(1)
-
-    if "```" in text:
-        match = re.search(r'```\s*(.*?)\s*```', text, re.DOTALL)
-        if match:
-            text = match.group(1)
-
-    text = re.sub(r',\s*([}\]])', r'\1', text)
-    text = re.sub(r':\s*undefined', ': null', text)
-
+    # Extract JSON object first — prevents code fence stripping from
+    # destroying content when ``` appears inside JSON string values
     start = text.find('{')
     end = text.rfind('}')
     if start != -1 and end != -1 and end > start:
         text = text[start:end + 1]
+    else:
+        # No braces found — try stripping code fences
+        if text.startswith("```"):
+            lines = text.split("\n")
+            lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines)
+
+        if "```json" in text:
+            match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+            if match:
+                text = match.group(1)
+        elif "```" in text:
+            match = re.search(r'```\s*(.*?)\s*```', text, re.DOTALL)
+            if match:
+                text = match.group(1)
+
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end + 1]
+
+    text = re.sub(r',\s*([}\]])', r'\1', text)
+    text = re.sub(r':\s*undefined', ': null', text)
+
+    # Fix invalid JSON escape sequences iteratively at exact error positions
+    for _ in range(200):
+        try:
+            json.loads(text)
+            return text
+        except json.JSONDecodeError as e:
+            if 'Invalid \\escape' in str(e) and e.pos is not None and e.pos > 0:
+                text = text[:e.pos - 1] + '\\\\' + text[e.pos:]
+            else:
+                break
 
     return text
 
