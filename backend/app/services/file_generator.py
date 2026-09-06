@@ -218,8 +218,10 @@ def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
     try:
         for entry in file_updates:
             path = entry.get("path", "")
-            content = entry.get("content", "")
             if not path:
+                continue
+            if "content" not in entry:
+                skipped.append(path)
                 continue
 
             full_path = _is_safe_path(project_dir, path)
@@ -227,7 +229,8 @@ def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
                 skipped.append(path)
                 continue
 
-            content_bytes = content.encode("utf-8") if content else b""
+            content = entry["content"]
+            content_bytes = content.encode("utf-8") if isinstance(content, str) else b""
             if len(content_bytes) > MAX_APPLY_FILE_SIZE:
                 skipped.append(path)
                 continue
