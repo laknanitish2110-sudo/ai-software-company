@@ -338,6 +338,31 @@ class Orchestrator:
                     except Exception as sec_err:
                         logger.warning(f"Security scan failed (non-critical): {sec_err}")
 
+                    # Generate project files immediately after engineer completes
+                    try:
+                        eng_files_for_gen = output["content"].get("files", [])
+                        mem_fg = await get_memory(project_id)
+                        repaired_fg = mem_fg.get("repaired_files")
+                        if repaired_fg:
+                            try:
+                                rf = json.loads(repaired_fg)
+                                if rf:
+                                    eng_files_for_gen = rf
+                            except Exception:
+                                pass
+                        if eng_files_for_gen:
+                            gen_content = dict(output["content"])
+                            gen_content["files"] = eng_files_for_gen
+                            zip_path = generate_project_files(project_id, gen_content)
+                            files_list = get_generated_files_list(project_id)
+                            await self._notify("files_generated", project_id, {
+                                "message": f"Project files generated! {len(files_list)} files ready for download.",
+                                "files": files_list,
+                            })
+                            logger.info(f"Generated {len(files_list)} files for project {project_id}")
+                    except Exception as fg_err:
+                        logger.warning(f"File generation after engineer failed: {fg_err}")
+
                 review_status = REVIEW_STAGES.get(role)
                 if review_status:
                     await update_project_status(project_id, review_status.value)
@@ -455,6 +480,28 @@ class Orchestrator:
         except Exception:
             pass
 
+        # Safety net: generate project files if not already created
+        try:
+            from app.services.file_generator import get_generated_files_list as _check_files
+            if not _check_files(project_id):
+                engineer_output = await get_latest_output(project_id, AgentRole.ENGINEER.value)
+                if engineer_output and isinstance(engineer_output.get("content"), dict):
+                    content = dict(engineer_output["content"])
+                    mem = await get_memory(project_id)
+                    repaired_json = mem.get("repaired_files")
+                    if repaired_json:
+                        try:
+                            repaired = json.loads(repaired_json)
+                            if repaired:
+                                content["files"] = repaired
+                        except Exception:
+                            pass
+                    if content.get("files"):
+                        generate_project_files(project_id, content)
+                        logger.info(f"Safety net: generated files for project {project_id}")
+        except Exception as e:
+            logger.warning(f"Safety net file generation failed: {e}")
+
         try:
             from app.core.database import get_project_outputs, get_memory as get_mem
             all_outputs = await get_project_outputs(project_id)
@@ -543,21 +590,19 @@ class Orchestrator:
                             repaired = json.loads(repaired_json)
                             if repaired:
                                 content["files"] = repaired
-                                logger.info(f"Using {len(repaired)} repaired files for project {project_id}")
                         except Exception:
                             pass
-                    if content.get("files"):
+                    # Generate files if not already created (fallback for approval path)
+                    if content.get("files") and not get_generated_files_list(project_id):
                         try:
-                            zip_path = generate_project_files(project_id, content)
+                            generate_project_files(project_id, content)
                             files_list = get_generated_files_list(project_id)
                             await self._notify("files_generated", project_id, {
                                 "message": f"Project files generated! {len(files_list)} files ready for download.",
                                 "files": files_list,
                             })
                         except Exception as e:
-                            await self._notify("error", project_id, {
-                                "message": f"File generation error: {str(e)}"
-                            })
+                            logger.warning(f"File generation in approval failed: {e}")
                     if content.get("n8n_workflow"):
                         try:
                             wf_path = generate_workflow_json(project_id, content)
