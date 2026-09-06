@@ -1,13 +1,30 @@
 import base64
 import hashlib
 import logging
+import os
 from typing import List
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger(__name__)
 
 GITHUB_API = "https://api.github.com"
+
+FERNET_PREFIX = "fernet:"
+
+
+def _get_fernet(secret: str) -> Fernet:
+    key = os.environ.get("GITHUB_TOKEN_ENCRYPTION_KEY")
+    if not key:
+        key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest()).decode()
+    return Fernet(key)
+
+
+def _xor_decrypt_legacy(encoded: str, secret: str) -> str:
+    key = hashlib.sha256(secret.encode()).digest()
+    xored = base64.urlsafe_b64decode(encoded)
+    return bytes(b ^ key[i % len(key)] for i, b in enumerate(xored)).decode()
 
 
 class GitHubPushError(Exception):
@@ -15,16 +32,18 @@ class GitHubPushError(Exception):
 
 
 def obfuscate_token(token: str, secret: str) -> str:
-    """XOR-based obfuscation using JWT secret as key. Not cryptographic — prevents plaintext storage."""
-    key = hashlib.sha256(secret.encode()).digest()
-    xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(token.encode()))
-    return base64.urlsafe_b64encode(xored).decode()
+    """Encrypt a GitHub token using Fernet (AES-128-CBC + HMAC-SHA256)."""
+    f = _get_fernet(secret)
+    encrypted = f.encrypt(token.encode()).decode()
+    return FERNET_PREFIX + encrypted
 
 
 def deobfuscate_token(encoded: str, secret: str) -> str:
-    key = hashlib.sha256(secret.encode()).digest()
-    xored = base64.urlsafe_b64decode(encoded)
-    return bytes(b ^ key[i % len(key)] for i, b in enumerate(xored)).decode()
+    """Decrypt a GitHub token. Handles both Fernet and legacy XOR tokens."""
+    if encoded.startswith(FERNET_PREFIX):
+        f = _get_fernet(secret)
+        return f.decrypt(encoded[len(FERNET_PREFIX):].encode()).decode()
+    return _xor_decrypt_legacy(encoded, secret)
 
 
 class GitHubService:

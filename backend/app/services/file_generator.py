@@ -203,39 +203,54 @@ def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
     if not project_dir.exists():
         return {"status": "error", "message": "Project files not found"}
 
+    backup_dir = PROJECTS_DIR / f"{project_id}_backup"
+    try:
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir)
+        shutil.copytree(project_dir, backup_dir)
+    except OSError:
+        return {"status": "error", "message": "Failed to create safety snapshot"}
+
     total_size = 0
     updated = []
     skipped = []
 
-    for entry in file_updates:
-        path = entry.get("path", "")
-        content = entry.get("content", "")
-        if not path:
-            continue
+    try:
+        for entry in file_updates:
+            path = entry.get("path", "")
+            content = entry.get("content", "")
+            if not path:
+                continue
 
-        full_path = _is_safe_path(project_dir, path)
-        if not full_path:
-            skipped.append(path)
-            continue
+            full_path = _is_safe_path(project_dir, path)
+            if not full_path:
+                skipped.append(path)
+                continue
 
-        content_bytes = content.encode("utf-8") if content else b""
-        if len(content_bytes) > MAX_APPLY_FILE_SIZE:
-            skipped.append(path)
-            continue
+            content_bytes = content.encode("utf-8") if content else b""
+            if len(content_bytes) > MAX_APPLY_FILE_SIZE:
+                skipped.append(path)
+                continue
 
-        total_size += len(content_bytes)
-        if total_size > MAX_APPLY_TOTAL_SIZE:
-            return {"status": "error", "message": "Total payload size exceeds limit"}
+            total_size += len(content_bytes)
+            if total_size > MAX_APPLY_TOTAL_SIZE:
+                raise ValueError("Total payload size exceeds limit")
 
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_bytes(content_bytes)
-        updated.append(path)
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_bytes(content_bytes)
+            updated.append(path)
 
-    zip_path = PROJECTS_DIR / f"{project_id}.zip"
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file in project_dir.rglob("*"):
-            if file.is_file():
-                zf.write(file, file.relative_to(project_dir))
+        zip_path = PROJECTS_DIR / f"{project_id}.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file in project_dir.rglob("*"):
+                if file.is_file():
+                    zf.write(file, file.relative_to(project_dir))
+    except Exception:
+        shutil.rmtree(project_dir)
+        shutil.move(str(backup_dir), str(project_dir))
+        return {"status": "error", "message": "Apply failed, project restored from snapshot"}
+
+    shutil.rmtree(backup_dir, ignore_errors=True)
 
     result = {"status": "ok", "updated_files": updated, "count": len(updated)}
     if skipped:

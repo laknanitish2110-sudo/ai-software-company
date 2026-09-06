@@ -799,8 +799,8 @@ Be specific, helpful, and concise. You have full access to the project state.
                 full_response += token
                 yield f"data: {json.dumps({'token': token})}\n\n"
     except Exception as e:
-        logger.error(f"Streaming call_employee error: {e}")
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        logger.error(f"Streaming call_employee error: {e}", exc_info=True)
+        yield f"data: {json.dumps({'error': 'An error occurred while generating the response. Please try again.'})}\n\n"
 
     conversation.append({"role": "assistant", "content": full_response})
     await save_conversation(project_id, role.value, conversation)
