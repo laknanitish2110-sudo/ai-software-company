@@ -366,7 +366,7 @@ from app.services.resource_budget import resource_budget, ResourceBudgetExceeded
 # --- PROTECTED PROJECT ENDPOINTS ---
 
 @router.post("/classify")
-async def classify_task_endpoint(req: CreateProjectRequest):
+async def classify_task_endpoint(req: CreateProjectRequest, current_user: dict = Depends(get_current_user)):
     from app.services.task_router import classify_task
     return classify_task(req.problem_statement)
 
@@ -739,14 +739,18 @@ async def get_preview_status(project_id: str, current_user: dict = Depends(get_c
 
 
 @router.get("/projects/{project_id}/preview/static")
-async def serve_static_preview(project_id: str):
+async def serve_static_preview(project_id: str, current_user: dict = Depends(get_current_user)):
+    await _verify_project_owner(project_id, current_user["id"])
     from app.services.file_generator import PROJECTS_DIR
     project_dir = PROJECTS_DIR / project_id
     index_path = project_dir / "index.html"
     if not index_path.exists():
         raise HTTPException(404, "No index.html found for this project")
     html = index_path.read_text(encoding="utf-8")
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=html, headers={
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'",
+    })
 
 
 @router.post("/projects/{project_id}/preview/stop")
@@ -1016,7 +1020,7 @@ async def download_shared_file(token: str, file_type: str):
 @router.get("/domain-learnings")
 async def list_domain_learnings(current_user: dict = Depends(get_current_user)):
     from app.core.database import query_domain_learnings
-    learnings = await query_domain_learnings(keywords=[], limit=50)
+    learnings = await query_domain_learnings(keywords=[], limit=50, user_id=current_user["id"])
     return {"learnings": learnings, "count": len(learnings)}
 
 
@@ -1049,8 +1053,8 @@ async def load_demo_cache(current_user: dict = Depends(get_current_user)):
         try:
             ts = project.get("created_at", now_iso())
             await db.execute(
-                "INSERT INTO projects (id, problem_statement, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (pid, project.get("problem_statement", ""), project.get("status", "completed"), ts, project.get("updated_at", ts)),
+                "INSERT INTO projects (id, problem_statement, status, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (pid, project.get("problem_statement", ""), project.get("status", "completed"), current_user["id"], ts, project.get("updated_at", ts)),
             )
             await db.commit()
         finally:
