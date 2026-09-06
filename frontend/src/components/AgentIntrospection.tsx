@@ -314,30 +314,6 @@ export default function AgentIntrospection({ projectId, role, onClose }: Props) 
                 )}
               </div>
 
-              {/* System Prompt */}
-              <Section
-                title="System Prompt"
-                expanded={expanded.has("prompt")}
-                onToggle={() => toggle("prompt")}
-                accent="var(--accent)"
-              >
-                <pre
-                  style={{
-                    fontSize: 11,
-                    lineHeight: 1.6,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                    color: "var(--text-secondary)",
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    margin: 0,
-                    maxHeight: 300,
-                    overflowY: "auto",
-                  }}
-                >
-                  {data?.system_prompt || "No prompt available"}
-                </pre>
-              </Section>
-
               {/* Output */}
               {data?.output && (
                 <Section

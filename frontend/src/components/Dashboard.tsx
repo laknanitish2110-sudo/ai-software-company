@@ -10,7 +10,6 @@ import CallEmployee from "./CallEmployee";
 import CodePreview from "./CodePreview";
 import GitHubPush from "./GitHubPush";
 import VersionTimeline from "./VersionTimeline";
-import QuickImprove from "./QuickImprove";
 import CostMonitor from "./CostMonitor";
 import SecurityBadge, { SecurityScanEvent } from "./SecurityBadge";
 import ArchitectureDiagram from "./ArchitectureDiagram";
@@ -612,14 +611,6 @@ export default function Dashboard({ projectId }: Props) {
             projectStatus={project.status}
             createdAt={project.created_at}
           />
-
-          {/* Quick Improve */}
-          {isCompleted && (
-            <QuickImprove
-              projectId={projectId}
-              onImprove={handleRevise}
-            />
-          )}
 
           {/* Ship Section (collapsible) */}
           {isCompleted && (

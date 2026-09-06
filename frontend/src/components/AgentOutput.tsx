@@ -13,6 +13,7 @@ interface PeerReview {
   concerns: string[];
   suggestions: string[];
   alignment_check?: string;
+  overall_readiness?: string;
   hackathon_readiness?: string;
   team_note: string;
 }
@@ -355,7 +356,7 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
           </div>
         )}
 
-        {(review.alignment_check || review.hackathon_readiness) && (
+        {(review.alignment_check || review.overall_readiness || review.hackathon_readiness) && (
           <div className="mt-1 pt-3" style={{ borderTop: "1px solid var(--accent-border)" }}>
             {review.alignment_check && (
               <div className="mb-2">
@@ -363,10 +364,10 @@ function PeerReviewSection({ review }: { review: PeerReview }) {
                 <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{safeText(review.alignment_check)}</div>
               </div>
             )}
-            {review.hackathon_readiness && (
+            {(review.overall_readiness || review.hackathon_readiness) && (
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>Hackathon readiness</div>
-                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{safeText(review.hackathon_readiness)}</div>
+                <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>Readiness</div>
+                <div className="text-sm" style={{ color: "var(--text-secondary)" }}>{safeText(review.overall_readiness || review.hackathon_readiness || "")}</div>
               </div>
             )}
           </div>

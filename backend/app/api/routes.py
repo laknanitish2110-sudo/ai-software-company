@@ -588,7 +588,7 @@ async def get_employee_conversation(project_id: str, role: str, current_user: di
 @router.get("/projects/{project_id}/introspection/{role}")
 async def get_agent_introspection(project_id: str, role: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
-    from app.agents.engine import SYSTEM_PROMPTS, ROLE_LABELS, AGENT_TIMEOUTS
+    from app.agents.engine import ROLE_LABELS, AGENT_TIMEOUTS
     from app.core.config import MODEL_MAP, SMART_MODEL, PROVIDER_MAP
 
     try:
@@ -622,7 +622,7 @@ async def get_agent_introspection(project_id: str, role: str, current_user: dict
         "label": ROLE_LABELS.get(agent_role, role),
         "model": MODEL_MAP.get(role, SMART_MODEL),
         "provider": PROVIDER_MAP.get(role, "openrouter"),
-        "system_prompt": SYSTEM_PROMPTS.get(agent_role, ""),
+        "system_prompt": "[hidden]",
         "max_tokens": 16000 if agent_role == AgentRole.ENGINEER else 4096,
         "timeout": AGENT_TIMEOUTS.get(agent_role, 120),
         "timing": timing,

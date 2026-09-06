@@ -521,12 +521,14 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
         "total_tokens": usage.get("total_tokens", 0),
     }), role.value)
 
-    repaired = _repair_json(raw_text)
-
     try:
-        content = json.loads(repaired)
+        content = json.loads(raw_text.strip())
     except json.JSONDecodeError:
-        content = {"raw_response": raw_text, "_parse_error": "Agent did not return valid JSON"}
+        repaired = _repair_json(raw_text)
+        try:
+            content = json.loads(repaired)
+        except json.JSONDecodeError:
+            content = {"raw_response": raw_text, "_parse_error": "Agent did not return valid JSON"}
 
     output = await save_agent_output(project_id, role.value, content)
 
