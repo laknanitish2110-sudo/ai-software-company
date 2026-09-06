@@ -20,7 +20,6 @@ def generate_project_files(project_id: str, engineer_output: dict) -> str:
     project_dir.mkdir(parents=True)
 
     files = engineer_output.get("files", [])
-    resolved_root = project_dir.resolve()
     for file_entry in files:
         file_path = file_entry.get("path", "")
         content = file_entry.get("content", "")
@@ -28,17 +27,9 @@ def generate_project_files(project_id: str, engineer_output: dict) -> str:
         if not file_path or not content:
             continue
 
-        file_path = file_path.lstrip("/").lstrip("\\")
-        full_path = (project_dir / file_path).resolve()
-        
-        # Security check: Ensure file stays within project_dir (prevents ../ path traversal)
-        try:
-            if not full_path.is_relative_to(resolved_root):
-                continue
-        except AttributeError:
-            # Fallback for Python < 3.9
-            if not str(full_path).startswith(str(resolved_root)):
-                continue
+        full_path = _is_safe_path(project_dir, file_path)
+        if not full_path:
+            continue
 
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
@@ -156,22 +147,15 @@ def generate_deployable_bundle(project_id: str, artifacts: list[dict]) -> str:
         shutil.rmtree(bundle_dir)
     bundle_dir.mkdir(parents=True)
 
-    resolved_root = bundle_dir.resolve()
     for entry in artifacts:
         file_path = entry.get("path", "")
         content = entry.get("content", "")
         if not file_path or not content:
             continue
 
-        file_path = file_path.lstrip("/").lstrip("\\")
-        full_path = (bundle_dir / file_path).resolve()
-
-        try:
-            if not full_path.is_relative_to(resolved_root):
-                continue
-        except AttributeError:
-            if not str(full_path).startswith(str(resolved_root)):
-                continue
+        full_path = _is_safe_path(bundle_dir, file_path)
+        if not full_path:
+            continue
 
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
@@ -192,24 +176,59 @@ def get_deployable_bundle_path(project_id: str) -> str | None:
     return None
 
 
+MAX_APPLY_FILES = 200
+MAX_APPLY_FILE_SIZE = 500 * 1024  # 500KB per file
+MAX_APPLY_TOTAL_SIZE = 50 * 1024 * 1024  # 50MB total
+
+
+def _is_safe_path(project_dir: Path, file_path: str) -> Path | None:
+    """Validate a file path is safe and contained within the project directory."""
+    cleaned = file_path.replace("\\", "/").lstrip("/")
+    if not cleaned or ".." in cleaned.split("/"):
+        return None
+    full_path = (project_dir / cleaned).resolve()
+    try:
+        full_path.relative_to(project_dir.resolve())
+    except ValueError:
+        return None
+    return full_path
+
+
 def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
     """Apply file changes from Engineer chat iteration. Regenerates ZIP."""
+    if len(file_updates) > MAX_APPLY_FILES:
+        return {"status": "error", "message": f"Too many files (max {MAX_APPLY_FILES})"}
+
     project_dir = PROJECTS_DIR / project_id
     if not project_dir.exists():
         return {"status": "error", "message": "Project files not found"}
 
+    total_size = 0
     updated = []
-    resolved_root = project_dir.resolve()
+    skipped = []
+
     for entry in file_updates:
-        path = entry.get("path", "").lstrip("/").lstrip("\\")
+        path = entry.get("path", "")
         content = entry.get("content", "")
-        if not path or not content:
+        if not path:
             continue
-        full_path = (project_dir / path).resolve()
-        if not str(full_path).startswith(str(resolved_root)):
+
+        full_path = _is_safe_path(project_dir, path)
+        if not full_path:
+            skipped.append(path)
             continue
+
+        content_bytes = content.encode("utf-8") if content else b""
+        if len(content_bytes) > MAX_APPLY_FILE_SIZE:
+            skipped.append(path)
+            continue
+
+        total_size += len(content_bytes)
+        if total_size > MAX_APPLY_TOTAL_SIZE:
+            return {"status": "error", "message": "Total payload size exceeds limit"}
+
         full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(content, encoding="utf-8")
+        full_path.write_bytes(content_bytes)
         updated.append(path)
 
     zip_path = PROJECTS_DIR / f"{project_id}.zip"
@@ -218,4 +237,7 @@ def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
             if file.is_file():
                 zf.write(file, file.relative_to(project_dir))
 
-    return {"status": "ok", "updated_files": updated, "count": len(updated)}
+    result = {"status": "ok", "updated_files": updated, "count": len(updated)}
+    if skipped:
+        result["skipped"] = skipped
+    return result
