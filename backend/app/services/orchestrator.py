@@ -109,7 +109,7 @@ class Orchestrator:
                 # Step 0: Query domain memory for relevant past learnings
                 try:
                     from app.services.domain_memory import get_relevant_learnings
-                    domain_context = await get_relevant_learnings(problem_statement, project_id=project_id)
+                    domain_context = await get_relevant_learnings(problem_statement, project_id=project_id, user_id=user_id)
                     if domain_context:
                         await set_memory(project_id, "_domain_learnings", domain_context, "domain_memory")
                         await self._notify("domain_memory", project_id, {

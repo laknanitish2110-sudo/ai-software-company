@@ -192,8 +192,8 @@ async def extract_learnings(project_id: str) -> list[dict]:
     return saved
 
 
-async def get_relevant_learnings(problem_statement: str, project_id: Optional[str] = None) -> str:
-    """Query past learnings relevant to a new problem statement and format for injection into agent context."""
+async def get_relevant_learnings(problem_statement: str, project_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
+    """Query past learnings relevant to a new problem statement, scoped to the user's own projects."""
     keywords = _extract_keywords(problem_statement)
     if not keywords:
         return ""
@@ -202,6 +202,7 @@ async def get_relevant_learnings(problem_statement: str, project_id: Optional[st
         keywords=keywords[:6],
         exclude_project_id=project_id,
         limit=10,
+        user_id=user_id,
     )
 
     if not learnings:

@@ -782,21 +782,24 @@ async def save_domain_learning(project_id: str, category: str, domain: str, titl
         await db.close()
 
 
-async def query_domain_learnings(keywords: list[str], exclude_project_id: str | None = None, limit: int = 10) -> list[dict]:
+async def query_domain_learnings(keywords: list[str], exclude_project_id: str | None = None, limit: int = 10, user_id: str | None = None) -> list[dict]:
     db = await get_db()
     try:
         conditions = []
         params = []
         for kw in keywords:
-            conditions.append("(LOWER(domain) LIKE ? OR LOWER(title) LIKE ? OR LOWER(content) LIKE ?)")
+            conditions.append("(LOWER(dl.domain) LIKE ? OR LOWER(dl.title) LIKE ? OR LOWER(dl.content) LIKE ?)")
             pattern = f"%{kw.lower()}%"
             params.extend([pattern, pattern, pattern])
         where = " OR ".join(conditions) if conditions else "1=1"
         if exclude_project_id:
-            where = f"({where}) AND project_id != ?"
+            where = f"({where}) AND dl.project_id != ?"
             params.append(exclude_project_id)
+        if user_id:
+            where = f"({where}) AND p.user_id = ?"
+            params.append(user_id)
         cursor = await db.execute(
-            f"SELECT * FROM domain_learnings WHERE {where} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT dl.* FROM domain_learnings dl JOIN projects p ON dl.project_id = p.id WHERE {where} ORDER BY dl.created_at DESC LIMIT ?",
             (*params, limit),
         )
         return await cursor.fetchall()
