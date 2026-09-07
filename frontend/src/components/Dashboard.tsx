@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import AgentCanvas from "./AgentCanvas";
 import AgentIntrospection from "./AgentIntrospection";
-import AgentOutputCard from "./AgentOutput";
 import BuildStatus, { ValidationResult } from "./BuildStatus";
+import ProductJourney from "./ProductJourney";
 import CallEmployee from "./CallEmployee";
 import CodePreview from "./CodePreview";
 import GitHubPush from "./GitHubPush";
@@ -386,207 +386,198 @@ export default function Dashboard({ projectId }: Props) {
         {/* ===== LEFT — Scrollable Feed ===== */}
         <div className="md:col-span-7 space-y-4">
 
-          {/* Live Stream (when agent is working) */}
-          {streamingAgent && (
-            <div className="animate-fade-in">
-              <LiveStreamPanel
-                agentRole={streamingAgent}
-                streamText={streamText}
-                tokenCount={streamTokens}
-                elapsed={elapsed}
-              />
-            </div>
-          )}
-
-          {/* Pending Approval — always at top, highlighted */}
-          {pendingOutput && (
-            <div ref={pendingRef} className="animate-fade-in" style={{
-              border: "2px solid var(--warning)",
-              borderRadius: 14,
-              padding: 3,
-              background: "var(--warning-bg)",
-            }}>
-              <AgentOutputCard
-                role={pendingOutput.role}
-                content={pendingOutput.content as Record<string, unknown>}
-                status={pendingOutput.status}
-                outputId={pendingOutput.id}
-                onApprove={handleApprove}
-                onReject={handleReject}
-                onRevise={handleRevise}
-                showActions={true}
-                peerReview={getPeerReview(pendingOutput.role)}
-              />
-              {pendingOutput.role === "engineer" && validationResult && (
-                <div style={{ padding: "0 12px 12px" }}>
-                  <BuildStatus validationResult={validationResult} />
-                  {previewUrl && (
-                    <button onClick={() => setShowPreview(true)}
-                            className="mt-2 btn-success text-sm py-2 px-4 flex items-center gap-2"
-                            style={{ background: "#10b981", borderColor: "#059669" }}>
-                      <span>🌐</span> Live Preview
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Product Journey — accumulating narrative of the product being built */}
-          {approvedOutputs.length > 0 && !streamingAgent && !pendingOutput && (
-            <div className="flex items-center gap-2 mt-2 mb-1">
-              <div style={{ height: 1, flex: 1, background: "var(--border)" }} />
-              <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                Product Journey
-              </span>
-              <div style={{ height: 1, flex: 1, background: "var(--border)" }} />
-            </div>
-          )}
-          {approvedOutputs.map((output) => (
-            <div key={output.id} id={`output-${output.role}`} className="animate-fade-in">
-              <AgentOutputCard
-                role={output.role}
-                content={output.content as Record<string, unknown>}
-                status={output.status}
-                outputId={output.id}
-                onApprove={handleApprove}
-                onReject={handleReject}
-                onRevise={handleRevise}
-                showActions={false}
-                peerReview={getPeerReview(output.role)}
-              />
-            </div>
-          ))}
-
-          {/* Deliverables Section (when pipeline is done) */}
-          {isCompleted && (
-            <div className="space-y-4 animate-fade-in">
-              {/* Build Status */}
-              {validationResult && <BuildStatus validationResult={validationResult} />}
-
-              {/* Preview iframe */}
-              {previewUrl && (() => {
-                const isStatic = previewUrl.includes("/preview/static");
-                return (
-                  <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                    <div style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      padding: "10px 16px", borderBottom: "1px solid var(--border)",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: isStatic ? "var(--accent)" : "var(--success)", animation: isStatic ? "none" : "pulse 2s infinite" }} />
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{isStatic ? "Preview" : "Live Preview"}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <a href={previewUrl} target="_blank" rel="noopener noreferrer"
-                           style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none" }}>
-                          Open in new tab ↗
-                        </a>
-                        {!isStatic && (
-                          <button onClick={async () => {
-                            try { await stopPreview(projectId); } catch {}
-                            setPreviewUrl(null);
-                          }}
-                            style={{ fontSize: 11, color: "var(--danger)", background: "none", border: "none", cursor: "pointer", fontWeight: 500 }}>
-                            Stop
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <iframe src={previewUrl} style={{ width: "100%", height: 400, border: "none" }}
-                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+          {/* Product Journey — accumulating narrative */}
+          <div ref={pendingRef}>
+            <ProductJourney
+              stages={routeAgents}
+              outputs={outputs}
+              currentStatus={project.status}
+              streamingAgent={streamingAgent}
+              pendingOutput={pendingOutput || null}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onRevise={handleRevise}
+              getPeerReview={getPeerReview}
+              liveStreamNode={
+                streamingAgent ? (
+                  <LiveStreamPanel
+                    agentRole={streamingAgent}
+                    streamText={streamText}
+                    tokenCount={streamTokens}
+                    elapsed={elapsed}
+                  />
+                ) : null
+              }
+              validationNode={
+                validationResult ? (
+                  <div style={{ marginTop: 8 }}>
+                    <BuildStatus validationResult={validationResult} />
+                    {previewUrl && (
+                      <button onClick={() => setShowPreview(true)}
+                              className="mt-2 btn-success text-sm py-2 px-4 flex items-center gap-2"
+                              style={{ background: "#10b981", borderColor: "#059669" }}>
+                        <span>🌐</span> Live Preview
+                      </button>
+                    )}
                   </div>
-                );
-              })()}
+                ) : null
+              }
+            />
+          </div>
 
-              {/* Product Delivery */}
-              <div className="card p-5">
-                <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Your Product</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Product Ready — consolidated footer when pipeline is done */}
+          {isCompleted && (
+            <div className="animate-fade-in">
+              {/* Health summary bar */}
+              <div className="card p-4 mt-4" style={{
+                background: "linear-gradient(135deg, rgba(16,185,129,0.06), rgba(99,91,255,0.04))",
+                border: "1px solid var(--success-border)",
+              }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span style={{
+                      width: 10, height: 10, borderRadius: "50%",
+                      background: "var(--success)",
+                      boxShadow: "0 0 8px rgba(16,185,129,0.4)",
+                    }} />
+                    <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Product Ready</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>
+                    {formatPipelineTime(pipelineElapsed)} total
+                  </span>
+                </div>
+
+                {/* Health metrics */}
+                <div className="flex gap-3 mb-3 flex-wrap">
+                  {validationResult && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{
+                      background: "var(--bg-card)", border: "1px solid var(--border)", fontSize: 11,
+                    }}>
+                      <span style={{ fontWeight: 600, color: validationResult.final_status === "VALIDATED" ? "var(--success)" : "var(--danger)" }}>
+                        {validationResult.final_status === "VALIDATED" ? "PASS" : "FAIL"}
+                      </span>
+                      <span style={{ color: "var(--text-muted)" }}>Build</span>
+                    </div>
+                  )}
+                  {securityScan && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{
+                      background: "var(--bg-card)", border: "1px solid var(--border)", fontSize: 11,
+                    }}>
+                      <span style={{ fontWeight: 600, color: securityScan.status === "PASS" ? "var(--success)" : "var(--warning)" }}>
+                        {securityScan.status}
+                      </span>
+                      <span style={{ color: "var(--text-muted)" }}>Security</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{
+                    background: "var(--bg-card)", border: "1px solid var(--border)", fontSize: 11,
+                  }}>
+                    <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{outputs.length}</span>
+                    <span style={{ color: "var(--text-muted)" }}>Stages</span>
+                  </div>
+                </div>
+
+                {/* Preview */}
+                {previewUrl && (() => {
+                  const isStatic = previewUrl.includes("/preview/static");
+                  return (
+                    <div style={{ borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", marginBottom: 12 }}>
+                      <div style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "8px 12px", background: "var(--bg-elevated)",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: isStatic ? "var(--accent)" : "var(--success)", animation: isStatic ? "none" : "pulse 2s infinite" }} />
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>{isStatic ? "Preview" : "Live"}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <a href={previewUrl} target="_blank" rel="noopener noreferrer"
+                             style={{ fontSize: 10, color: "var(--accent)", textDecoration: "none" }}>Open ↗</a>
+                          {!isStatic && (
+                            <button onClick={async () => { try { await stopPreview(projectId); } catch {} setPreviewUrl(null); }}
+                              style={{ fontSize: 10, color: "var(--danger)", background: "none", border: "none", cursor: "pointer" }}>Stop</button>
+                          )}
+                        </div>
+                      </div>
+                      <iframe src={previewUrl} style={{ width: "100%", height: 300, border: "none" }}
+                              sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+                    </div>
+                  );
+                })()}
+
+                {/* Action buttons — compact grid */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                   {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
                     <button onClick={async () => {
                       try { await downloadCode(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download code."); }
                     }}
-                      className="btn-success text-xs py-2.5 px-4 flex items-center gap-2 w-full justify-center">
-                      <span>📦</span> Download Code (.zip)
+                      className="btn-success text-xs py-2 px-3 flex items-center gap-1.5 justify-center">
+                      <span>📦</span> Code
                     </button>
                   )}
                   {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && validationResult?.final_status === "VALIDATED" && (
                     <button onClick={async () => {
-                      try { await downloadBundle(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "No deployable bundle found."); }
+                      try { await downloadBundle(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "No deployable bundle."); }
                     }}
-                      className="btn-success text-xs py-2.5 px-4 flex items-center gap-2 w-full justify-center"
+                      className="btn-success text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
                       style={{ background: "#8b5cf6", borderColor: "#7c3aed" }}>
-                      <span>🚀</span> Deployable Bundle
+                      <span>🚀</span> Deploy
                     </button>
                   )}
                   {(deliverableType === "workflow" || deliverableType === "hybrid") && (
                     <button onClick={async () => {
                       try { await downloadWorkflow(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "Workflow not found."); }
                     }}
-                      className="btn-success text-xs py-2.5 px-4 flex items-center gap-2 w-full justify-center"
+                      className="btn-success text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
                       style={{ background: "var(--accent)", borderColor: "var(--accent-border)" }}>
-                      <span>⚡</span> n8n Workflow
+                      <span>⚡</span> Workflow
                     </button>
                   )}
-                  <div className="flex gap-2">
-                    <button onClick={async () => {
-                      try { await downloadPptx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download presentation."); }
-                    }}
-                      className="btn-primary text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center">
-                      <span>📊</span> PPTX
-                    </button>
-                    <button onClick={async () => {
-                      try { await downloadDocx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download report."); }
-                    }}
-                      className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center">
-                      <span>📄</span> DOCX
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="card p-5">
-                <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Actions</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div className="flex gap-2">
-                    <button onClick={async () => {
-                      try {
-                        await saveDemoCache(projectId);
-                        toast("success", "Demo saved", "You can now use Demo Mode from the start page.");
-                      } catch { toast("error", "Save failed", "Could not save demo cache."); }
-                    }}
-                      className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
-                      style={{ borderColor: "var(--warning-border)", color: "var(--warning)" }}>
-                      <span>💾</span> Demo
-                    </button>
-                    <button onClick={handleShareLink} disabled={copyingLink}
-                      className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
-                      style={{ borderColor: "rgba(99,91,255,0.4)", color: "#635bff" }}>
-                      {copyingLink ? <span className="spinner" style={{ width: 12, height: 12 }} /> : <span>🔗</span>}
-                      {shareLink ? "Copied!" : "Share Link"}
-                    </button>
-                  </div>
+                  <button onClick={async () => {
+                    try { await downloadPptx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : ""); }
+                  }}
+                    className="btn-primary text-xs py-2 px-3 flex items-center gap-1.5 justify-center">
+                    <span>📊</span> PPTX
+                  </button>
+                  <button onClick={async () => {
+                    try { await downloadDocx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : ""); }
+                  }}
+                    className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center">
+                    <span>📄</span> DOCX
+                  </button>
                   {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
-                    <div className="flex gap-2">
+                    <>
                       <button onClick={() => setShowCodePreview(true)}
-                        className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
+                        className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
                         style={{ borderColor: "var(--accent-border)", color: "var(--accent)" }}>
                         <span>👁️</span> View Code
                       </button>
                       <button onClick={() => setShowGitHubPush(true)}
-                        className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
+                        className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
                         style={{ borderColor: "rgba(36,41,47,0.4)", color: "var(--text-primary)" }}>
                         <span>🐙</span> GitHub
                       </button>
-                    </div>
+                    </>
                   )}
+                  <button onClick={handleShareLink} disabled={copyingLink}
+                    className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
+                    style={{ borderColor: "rgba(99,91,255,0.4)", color: "#635bff" }}>
+                    {copyingLink ? <span className="spinner" style={{ width: 10, height: 10 }} /> : <span>🔗</span>}
+                    {shareLink ? "Copied!" : "Share"}
+                  </button>
+                  <button onClick={async () => {
+                    try { await saveDemoCache(projectId); toast("success", "Demo saved", "Demo Mode available from start page."); }
+                    catch { toast("error", "Save failed", "Could not save demo cache."); }
+                  }}
+                    className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
+                    style={{ borderColor: "var(--warning-border)", color: "var(--warning)" }}>
+                    <span>💾</span> Demo
+                  </button>
                   {outputs.find((o) => o.role === "architect") && (
                     <button onClick={() => setShowArchDiagram(true)}
-                      className="btn-ghost text-xs py-2.5 px-3 flex items-center gap-1.5 w-full justify-center"
+                      className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
                       style={{ borderColor: "rgba(139,92,246,0.4)", color: "#8b5cf6" }}>
-                      <span>🏗️</span> Architecture Diagram
+                      <span>🏗️</span> Architecture
                     </button>
                   )}
                 </div>
@@ -611,14 +602,6 @@ export default function Dashboard({ projectId }: Props) {
             </button>
           )}
 
-          {/* Waiting state — company is starting */}
-          {outputs.length === 0 && !streamingAgent && (
-            <div className="card p-10 text-center animate-fade-in">
-              <div className="text-4xl mb-4">🔥</div>
-              <div className="text-[15px] font-medium mb-1" style={{ color: "var(--text-primary)" }}>Your company is getting started</div>
-              <div className="text-sm" style={{ color: "var(--text-muted)" }}>Understanding your problem and planning the product</div>
-            </div>
-          )}
         </div>
 
         {/* ===== RIGHT — Hero Canvas (sticky) ===== */}
