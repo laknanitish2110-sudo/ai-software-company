@@ -114,8 +114,8 @@ export default function CallEmployee({ projectId }: Props) {
   if (!selectedRole) {
     return (
       <div className="card p-5">
-        <h3 className="font-semibold mb-1 text-[15px]" style={{ color: "var(--text-primary)" }}>Call an Employee</h3>
-        <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>Talk directly to any team member</p>
+        <h3 className="font-semibold mb-1 text-[15px]" style={{ color: "var(--text-primary)" }}>Talk to your Company</h3>
+        <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>Give feedback or direction to any department</p>
         <div className="grid grid-cols-2 gap-2.5">
           {Object.entries(AGENT_CONFIG).map(([role, config]) => (
             <button
@@ -153,7 +153,7 @@ export default function CallEmployee({ projectId }: Props) {
         <div className="flex items-center gap-2.5">
           <span className="text-lg">{config.icon}</span>
           <span className="font-semibold text-[15px]" style={{ color: "var(--text-primary)" }}>{config.label}</span>
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>Direct Line</span>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>Department</span>
         </div>
         <button
           onClick={() => {

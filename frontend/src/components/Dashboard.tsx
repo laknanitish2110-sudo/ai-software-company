@@ -332,7 +332,7 @@ export default function Dashboard({ projectId }: Props) {
             <Link href="/" className="text-sm transition-colors" style={{ color: "var(--text-muted)" }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}>
-              ← HQ
+              ← Company
             </Link>
             <span style={{ color: "var(--border)" }}>|</span>
             <h1 className="text-lg font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>Build Room</h1>
@@ -432,7 +432,16 @@ export default function Dashboard({ projectId }: Props) {
             </div>
           )}
 
-          {/* Completed Outputs — user scrolls to see what agents made */}
+          {/* Product Journey — accumulating narrative of the product being built */}
+          {approvedOutputs.length > 0 && !streamingAgent && !pendingOutput && (
+            <div className="flex items-center gap-2 mt-2 mb-1">
+              <div style={{ height: 1, flex: 1, background: "var(--border)" }} />
+              <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                Product Journey
+              </span>
+              <div style={{ height: 1, flex: 1, background: "var(--border)" }} />
+            </div>
+          )}
           {approvedOutputs.map((output) => (
             <div key={output.id} id={`output-${output.role}`} className="animate-fade-in">
               <AgentOutputCard
@@ -490,9 +499,9 @@ export default function Dashboard({ projectId }: Props) {
                 );
               })()}
 
-              {/* Downloads */}
+              {/* Product Delivery */}
               <div className="card p-5">
-                <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Downloads</h3>
+                <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Your Product</h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
                     <button onClick={async () => {
@@ -585,11 +594,11 @@ export default function Dashboard({ projectId }: Props) {
             </div>
           )}
 
-          {/* Call Employee */}
+          {/* Company Feedback */}
           {showChat ? (
             <div className="animate-fade-in">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Call Employee</h3>
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Talk to your Company</h3>
                 <button onClick={() => setShowChat(false)} className="text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>Close</button>
               </div>
               <CallEmployee projectId={projectId} />
@@ -598,16 +607,16 @@ export default function Dashboard({ projectId }: Props) {
             <button onClick={() => setShowChat(true)}
               className="btn-ghost text-sm py-3 px-5 w-full flex items-center justify-center gap-2 cursor-pointer"
               style={{ borderColor: "var(--accent-border)", color: "var(--accent)" }}>
-              <span>💬</span> Call Employee
+              <span>💬</span> Talk to your Company
             </button>
           )}
 
-          {/* Waiting state — when no outputs yet */}
+          {/* Waiting state — company is starting */}
           {outputs.length === 0 && !streamingAgent && (
             <div className="card p-10 text-center animate-fade-in">
-              <div className="text-4xl mb-4">🏢</div>
-              <div className="text-[15px] font-medium mb-1" style={{ color: "var(--text-primary)" }}>Assembling your team</div>
-              <div className="text-sm" style={{ color: "var(--text-muted)" }}>The CEO is reviewing your problem statement</div>
+              <div className="text-4xl mb-4">🔥</div>
+              <div className="text-[15px] font-medium mb-1" style={{ color: "var(--text-primary)" }}>Your company is getting started</div>
+              <div className="text-sm" style={{ color: "var(--text-muted)" }}>Understanding your problem and planning the product</div>
             </div>
           )}
         </div>

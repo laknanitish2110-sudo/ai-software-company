@@ -19,11 +19,11 @@ const START_Y = 55;
 const BRAND_X = 18;
 
 const CONN_LABELS: Record<string, string> = {
-  ceo: "Brief",
+  ceo: "Product Brief",
   business_analyst: "Requirements",
-  researcher: "Research",
-  architect: "Architecture",
-  engineer: "Code",
+  researcher: "Insights",
+  architect: "System Design",
+  engineer: "Working Code",
 };
 
 type StepState = "done" | "active" | "review" | "waiting";
@@ -158,7 +158,7 @@ export default function AgentCanvas({
               fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
               background: "rgba(11,191,140,0.15)", color: "#0bbf8c", border: "1px solid rgba(11,191,140,0.3)",
             }}>
-              ALL SHIPPED
+              PRODUCT READY
             </span>
           )}
         </div>
@@ -241,7 +241,7 @@ export default function AgentCanvas({
           filter="url(#brandGlow)"
           transform={`rotate(-90 ${BRAND_X - 1} ${totalHeight / 2})`}
         >
-          AI SOFTWARE CO.
+          FORGEAI CO.
         </text>
 
         {/* Bottom horizontal brand mark */}
@@ -254,7 +254,7 @@ export default function AgentCanvas({
           fontWeight="700"
           letterSpacing="0.3em"
         >
-          BUILT BY AI SOFTWARE CO.
+          BUILT BY FORGEAI
         </text>
 
         {/* Ambient floating particles */}
@@ -439,7 +439,7 @@ export default function AgentCanvas({
               </text>
               <text x={x + R + 14} y={y + 13} fill={sc.text} fontSize="11" fontFamily="monospace"
                 opacity={state === "waiting" ? 0.3 : 0.85}>
-                {state === "done" ? "Shipped" : state === "active" ? "Working..." : state === "review" ? "Needs Review" : "Standby"}
+                {state === "done" ? "Complete" : state === "active" ? "Working..." : state === "review" ? "Awaiting Approval" : "Standby"}
               </text>
 
               {MODEL_LABELS[role] && (

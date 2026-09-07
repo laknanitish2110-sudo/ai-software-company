@@ -60,7 +60,7 @@ export default function LiveStreamPanel({ agentRole, streamText, tokenCount, ela
             <div style={{ animation: "blink 1.2s infinite" }} />
           </div>
           <span style={{ color: "#e6edf3", fontSize: 13, fontWeight: 600 }}>
-            {config?.icon} {config?.label || agentRole} — Live Output
+            {config?.icon} {config?.label || agentRole} — Working
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -74,7 +74,7 @@ export default function LiveStreamPanel({ agentRole, streamText, tokenCount, ela
               fontFamily: "monospace",
             }}
           >
-            {tokenCount} tokens
+            {tokenCount} tok
           </span>
           <span
             style={{

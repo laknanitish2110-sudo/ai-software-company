@@ -24,7 +24,7 @@
 
 ## Railway Setup (Backend)
 
-- **Project name:** `elegant-kindness`
+- **Project name:** `powerful-victory` (previously `elegant-kindness`, now deleted)
 - **Root Directory:** Deployed via CLI with `--path-as-root` flag
 - **Runtime:** Python 3.11.9
 - **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}` (from Procfile)

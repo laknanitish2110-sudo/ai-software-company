@@ -52,11 +52,11 @@ export default function CostMonitor({ projectId, costEvent }: Props) {
           className="font-semibold text-xs uppercase tracking-wider"
           style={{ color: "var(--text-muted)" }}
         >
-          Cost Governor
+          Company Economics
         </h3>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 11, color: "var(--text-secondary)", fontFamily: "monospace" }}>
-            {formatTokens(totalTokens)} tokens
+            ${(totals?.total_cost || 0).toFixed(2)}
           </span>
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
             {expanded ? "▲" : "▼"}
@@ -85,7 +85,7 @@ export default function CostMonitor({ projectId, costEvent }: Props) {
         {/* LLM calls bar */}
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginBottom: 2 }}>
-            <span>LLM Calls</span>
+            <span>Operations</span>
             <span>{callCount} / {maxCalls}</span>
           </div>
           <div style={{ height: 6, borderRadius: 3, background: "var(--bg-secondary)", overflow: "hidden" }}>
@@ -135,7 +135,7 @@ export default function CostMonitor({ projectId, costEvent }: Props) {
             marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border)",
             display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)",
           }}>
-            <span>Est. cost: ${(totals?.total_cost || 0).toFixed(4)}</span>
+            <span>{formatTokens(totalTokens)} tokens used</span>
             <span>
               {budget?.budget_status === "OK" ? (
                 <span style={{ color: "var(--success)" }}>Budget OK</span>

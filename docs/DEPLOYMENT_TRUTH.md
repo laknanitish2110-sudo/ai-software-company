@@ -1,6 +1,6 @@
 # Deployment Truth
 
-Last verified: 2026-09-06
+Last verified: 2026-09-07
 
 ## Architecture
 
@@ -18,7 +18,7 @@ Next.js Frontend  ------>   FastAPI Backend
 | Component | Host | URL | Notes |
 |-----------|------|-----|-------|
 | Frontend | Vercel | ai-software-company-gold.vercel.app | Auto-deploy from `master` |
-| Backend | Railway | railway app service | Auto-deploy from `master` |
+| Backend | Railway | `powerful-victory` project | Auto-deploy from `master` |
 | Redis | Railway | internal service | Used for task queue (arq) and pub/sub |
 | PostgreSQL | Railway | internal service | Users, settings, task queue |
 | SQLite | Railway filesystem | `data/projects.db` | Projects, outputs, memory, domain learnings |
