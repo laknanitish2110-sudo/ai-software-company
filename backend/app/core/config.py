@@ -29,8 +29,8 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "company.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 REDIS_URL = os.getenv("REDIS_URL", "").strip()
 TASK_WORKER_ENGINE = os.getenv("TASK_WORKER_ENGINE", "in_process").strip().lower()
-SMART_MODEL = os.getenv("SMART_MODEL", "deepseek/deepseek-chat-v3-0324:free")
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "nvidia/nemotron-3.5-lightning:free")
+SMART_MODEL = os.getenv("SMART_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
 
 DEFAULT_DEV_JWT_SECRET = "dev_secret_jwt_key_change_in_production_998877"
 KNOWN_INSECURE_SECRETS = {
@@ -160,10 +160,10 @@ PROVIDER_MAP = {
 # Super 120B: strong analysis (BA, Researcher, Engineer, Review)
 # Lightning 30B: fast generation (PPT, Fixer)
 MODEL_MAP = {
-    "ceo":              os.getenv("MODEL_CEO",        "nvidia/nemotron-3-ultra-550b-a55b"),
+    "ceo":              os.getenv("MODEL_CEO",        "nvidia/nemotron-3-super-120b-a12b"),
     "business_analyst": os.getenv("MODEL_BA",         "nvidia/nemotron-3-super-120b-a12b"),
     "researcher":       os.getenv("MODEL_RESEARCHER", "nvidia/nemotron-3-super-120b-a12b"),
-    "architect":        os.getenv("MODEL_ARCHITECT",  "nvidia/nemotron-3-ultra-550b-a55b"),
+    "architect":        os.getenv("MODEL_ARCHITECT",  "nvidia/nemotron-3-super-120b-a12b"),
     "engineer":         os.getenv("MODEL_ENGINEER",   "nvidia/nemotron-3-super-120b-a12b"),
     "ppt":              os.getenv("MODEL_PPT",        "nvidia/nemotron-3.5-lightning-30b-a3b"),
     "cross_review":     os.getenv("MODEL_REVIEW",     "nvidia/nemotron-3-super-120b-a12b"),
@@ -181,14 +181,16 @@ FALLBACK_MAP = {
     "fixer":            os.getenv("FALLBACK_FIXER",       SMART_MODEL),
 }
 
-# Fallback provider: cross-provider resilience — if primary is Nvidia, fallback is OpenRouter and vice versa
+# Fallback provider: use the other NVIDIA key for resilience (OpenRouter has no credits)
 def _fallback_provider(primary: str) -> str:
     """Pick a fallback provider on different infrastructure than the primary."""
-    if primary in ("nvidia", "nvidia2"):
-        return "openrouter"
+    if primary == "nvidia":
+        return "nvidia2" if NVIDIA_API_KEY_2 else "openrouter"
+    if primary == "nvidia2":
+        return "nvidia" if NVIDIA_API_KEY else "openrouter"
     if primary == "openrouter" or primary.startswith("openrouter"):
-        return "nvidia" if NVIDIA_API_KEY else _or(1)
-    return "openrouter"
+        return "nvidia" if NVIDIA_API_KEY else "nvidia2"
+    return "nvidia2" if NVIDIA_API_KEY_2 else "nvidia"
 
 FALLBACK_PROVIDER_MAP = {
     role: os.getenv(f"FALLBACK_PROVIDER_{role.upper()}", _fallback_provider(PROVIDER_MAP.get(role, "openrouter")))

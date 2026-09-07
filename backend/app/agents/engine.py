@@ -98,14 +98,14 @@ ROLE_LABELS = {
 }
 
 AGENT_TIMEOUTS = {
-    AgentRole.CEO: 90,
-    AgentRole.BUSINESS_ANALYST: 150,
-    AgentRole.RESEARCHER: 180,
-    AgentRole.ARCHITECT: 120,
-    AgentRole.ENGINEER: 360,
-    AgentRole.QA: 90,
-    AgentRole.FIXER: 180,
-    AgentRole.PPT: 150,
+    AgentRole.CEO: 30,
+    AgentRole.BUSINESS_ANALYST: 60,
+    AgentRole.RESEARCHER: 60,
+    AgentRole.ARCHITECT: 60,
+    AgentRole.ENGINEER: 180,
+    AgentRole.QA: 30,
+    AgentRole.FIXER: 60,
+    AgentRole.PPT: 60,
 }
 
 MAX_RETRIES = 3
