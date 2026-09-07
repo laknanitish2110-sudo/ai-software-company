@@ -40,6 +40,8 @@ from app.services.workflow_search import (
 from app.core.auth import (
     hash_password,
     verify_password,
+    validate_password,
+    generate_verification_code,
     create_access_token,
     decode_access_token,
     get_current_user,
@@ -65,6 +67,9 @@ from app.core.database import (
     get_user_by_oauth,
     create_oauth_user,
     link_oauth_to_user,
+    set_user_verified,
+    set_verification_code,
+    get_user_verification,
 )
 
 router = APIRouter()
@@ -82,12 +87,43 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class VerifyEmailRequest(BaseModel):
+    email: str
+    code: str
+
+
+class ResendCodeRequest(BaseModel):
+    email: str
+
+
+async def _send_verification_email(email: str, code: str):
+    """Send verification code via n8n webhook or log it."""
+    if N8N_WEBHOOK_URL:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(N8N_WEBHOOK_URL, json={
+                    "type": "email_verification",
+                    "to": email,
+                    "subject": "ForgeAI - Verify your email",
+                    "code": code,
+                    "message": f"Your ForgeAI verification code is: {code}\n\nThis code expires in 15 minutes.",
+                })
+            logger.info(f"Verification email sent to {email} via n8n")
+        except Exception as e:
+            logger.warning(f"Failed to send verification email via n8n: {e}")
+    else:
+        logger.info(f"[DEV] Verification code for {email}: {code}")
+
+
 # --- AUTHENTICATION ENDPOINTS ---
 
 @router.post("/auth/register")
 async def register(req: RegisterRequest):
     if not req.email or not req.password:
         raise HTTPException(400, "Email and password are required")
+    pw_errors = validate_password(req.password)
+    if pw_errors:
+        raise HTTPException(400, f"Password requirements not met: {', '.join(pw_errors)}")
     try:
         allowed, retry_after = await rate_limiter.check_rate_limit(user_id=req.email, action="auth", limit=5, window_seconds=60)
         if not allowed:
@@ -98,9 +134,69 @@ async def register(req: RegisterRequest):
     if existing:
         raise HTTPException(400, "User email is already registered")
     pw_hash = hash_password(req.password)
-    user = await create_user(req.email, pw_hash)
+    code = generate_verification_code()
+    from datetime import datetime, timezone, timedelta
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    user = await create_user(req.email, pw_hash, verification_code=code, verification_expires=expires)
     token = create_access_token({"sub": user["id"], "email": user["email"]})
-    return {"user": user, "access_token": token, "token_type": "bearer"}
+    await _send_verification_email(req.email, code)
+    return {"user": user, "access_token": token, "token_type": "bearer", "requires_verification": True}
+
+
+@router.post("/auth/verify-email")
+async def verify_email(req: VerifyEmailRequest):
+    if not req.email or not req.code:
+        raise HTTPException(400, "Email and code are required")
+    try:
+        allowed, retry_after = await rate_limiter.check_rate_limit(user_id=req.email, action="verify", limit=10, window_seconds=60)
+        if not allowed:
+            return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+    except Exception:
+        pass
+    user = await get_user_verification(req.email)
+    if not user:
+        raise HTTPException(404, "Account not found")
+    if user.get("email_verified") or user["email_verified"] == 1:
+        return {"verified": True, "message": "Email already verified"}
+    stored_code = user.get("verification_code")
+    expires_str = user.get("verification_expires")
+    if not stored_code or not expires_str:
+        raise HTTPException(400, "No verification pending. Request a new code.")
+    from datetime import datetime, timezone
+    try:
+        expires = datetime.fromisoformat(expires_str)
+        if datetime.now(timezone.utc) > expires:
+            raise HTTPException(400, "Verification code expired. Request a new one.")
+    except ValueError:
+        raise HTTPException(400, "Verification code expired. Request a new one.")
+    if not secrets.compare_digest(req.code.strip(), stored_code.strip()):
+        raise HTTPException(400, "Invalid verification code")
+    await set_user_verified(user["id"])
+    token = create_access_token({"sub": user["id"], "email": user["email"]})
+    return {"verified": True, "access_token": token, "token_type": "bearer"}
+
+
+@router.post("/auth/resend-code")
+async def resend_code(req: ResendCodeRequest):
+    if not req.email:
+        raise HTTPException(400, "Email is required")
+    try:
+        allowed, retry_after = await rate_limiter.check_rate_limit(user_id=req.email, action="resend", limit=3, window_seconds=120)
+        if not allowed:
+            return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+    except Exception:
+        pass
+    user = await get_user_verification(req.email)
+    if not user:
+        raise HTTPException(404, "Account not found")
+    if user.get("email_verified") or user["email_verified"] == 1:
+        return {"message": "Email already verified"}
+    code = generate_verification_code()
+    from datetime import datetime, timezone, timedelta
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    await set_verification_code(user["id"], code, expires)
+    await _send_verification_email(req.email, code)
+    return {"message": "Verification code sent"}
 
 
 @router.post("/auth/login")
@@ -116,15 +212,18 @@ async def login(req: LoginRequest):
     user = await get_user_by_email(req.email)
     if not user or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
+    email_verified = bool(user.get("email_verified"))
     token = create_access_token({"sub": user["id"], "email": user["email"]})
     return {
         "user": {
             "id": user["id"], "email": user["email"], "created_at": user["created_at"],
             "display_name": user.get("display_name"), "avatar_url": user.get("avatar_url"),
             "oauth_provider": user.get("oauth_provider"),
+            "email_verified": email_verified,
         },
         "access_token": token,
         "token_type": "bearer",
+        "requires_verification": not email_verified,
     }
 
 

@@ -148,7 +148,10 @@ async def init_db():
                     id TEXT PRIMARY KEY,
                     email TEXT NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    email_verified INTEGER NOT NULL DEFAULT 0,
+                    verification_code TEXT,
+                    verification_expires TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS projects (
@@ -256,7 +259,10 @@ async def init_db():
                     id VARCHAR(255) PRIMARY KEY,
                     email VARCHAR(255) NOT NULL UNIQUE,
                     password_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    email_verified INTEGER NOT NULL DEFAULT 0,
+                    verification_code VARCHAR(10),
+                    verification_expires TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS projects (
@@ -387,6 +393,31 @@ async def init_db():
                     END $$;
                 """)
             await db.commit()
+        # Migrate: add email verification columns to users table
+        if db.backend_type == "sqlite":
+            user_cols2 = [r["name"] for r in await (await db.execute("PRAGMA table_info(users)")).fetchall()]
+            if "email_verified" not in user_cols2:
+                await db.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
+                await db.execute("ALTER TABLE users ADD COLUMN verification_code TEXT")
+                await db.execute("ALTER TABLE users ADD COLUMN verification_expires TEXT")
+                await db.execute("UPDATE users SET email_verified = 1 WHERE email_verified = 0")
+                await db.commit()
+                logger.info("Migration: added email verification columns, grandfathered existing users")
+        else:
+            for col, col_type, default in [
+                ("email_verified", "INTEGER", "0"),
+                ("verification_code", "VARCHAR(10)", None),
+                ("verification_expires", "TEXT", None),
+            ]:
+                default_clause = f" DEFAULT {default}" if default else ""
+                await db.execute(f"""
+                    DO $$ BEGIN
+                        ALTER TABLE users ADD COLUMN {col} {col_type}{default_clause};
+                    EXCEPTION WHEN duplicate_column THEN NULL;
+                    END $$;
+                """)
+            await db.execute("UPDATE users SET email_verified = 1 WHERE email_verified = 0 AND verification_code IS NULL")
+            await db.commit()
     finally:
         await db.close()
 
@@ -407,18 +438,56 @@ def new_id() -> str:
 
 # --- USER DATABASE FUNCTIONS ---
 
-async def create_user(email: str, password_hash: str) -> dict:
+async def create_user(email: str, password_hash: str, verification_code: str | None = None, verification_expires: str | None = None) -> dict:
     db = await get_db()
     try:
         user_id = new_id()
         ts = now_iso()
         norm_email = email.strip().lower()
         await db.execute(
-            "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, norm_email, password_hash, ts),
+            "INSERT INTO users (id, email, password_hash, created_at, email_verified, verification_code, verification_expires) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, norm_email, password_hash, ts, 0, verification_code, verification_expires),
         )
         await db.commit()
-        return {"id": user_id, "email": norm_email, "created_at": ts}
+        return {"id": user_id, "email": norm_email, "created_at": ts, "email_verified": False}
+    finally:
+        await db.close()
+
+
+async def set_user_verified(user_id: str) -> None:
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE users SET email_verified = 1, verification_code = NULL, verification_expires = NULL WHERE id = ?",
+            (user_id,),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def set_verification_code(user_id: str, code: str, expires: str) -> None:
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE users SET verification_code = ?, verification_expires = ? WHERE id = ?",
+            (code, expires, user_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_user_verification(email: str) -> dict | None:
+    db = await get_db()
+    try:
+        norm_email = email.strip().lower()
+        cursor = await db.execute(
+            "SELECT id, email, email_verified, verification_code, verification_expires FROM users WHERE email = ?",
+            (norm_email,),
+        )
+        row = await cursor.fetchone()
+        return row
     finally:
         await db.close()
 

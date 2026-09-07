@@ -1,5 +1,6 @@
 import secrets
 import hashlib
+import re
 import jwt
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
@@ -9,6 +10,24 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import get_jwt_secret, JWT_ALGORITHM, JWT_EXPIRATION_HOURS
 
 security = HTTPBearer(auto_error=False)
+
+PASSWORD_RULES = [
+    (lambda p: len(p) >= 8, "At least 8 characters"),
+    (lambda p: bool(re.search(r"[A-Z]", p)), "One uppercase letter"),
+    (lambda p: bool(re.search(r"[a-z]", p)), "One lowercase letter"),
+    (lambda p: bool(re.search(r"\d", p)), "One number"),
+    (lambda p: bool(re.search(r"[!@#$%^&*(),.?\":{}|<>\-_=+\[\]\\;'/`~]", p)), "One special character"),
+]
+
+
+def validate_password(password: str) -> list[str]:
+    """Returns list of failed rule descriptions. Empty = valid."""
+    return [msg for check, msg in PASSWORD_RULES if not check(password)]
+
+
+def generate_verification_code() -> str:
+    """Generate a 6-digit numeric verification code."""
+    return f"{secrets.randbelow(900000) + 100000}"
 
 
 def hash_password(password: str) -> str:

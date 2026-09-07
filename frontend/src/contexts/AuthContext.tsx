@@ -10,26 +10,35 @@ interface User {
   display_name?: string | null;
   avatar_url?: string | null;
   oauth_provider?: string | null;
+  email_verified?: boolean;
 }
 
 interface AuthContextValue {
   user: User | null;
   token: string | null;
   loading: boolean;
+  pendingVerificationEmail: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
   handleOAuthCallback: (token: string) => Promise<void>;
+  verifyEmail: (email: string, code: string) => Promise<void>;
+  resendCode: (email: string) => Promise<void>;
+  clearPendingVerification: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   token: null,
   loading: true,
+  pendingVerificationEmail: null,
   login: async () => {},
   register: async () => {},
   logout: () => {},
   handleOAuthCallback: async () => {},
+  verifyEmail: async () => {},
+  resendCode: async () => {},
+  clearPendingVerification: () => {},
 });
 
 export function useAuth() {
@@ -59,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -94,6 +104,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(err.detail || "Invalid email or password");
     }
     const data = await res.json();
+    if (data.requires_verification) {
+      setPendingVerificationEmail(email);
+      localStorage.setItem(TOKEN_KEY, data.access_token);
+      throw new Error("EMAIL_NOT_VERIFIED");
+    }
     saveAuth(data.access_token, data.user);
   }, [saveAuth]);
 
@@ -108,14 +123,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(err.detail || "Registration failed");
     }
     const data = await res.json();
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    if (data.requires_verification) {
+      setPendingVerificationEmail(email);
+      return;
+    }
     saveAuth(data.access_token, data.user);
   }, [saveAuth]);
+
+  const verifyEmail = useCallback(async (email: string, code: string) => {
+    const res = await authFetch(`${API_BASE}/auth/verify-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Verification failed");
+    }
+    const data = await res.json();
+    if (data.access_token) {
+      const meRes = await authFetch(`${API_BASE}/auth/me`, {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+      });
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        saveAuth(data.access_token, { ...meData.user, email_verified: true });
+      }
+    }
+    setPendingVerificationEmail(null);
+  }, [saveAuth]);
+
+  const resendCode = useCallback(async (email: string) => {
+    const res = await authFetch(`${API_BASE}/auth/resend-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Could not resend code");
+    }
+  }, []);
+
+  const clearPendingVerification = useCallback(() => {
+    setPendingVerificationEmail(null);
+  }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setToken(null);
     setUser(null);
+    setPendingVerificationEmail(null);
     router.push("/login");
   }, [router]);
 
@@ -134,13 +194,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Failed to fetch user profile");
     }
     const data = await res.json();
-    const userData: User = data.user;
+    const userData: User = { ...data.user, email_verified: true };
     localStorage.setItem(USER_KEY, JSON.stringify(userData));
     setUser(userData);
   }, []);
 
   return (
-    <AuthContext value={{ user, token, loading, login, register, logout, handleOAuthCallback }}>
+    <AuthContext value={{ user, token, loading, pendingVerificationEmail, login, register, logout, handleOAuthCallback, verifyEmail, resendCode, clearPendingVerification }}>
       {children}
     </AuthContext>
   );
