@@ -5,7 +5,7 @@ import Link from "next/link";
 import AgentCanvas from "./AgentCanvas";
 import AgentIntrospection from "./AgentIntrospection";
 import BuildStatus, { ValidationResult } from "./BuildStatus";
-import ProductJourney from "./ProductJourney";
+import AgentOutputCard from "./AgentOutput";
 import CallEmployee from "./CallEmployee";
 import CodePreview from "./CodePreview";
 import GitHubPush from "./GitHubPush";
@@ -35,20 +35,6 @@ const STATUS_TO_AGENT: Record<string, string> = {
   ppt_working: "ppt",
 };
 
-function getStageInfo(status: string, routeAgents: string[]): { current: number; label: string } {
-  if (status === "completed") {
-    return { current: routeAgents.length + 1, label: "All Complete" };
-  }
-  const agent = STATUS_TO_AGENT[status];
-  if (!agent) return { current: 0, label: status };
-  const idx = routeAgents.indexOf(agent);
-  if (idx < 0) return { current: 0, label: status };
-  const isReview = status.includes("_review");
-  const config = AGENT_CONFIG[agent];
-  const label = config?.label || agent;
-  return { current: idx + 1, label: isReview ? `${label} Review` : label };
-}
-
 function formatPipelineTime(seconds: number): string {
   if (seconds >= 3600) {
     const h = Math.floor(seconds / 3600);
@@ -59,6 +45,69 @@ function formatPipelineTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function firstSentence(text: unknown, maxLen = 80): string {
+  if (typeof text !== "string" || !text) return "";
+  const clean = text.replace(/\n/g, " ").trim();
+  const dot = clean.indexOf(".");
+  const cut = dot > 0 && dot < maxLen ? dot + 1 : maxLen;
+  const result = clean.slice(0, cut);
+  return result.length < clean.length ? result + (dot > 0 && dot < maxLen ? "" : "...") : result;
+}
+
+function extractSummary(role: string, content: Record<string, unknown>): { headline: string; detail: string } {
+  switch (role) {
+    case "ceo": {
+      const name = content.project_name as string || "";
+      const vision = firstSentence(content.vision || content.problem_summary);
+      return { headline: name, detail: vision };
+    }
+    case "business_analyst": {
+      const funcReqs = Array.isArray(content.functional_requirements) ? content.functional_requirements : [];
+      const nonFuncReqs = Array.isArray(content.non_functional_requirements) ? content.non_functional_requirements : [];
+      const count = funcReqs.length + nonFuncReqs.length;
+      return { headline: `${count} requirement${count !== 1 ? "s" : ""} defined`, detail: funcReqs.slice(0, 2).map((r: unknown) => typeof r === "string" ? r.split(".")[0].trim() : "").filter(Boolean).join(" · ") };
+    }
+    case "researcher": {
+      const products = Array.isArray(content.existing_products) ? content.existing_products : [];
+      return { headline: products.length > 0 ? `${products.length} competitor${products.length !== 1 ? "s" : ""} analyzed` : "Research complete", detail: firstSentence(content.recommended_approach) };
+    }
+    case "architect": {
+      const sysType = content.system_type as string || "";
+      const stack = content.tech_stack;
+      let stackStr = "";
+      if (stack && typeof stack === "object" && !Array.isArray(stack)) {
+        stackStr = Object.values(stack).flat().filter(v => typeof v === "string").slice(0, 4).join(", ");
+      } else if (typeof stack === "string") {
+        stackStr = firstSentence(stack, 60);
+      }
+      return { headline: sysType || "Architecture defined", detail: stackStr };
+    }
+    case "engineer": {
+      const files = Array.isArray(content.files) ? content.files : [];
+      return { headline: files.length > 0 ? `${files.length} file${files.length !== 1 ? "s" : ""} generated` : "Code complete", detail: firstSentence(content.implementation_summary) };
+    }
+    case "ppt": {
+      const slides = Array.isArray(content.slides) ? content.slides : [];
+      return { headline: slides.length > 0 ? `${slides.length} slide${slides.length !== 1 ? "s" : ""} prepared` : "Docs ready", detail: firstSentence(content.executive_summary) };
+    }
+    default:
+      return { headline: "Complete", detail: "" };
+  }
+}
+
+type StageState = "future" | "active" | "review" | "done";
+
+function getStageState(role: string, currentStatus: string, outputs: { role: string; status: string }[], streamingAgent: string | null): StageState {
+  const hasApproved = outputs.some(o => o.role === role && o.status === "approved");
+  if (hasApproved) return "done";
+  const hasPending = outputs.some(o => o.role === role && o.status === "pending");
+  if (hasPending) return "review";
+  if (streamingAgent === role) return "active";
+  const activeAgent = STATUS_TO_AGENT[currentStatus];
+  if (activeAgent === role) return "active";
+  return "future";
 }
 
 export default function Dashboard({ projectId }: Props) {
@@ -83,7 +132,8 @@ export default function Dashboard({ projectId }: Props) {
   const [costEvent, setCostEvent] = useState<{ role: string; tokens: number } | null>(null);
   const [securityScan, setSecurityScan] = useState<SecurityScanEvent | null>(null);
   const [showChat, setShowChat] = useState(false);
-  const pendingRef = useRef<HTMLDivElement>(null);
+  const [detailPanel, setDetailPanel] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const { toast } = useToast();
 
   const refreshState = useCallback(async () => {
@@ -123,7 +173,6 @@ export default function Dashboard({ projectId }: Props) {
 
   useEffect(() => {
     refreshState();
-
     const ws = connectWebSocket(projectId, (msg: WSMessage) => {
       if (msg.type === "agent_stream") {
         setStreamTokens(msg.data.token_count || 0);
@@ -135,101 +184,63 @@ export default function Dashboard({ projectId }: Props) {
         }
         return;
       }
-
       if (msg.type === "agent_started") {
         setStreamingAgent(msg.data.role || null);
         setStreamTokens(0);
         setStreamText("");
         setAgentStartTime(Date.now());
+        if (msg.data.role) setSelectedAgent(msg.data.role);
       }
-
       if (msg.type === "error") {
         toast("error", "Pipeline error", msg.data.message || "An agent encountered an error.");
       }
-
       if (msg.type === "approval_needed" || msg.type === "agent_completed" || msg.type === "project_completed") {
         setStreamingAgent(null);
         setStreamTokens(0);
         setStreamText("");
         setAgentStartTime(null);
+        if (msg.type === "approval_needed" && msg.data.role) {
+          setDetailPanel(msg.data.role);
+          setSelectedAgent(msg.data.role);
+        }
       }
-
       if (msg.type === "sandbox_completed" && (msg.data as Record<string, unknown>).validation_result) {
         setValidationResult((msg.data as Record<string, unknown>).validation_result as ValidationResult);
       }
-
       if (msg.type === "sandbox_preview_ready" && (msg.data as Record<string, unknown>).preview_url) {
         setPreviewUrl((msg.data as Record<string, unknown>).preview_url as string);
       }
-
       if (msg.type === "cost_update") {
         setCostEvent({ role: (msg.data as Record<string, unknown>).role as string, tokens: (msg.data as Record<string, unknown>).tokens as number });
         return;
       }
-
       if (msg.type === "security_scan") {
         setSecurityScan(msg.data as unknown as SecurityScanEvent);
         return;
       }
-
       setEvents((prev) => {
-        const next = [
-          ...prev,
-          {
-            type: msg.type,
-            message: msg.data.message || msg.type,
-            time: new Date().toLocaleTimeString(),
-          },
-        ];
+        const next = [...prev, { type: msg.type, message: msg.data.message || msg.type, time: new Date().toLocaleTimeString() }];
         return next.length > 100 ? next.slice(-80) : next;
       });
       debouncedRefresh();
     }, (connected) => setWsConnected(connected));
-
-    const pollInterval = setInterval(() => {
-      refreshState();
-    }, 8000);
-
-    return () => {
-      ws.close();
-      clearInterval(pollInterval);
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    };
+    const pollInterval = setInterval(() => { refreshState(); }, 8000);
+    return () => { ws.close(); clearInterval(pollInterval); if (refreshTimer.current) clearTimeout(refreshTimer.current); };
   }, [projectId, refreshState, debouncedRefresh]);
 
-  // Auto-scroll to pending approval
-  useEffect(() => {
-    if (!streamingAgent && pendingRef.current) {
-      pendingRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [streamingAgent, state]);
-
   async function handleApprove(outputId: string) {
-    try {
-      await approveOutput(projectId, outputId, true);
-      refreshState();
-    } catch {
-      toast("error", "Approval failed", "Could not approve — backend may be restarting. Try again.");
-    }
+    try { await approveOutput(projectId, outputId, true); setDetailPanel(null); refreshState(); }
+    catch { toast("error", "Approval failed", "Could not approve — backend may be restarting. Try again."); }
   }
 
   async function handleReject(outputId: string, feedback: string) {
-    try {
-      await approveOutput(projectId, outputId, false, feedback);
-      refreshState();
-    } catch {
-      toast("error", "Rejection failed", "Could not send feedback — backend may be restarting. Try again.");
-    }
+    try { await approveOutput(projectId, outputId, false, feedback); setDetailPanel(null); refreshState(); }
+    catch { toast("error", "Rejection failed", "Could not send feedback — backend may be restarting. Try again."); }
   }
 
   async function handleRevise(role: string, feedback: string) {
-    try {
-      await reviseAgent(projectId, role, feedback);
-      toast("success", "Revision started", `${role.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} is reworking with your feedback.`);
-      refreshState();
-    } catch {
-      toast("error", "Revision failed", "Could not start revision — backend may be restarting.");
-    }
+    try { await reviseAgent(projectId, role, feedback); toast("success", "Revision started", `${role.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} is reworking.`); refreshState(); }
+    catch { toast("error", "Revision failed", "Could not start revision."); }
   }
 
   async function handleShareLink() {
@@ -240,18 +251,13 @@ export default function Dashboard({ projectId }: Props) {
       setShareLink(url);
       await navigator.clipboard.writeText(url);
       toast("success", "Link copied!", "Share this link with anyone — no login required.");
-    } catch {
-      toast("error", "Share failed", "Could not generate share link.");
-    } finally {
-      setCopyingLink(false);
-    }
+    } catch { toast("error", "Share failed", "Could not generate share link."); }
+    finally { setCopyingLink(false); }
   }
 
   useEffect(() => {
     if (!agentStartTime) { setElapsed(0); return; }
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - agentStartTime) / 1000));
-    }, 1000);
+    const interval = setInterval(() => { setElapsed(Math.floor((Date.now() - agentStartTime) / 1000)); }, 1000);
     return () => clearInterval(interval);
   }, [agentStartTime]);
 
@@ -265,15 +271,11 @@ export default function Dashboard({ projectId }: Props) {
       return;
     }
     setPipelineElapsed(Math.floor((Date.now() - created) / 1000));
-    const interval = setInterval(() => {
-      setPipelineElapsed(Math.floor((Date.now() - created) / 1000));
-    }, 1000);
+    const interval = setInterval(() => { setPipelineElapsed(Math.floor((Date.now() - created) / 1000)); }, 1000);
     return () => clearInterval(interval);
   }, [state?.project?.created_at, state?.project?.status, state?.project?.updated_at]);
 
-  if (!state?.project) {
-    return <DashboardSkeleton />;
-  }
+  if (!state?.project) return <DashboardSkeleton />;
 
   const { project, outputs, memory } = state;
   const pendingOutput = outputs.find((o) => o.status === "pending");
@@ -281,412 +283,477 @@ export default function Dashboard({ projectId }: Props) {
   const routeName = memory?.pipeline_route || "full";
   const routeAgents = ROUTE_CONFIG[routeName]?.agents || PIPELINE_ORDER;
   const routeInfo = ROUTE_CONFIG[routeName];
-  const stageInfo = getStageInfo(project.status, routeAgents);
   const isAutoPilot = memory?.auto_approve === "true";
+  const isCompleted = project.status === "completed";
+  const deliverableType = state.memory?.deliverable_type || "code";
 
   function getPeerReview(role: string) {
-    const key = `peer_review_${role}`;
-    const raw = memory?.[key];
+    const raw = memory?.[`peer_review_${role}`];
     if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  function handleNodeClick(role: string) {
+    setSelectedAgent(role);
+    const st = getStageState(role, project.status, outputs, streamingAgent);
+    if (st === "done" || st === "review") {
+      setDetailPanel(detailPanel === role ? null : role);
+    } else {
+      setInspectingAgent(role);
     }
   }
 
-  const isCompleted = project.status === "completed";
-  const deliverableType = state.memory?.deliverable_type || "code";
-  const approvedOutputs = outputs.filter(o => o.status === "approved");
+  const detailOutput = detailPanel ? outputs.find(o => o.role === detailPanel && (o.status === "approved" || o.status === "pending")) : null;
+  const completedAgents = routeAgents.filter(r => {
+    const st = getStageState(r, project.status, outputs, streamingAgent);
+    return st === "done" || st === "review";
+  });
 
   return (
-    <div className="min-h-screen p-4 lg:p-6" style={{ maxWidth: 1400, margin: "0 auto" }}>
+    <div style={{
+      minHeight: "100vh",
+      background: "linear-gradient(180deg, #080b1a 0%, #0d1025 40%, #111528 100%)",
+      color: "#e0e0e0",
+      // Override CSS vars so all child components render in dark mode
+      "--bg-base": "#0d1025",
+      "--bg-card": "rgba(255,255,255,0.04)",
+      "--bg-card-hover": "rgba(255,255,255,0.07)",
+      "--bg-elevated": "rgba(255,255,255,0.06)",
+      "--bg-secondary": "rgba(255,255,255,0.03)",
+      "--border": "rgba(255,255,255,0.08)",
+      "--border-hover": "rgba(255,255,255,0.15)",
+      "--text-primary": "rgba(255,255,255,0.92)",
+      "--text-secondary": "rgba(255,255,255,0.6)",
+      "--text-muted": "rgba(255,255,255,0.35)",
+      "--accent": "#7a73ff",
+      "--accent-light": "#a5a0ff",
+      "--accent-bg": "rgba(99,91,255,0.12)",
+      "--accent-border": "rgba(99,91,255,0.25)",
+      "--success": "#34d399",
+      "--success-bg": "rgba(16,185,129,0.12)",
+      "--success-border": "rgba(16,185,129,0.25)",
+      "--warning": "#fbbf24",
+      "--warning-bg": "rgba(245,166,35,0.12)",
+      "--warning-border": "rgba(245,166,35,0.25)",
+      "--danger": "#f87171",
+      "--info": "#818cf8",
+    } as React.CSSProperties}>
+      <style>{`
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .mc-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; transition: all 0.15s ease; }
+        .mc-card:hover { border-color: rgba(99,91,255,0.3); background: rgba(255,255,255,0.05); }
+        .mc-btn { padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.85); cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; justify-content: center; }
+        .mc-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(99,91,255,0.4); }
+        .mc-btn-primary { background: rgba(99,91,255,0.2); border-color: rgba(99,91,255,0.4); color: #a5a0ff; }
+        .mc-btn-primary:hover { background: rgba(99,91,255,0.3); }
+        .mc-btn-success { background: rgba(16,185,129,0.2); border-color: rgba(16,185,129,0.4); color: #34d399; }
+        .mc-btn-success:hover { background: rgba(16,185,129,0.3); }
+        .detail-panel { animation: slideIn 0.25s ease; }
+        .mc-fade { animation: fadeUp 0.3s ease; }
+        .mc-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .mc-output-strip { padding: 10px 14px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); transition: all 0.15s; }
+        .mc-output-strip:hover { background: rgba(255,255,255,0.05); border-color: rgba(99,91,255,0.3); }
+      `}</style>
+
       {/* Connection banner */}
       {!wsConnected && (
-        <div
-          className="animate-fade-in"
-          style={{
-            background: "rgba(237,95,116,0.08)",
-            border: "1px solid rgba(237,95,116,0.2)",
-            borderRadius: 10,
-            padding: "10px 16px",
-            marginBottom: 16,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 13,
-            color: "var(--danger)",
-          }}
-        >
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--danger)", flexShrink: 0 }} />
-          <span>
-            <strong>Disconnected</strong> — live updates paused. The backend may be down or restarting.
-          </span>
+        <div style={{
+          background: "rgba(237,95,116,0.1)", border: "1px solid rgba(237,95,116,0.25)",
+          borderRadius: 10, padding: "10px 16px", margin: "12px 24px 0",
+          display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#ed5f74",
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ed5f74", flexShrink: 0 }} />
+          <span><strong>Disconnected</strong> — live updates paused.</span>
         </div>
       )}
 
-      {/* Compact Header */}
-      <div className="mb-5 animate-fade-in">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="text-sm transition-colors" style={{ color: "var(--text-muted)" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}>
-              ← Company
-            </Link>
-            <span style={{ color: "var(--border)" }}>|</span>
-            <h1 className="text-lg font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>Build Room</h1>
-            {routeInfo && routeName !== "full" && (
-              <span style={{
-                fontSize: 10, padding: "2px 8px", borderRadius: 10,
-                background: "var(--accent-bg)", color: "var(--accent)",
-                border: "1px solid var(--accent-border)", fontWeight: 600,
-              }}>
-                {routeInfo.icon} {routeInfo.name}
-              </span>
-            )}
-            {isAutoPilot && (
-              <span style={{
-                fontSize: 10, padding: "2px 8px", borderRadius: 10,
-                background: "rgba(99,91,255,0.12)", color: "#7a73ff",
-                border: "1px solid rgba(99,91,255,0.25)", fontWeight: 600,
-              }}>
-                Auto-pilot
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <span
-              className="status-badge text-xs"
-              style={{
-                background: isCompleted ? "var(--success-bg)" : "var(--accent-bg)",
-                color: isCompleted ? "var(--success)" : "var(--accent)",
-                border: `1px solid ${isCompleted ? "var(--success-border)" : "var(--accent-border)"}`,
-              }}
-            >
-              {isCompleted && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />}
-              {statusLabel}
+      {/* Top Nav Bar */}
+      <div style={{
+        padding: "14px 24px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        borderBottom: "1px solid rgba(255,255,255,0.04)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Link href="/" style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", textDecoration: "none", transition: "color 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#a5a0ff"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}>
+            ← Company
+          </Link>
+          <span style={{ color: "rgba(255,255,255,0.1)" }}>|</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>Build Room</span>
+          {routeInfo && routeName !== "full" && (
+            <span className="mc-chip" style={{ background: "rgba(99,91,255,0.12)", color: "#a5a0ff", border: "1px solid rgba(99,91,255,0.25)" }}>
+              {routeInfo.icon} {routeInfo.name}
             </span>
-            {pipelineElapsed > 0 && (
-              <span style={{
-                fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)",
-                padding: "2px 8px", borderRadius: 6, border: "1px solid var(--border)",
-              }}>
-                {formatPipelineTime(pipelineElapsed)}
-              </span>
-            )}
-          </div>
+          )}
+          {isAutoPilot && (
+            <span className="mc-chip" style={{ background: "rgba(99,91,255,0.12)", color: "#7a73ff", border: "1px solid rgba(99,91,255,0.25)" }}>
+              Auto-pilot
+            </span>
+          )}
         </div>
-        <p className="text-sm mt-1 truncate" style={{ color: "var(--text-secondary)", maxWidth: 700 }}>{project.problem_statement}</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="mc-chip" style={{
+            background: isCompleted ? "rgba(16,185,129,0.12)" : "rgba(99,91,255,0.12)",
+            color: isCompleted ? "#34d399" : "#a5a0ff",
+            border: `1px solid ${isCompleted ? "rgba(16,185,129,0.3)" : "rgba(99,91,255,0.25)"}`,
+          }}>
+            {isCompleted && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399" }} />}
+            {statusLabel}
+          </span>
+          {pipelineElapsed > 0 && (
+            <span style={{ fontSize: 12, fontFamily: "monospace", color: "rgba(255,255,255,0.4)", padding: "3px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)" }}>
+              {formatPipelineTime(pipelineElapsed)}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* ===== Split Layout: Content Left, Canvas Right ===== */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+      {/* Problem Statement */}
+      <div style={{ padding: "8px 24px 0", maxWidth: 700 }}>
+        <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {project.problem_statement}
+        </p>
+      </div>
 
-        {/* ===== LEFT — Scrollable Feed ===== */}
-        <div className="md:col-span-7 space-y-4">
+      {/* ===== HERO: Company HQ — Full Width ===== */}
+      <div style={{ padding: "16px 24px" }} className="mc-fade">
+        <AgentCanvas
+          status={project.status}
+          outputs={outputs}
+          streamingAgent={streamingAgent}
+          streamTokens={streamTokens}
+          elapsed={elapsed}
+          visibleAgents={routeAgents}
+          selectedAgent={selectedAgent}
+          onNodeClick={handleNodeClick}
+        />
+      </div>
 
-          {/* Product Journey — accumulating narrative */}
-          <div ref={pendingRef}>
-            <ProductJourney
-              stages={routeAgents}
-              outputs={outputs}
-              currentStatus={project.status}
-              streamingAgent={streamingAgent}
-              pendingOutput={pendingOutput || null}
-              onApprove={handleApprove}
-              onReject={handleReject}
-              onRevise={handleRevise}
-              getPeerReview={getPeerReview}
-              liveStreamNode={
-                streamingAgent ? (
-                  <LiveStreamPanel
-                    agentRole={streamingAgent}
-                    streamText={streamText}
-                    tokenCount={streamTokens}
-                    elapsed={elapsed}
-                  />
-                ) : null
-              }
-              validationNode={
-                validationResult ? (
-                  <div style={{ marginTop: 8 }}>
-                    <BuildStatus validationResult={validationResult} />
-                    {previewUrl && (
-                      <button onClick={() => setShowPreview(true)}
-                              className="mt-2 btn-success text-sm py-2 px-4 flex items-center gap-2"
-                              style={{ background: "#10b981", borderColor: "#059669" }}>
-                        <span>🌐</span> Live Preview
-                      </button>
-                    )}
-                  </div>
-                ) : null
-              }
-            />
-          </div>
+      {/* ===== Below Hero: Content Area ===== */}
+      <div style={{ padding: "0 24px 24px", display: "flex", gap: 20 }}>
 
-          {/* Product Ready — consolidated footer when pipeline is done */}
-          {isCompleted && (
-            <div className="animate-fade-in">
-              {/* Health summary bar */}
-              <div className="card p-4 mt-4" style={{
-                background: "linear-gradient(135deg, rgba(16,185,129,0.06), rgba(99,91,255,0.04))",
-                border: "1px solid var(--success-border)",
-              }}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span style={{
-                      width: 10, height: 10, borderRadius: "50%",
-                      background: "var(--success)",
-                      boxShadow: "0 0 8px rgba(16,185,129,0.4)",
-                    }} />
-                    <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Product Ready</span>
-                  </div>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace" }}>
-                    {formatPipelineTime(pipelineElapsed)} total
-                  </span>
-                </div>
+        {/* Main Content */}
+        <div style={{ flex: 1, minWidth: 0 }}>
 
-                {/* Health metrics */}
-                <div className="flex gap-3 mb-3 flex-wrap">
-                  {validationResult && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{
-                      background: "var(--bg-card)", border: "1px solid var(--border)", fontSize: 11,
-                    }}>
-                      <span style={{ fontWeight: 600, color: validationResult.final_status === "VALIDATED" ? "var(--success)" : "var(--danger)" }}>
-                        {validationResult.final_status === "VALIDATED" ? "PASS" : "FAIL"}
-                      </span>
-                      <span style={{ color: "var(--text-muted)" }}>Build</span>
-                    </div>
-                  )}
-                  {securityScan && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{
-                      background: "var(--bg-card)", border: "1px solid var(--border)", fontSize: 11,
-                    }}>
-                      <span style={{ fontWeight: 600, color: securityScan.status === "PASS" ? "var(--success)" : "var(--warning)" }}>
-                        {securityScan.status}
-                      </span>
-                      <span style={{ color: "var(--text-muted)" }}>Security</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{
-                    background: "var(--bg-card)", border: "1px solid var(--border)", fontSize: 11,
-                  }}>
-                    <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{outputs.length}</span>
-                    <span style={{ color: "var(--text-muted)" }}>Stages</span>
-                  </div>
-                </div>
+          {/* Live stream panel */}
+          {streamingAgent && (
+            <div className="mc-fade" style={{ marginBottom: 16 }}>
+              <LiveStreamPanel
+                agentRole={streamingAgent}
+                streamText={streamText}
+                tokenCount={streamTokens}
+                elapsed={elapsed}
+              />
+            </div>
+          )}
 
-                {/* Preview */}
-                {previewUrl && (() => {
-                  const isStatic = previewUrl.includes("/preview/static");
+          {/* Completed Agent Strips */}
+          {completedAgents.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                Agent Outputs
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {completedAgents.map((role) => {
+                  const output = outputs.find(o => o.role === role && (o.status === "approved" || o.status === "pending"));
+                  if (!output) return null;
+                  const config = AGENT_CONFIG[role];
+                  const summary = extractSummary(role, output.content as Record<string, unknown>);
+                  const isPending = pendingOutput?.role === role;
+                  const isOpen = detailPanel === role;
+
                   return (
-                    <div style={{ borderRadius: 10, overflow: "hidden", border: "1px solid var(--border)", marginBottom: 12 }}>
-                      <div style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        padding: "8px 12px", background: "var(--bg-elevated)",
+                    <div key={role} className="mc-output-strip" onClick={() => handleNodeClick(role)}
+                      style={{
+                        borderColor: isPending ? "rgba(245,166,35,0.3)" : isOpen ? "rgba(99,91,255,0.4)" : undefined,
+                        background: isPending ? "rgba(245,166,35,0.06)" : isOpen ? "rgba(99,91,255,0.06)" : undefined,
                       }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: isStatic ? "var(--accent)" : "var(--success)", animation: isStatic ? "none" : "pulse 2s infinite" }} />
-                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>{isStatic ? "Preview" : "Live"}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <a href={previewUrl} target="_blank" rel="noopener noreferrer"
-                             style={{ fontSize: 10, color: "var(--accent)", textDecoration: "none" }}>Open ↗</a>
-                          {!isStatic && (
-                            <button onClick={async () => { try { await stopPreview(projectId); } catch {} setPreviewUrl(null); }}
-                              style={{ fontSize: 10, color: "var(--danger)", background: "none", border: "none", cursor: "pointer" }}>Stop</button>
+                      <span style={{ fontSize: 20, flexShrink: 0, width: 28, textAlign: "center" }}>{config?.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>{config?.label}</span>
+                          {isPending && (
+                            <span className="mc-chip" style={{ background: "rgba(245,166,35,0.15)", color: "#f5a623", border: "1px solid rgba(245,166,35,0.3)", animation: "pulse 2s infinite" }}>
+                              Needs Approval
+                            </span>
+                          )}
+                          {!isPending && (
+                            <span className="mc-chip" style={{ background: "rgba(16,185,129,0.1)", color: "#34d399" }}>Done</span>
                           )}
                         </div>
+                        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {summary.headline}{summary.detail ? ` — ${summary.detail}` : ""}
+                        </p>
                       </div>
-                      <iframe src={previewUrl} style={{ width: "100%", height: 300, border: "none" }}
-                              sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+                      <span style={{ fontSize: 14, color: "rgba(255,255,255,0.2)", flexShrink: 0, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}>▾</span>
                     </div>
                   );
-                })()}
-
-                {/* Action buttons — compact grid */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                  {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
-                    <button onClick={async () => {
-                      try { await downloadCode(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : "Could not download code."); }
-                    }}
-                      className="btn-success text-xs py-2 px-3 flex items-center gap-1.5 justify-center">
-                      <span>📦</span> Code
-                    </button>
-                  )}
-                  {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && validationResult?.final_status === "VALIDATED" && (
-                    <button onClick={async () => {
-                      try { await downloadBundle(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "No deployable bundle."); }
-                    }}
-                      className="btn-success text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
-                      style={{ background: "#8b5cf6", borderColor: "#7c3aed" }}>
-                      <span>🚀</span> Deploy
-                    </button>
-                  )}
-                  {(deliverableType === "workflow" || deliverableType === "hybrid") && (
-                    <button onClick={async () => {
-                      try { await downloadWorkflow(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : "Workflow not found."); }
-                    }}
-                      className="btn-success text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
-                      style={{ background: "var(--accent)", borderColor: "var(--accent-border)" }}>
-                      <span>⚡</span> Workflow
-                    </button>
-                  )}
-                  <button onClick={async () => {
-                    try { await downloadPptx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : ""); }
-                  }}
-                    className="btn-primary text-xs py-2 px-3 flex items-center gap-1.5 justify-center">
-                    <span>📊</span> PPTX
-                  </button>
-                  <button onClick={async () => {
-                    try { await downloadDocx(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : ""); }
-                  }}
-                    className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center">
-                    <span>📄</span> DOCX
-                  </button>
-                  {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
-                    <>
-                      <button onClick={() => setShowCodePreview(true)}
-                        className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
-                        style={{ borderColor: "var(--accent-border)", color: "var(--accent)" }}>
-                        <span>👁️</span> View Code
-                      </button>
-                      <button onClick={() => setShowGitHubPush(true)}
-                        className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
-                        style={{ borderColor: "rgba(36,41,47,0.4)", color: "var(--text-primary)" }}>
-                        <span>🐙</span> GitHub
-                      </button>
-                    </>
-                  )}
-                  <button onClick={handleShareLink} disabled={copyingLink}
-                    className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
-                    style={{ borderColor: "rgba(99,91,255,0.4)", color: "#635bff" }}>
-                    {copyingLink ? <span className="spinner" style={{ width: 10, height: 10 }} /> : <span>🔗</span>}
-                    {shareLink ? "Copied!" : "Share"}
-                  </button>
-                  <button onClick={async () => {
-                    try { await saveDemoCache(projectId); toast("success", "Demo saved", "Demo Mode available from start page."); }
-                    catch { toast("error", "Save failed", "Could not save demo cache."); }
-                  }}
-                    className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
-                    style={{ borderColor: "var(--warning-border)", color: "var(--warning)" }}>
-                    <span>💾</span> Demo
-                  </button>
-                  {outputs.find((o) => o.role === "architect") && (
-                    <button onClick={() => setShowArchDiagram(true)}
-                      className="btn-ghost text-xs py-2 px-3 flex items-center gap-1.5 justify-center"
-                      style={{ borderColor: "rgba(139,92,246,0.4)", color: "#8b5cf6" }}>
-                      <span>🏗️</span> Architecture
-                    </button>
-                  )}
-                </div>
+                })}
               </div>
             </div>
           )}
 
-          {/* Company Feedback */}
+          {/* Product Ready Actions */}
+          {isCompleted && (
+            <div className="mc-card mc-fade" style={{ padding: 16, marginBottom: 16, borderColor: "rgba(16,185,129,0.2)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 12px rgba(16,185,129,0.4)" }} />
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>Product Ready</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {validationResult && (
+                    <span className="mc-chip" style={{
+                      background: validationResult.final_status === "VALIDATED" ? "rgba(16,185,129,0.12)" : "rgba(237,95,116,0.12)",
+                      color: validationResult.final_status === "VALIDATED" ? "#34d399" : "#ed5f74",
+                    }}>
+                      {validationResult.final_status === "VALIDATED" ? "PASS" : "FAIL"} Build
+                    </span>
+                  )}
+                  {securityScan && (
+                    <span className="mc-chip" style={{
+                      background: securityScan.status === "PASS" ? "rgba(16,185,129,0.12)" : "rgba(245,166,35,0.12)",
+                      color: securityScan.status === "PASS" ? "#34d399" : "#f5a623",
+                    }}>
+                      {securityScan.status} Security
+                    </span>
+                  )}
+                  <span style={{ fontSize: 12, fontFamily: "monospace", color: "rgba(255,255,255,0.35)" }}>
+                    {formatPipelineTime(pipelineElapsed)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Preview iframe */}
+              {previewUrl && (() => {
+                const isStatic = previewUrl.includes("/preview/static");
+                return (
+                  <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px", background: "rgba(255,255,255,0.03)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: isStatic ? "#a5a0ff" : "#34d399" }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>{isStatic ? "Preview" : "Live"}</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <a href={previewUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#a5a0ff", textDecoration: "none" }}>Open ↗</a>
+                        {!isStatic && (
+                          <button onClick={async () => { try { await stopPreview(projectId); } catch {} setPreviewUrl(null); }}
+                            style={{ fontSize: 10, color: "#ed5f74", background: "none", border: "none", cursor: "pointer" }}>Stop</button>
+                        )}
+                      </div>
+                    </div>
+                    <iframe src={previewUrl} style={{ width: "100%", height: 260, border: "none" }}
+                            sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+                  </div>
+                );
+              })()}
+
+              {/* Action Buttons */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 6 }}>
+                {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
+                  <button className="mc-btn-success" onClick={async () => { try { await downloadCode(projectId); } catch (e) { toast("error", "Download failed", e instanceof Error ? e.message : ""); } }}>
+                    <span>📦</span> Code
+                  </button>
+                )}
+                {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && validationResult?.final_status === "VALIDATED" && (
+                  <button className="mc-btn" onClick={async () => { try { await downloadBundle(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : ""); } }}
+                    style={{ background: "rgba(139,92,246,0.2)", borderColor: "rgba(139,92,246,0.4)", color: "#a78bfa" }}>
+                    <span>🚀</span> Deploy
+                  </button>
+                )}
+                {(deliverableType === "workflow" || deliverableType === "hybrid") && (
+                  <button className="mc-btn-primary" onClick={async () => { try { await downloadWorkflow(projectId); } catch (e) { toast("warning", "Not available", e instanceof Error ? e.message : ""); } }}>
+                    <span>⚡</span> Workflow
+                  </button>
+                )}
+                <button className="mc-btn-primary" onClick={async () => { try { await downloadPptx(projectId); } catch (e) { toast("error", "Failed", e instanceof Error ? e.message : ""); } }}>
+                  <span>📊</span> PPTX
+                </button>
+                <button className="mc-btn" onClick={async () => { try { await downloadDocx(projectId); } catch (e) { toast("error", "Failed", e instanceof Error ? e.message : ""); } }}>
+                  <span>📄</span> DOCX
+                </button>
+                {(!deliverableType || deliverableType === "code" || deliverableType === "hybrid") && (
+                  <>
+                    <button className="mc-btn" onClick={() => setShowCodePreview(true)}>
+                      <span>👁️</span> Code
+                    </button>
+                    <button className="mc-btn" onClick={() => setShowGitHubPush(true)}>
+                      <span>🐙</span> GitHub
+                    </button>
+                  </>
+                )}
+                <button className="mc-btn" onClick={handleShareLink} disabled={copyingLink}
+                  style={{ borderColor: "rgba(99,91,255,0.4)", color: "#a5a0ff" }}>
+                  {copyingLink ? "..." : <><span>🔗</span> {shareLink ? "Copied!" : "Share"}</>}
+                </button>
+                <button className="mc-btn" onClick={async () => { try { await saveDemoCache(projectId); toast("success", "Saved", "Demo Mode available."); } catch { toast("error", "Failed", ""); } }}
+                  style={{ borderColor: "rgba(245,166,35,0.3)", color: "#f5a623" }}>
+                  <span>💾</span> Demo
+                </button>
+                {outputs.find(o => o.role === "architect") && (
+                  <button className="mc-btn" onClick={() => setShowArchDiagram(true)}
+                    style={{ borderColor: "rgba(139,92,246,0.3)", color: "#a78bfa" }}>
+                    <span>🏗️</span> Arch
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Talk to Company */}
           {showChat ? (
-            <div className="animate-fade-in">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Talk to your Company</h3>
-                <button onClick={() => setShowChat(false)} className="text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>Close</button>
+            <div className="mc-fade">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>Talk to your Company</span>
+                <button onClick={() => setShowChat(false)} style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", background: "none", border: "none", cursor: "pointer" }}>Close</button>
               </div>
               <CallEmployee projectId={projectId} />
             </div>
           ) : (
-            <button onClick={() => setShowChat(true)}
-              className="btn-ghost text-sm py-3 px-5 w-full flex items-center justify-center gap-2 cursor-pointer"
-              style={{ borderColor: "var(--accent-border)", color: "var(--accent)" }}>
+            <button className="mc-btn" onClick={() => setShowChat(true)}
+              style={{ width: "100%", padding: "12px", borderColor: "rgba(99,91,255,0.25)", color: "#a5a0ff" }}>
               <span>💬</span> Talk to your Company
             </button>
           )}
-
         </div>
 
-        {/* ===== RIGHT — Hero Canvas (sticky) ===== */}
-        <div className="md:col-span-5">
-          <div className="md:sticky md:top-6 space-y-4">
-            <div className="animate-fade-in">
-              <AgentCanvas
-                status={project.status}
-                outputs={outputs}
-                streamingAgent={streamingAgent}
-                streamTokens={streamTokens}
-                elapsed={elapsed}
-                visibleAgents={routeAgents}
-                onNodeClick={(role) => {
-                  setInspectingAgent(role);
-                  const el = document.getElementById(`output-${role}`);
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              />
-            </div>
+        {/* Right Sidebar */}
+        <div style={{ width: 280, flexShrink: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+          <CostMonitor projectId={projectId} costEvent={costEvent} />
+          {securityScan && <SecurityBadge scan={securityScan} />}
 
-            {/* Compact info below canvas */}
-            <CostMonitor projectId={projectId} costEvent={costEvent} />
-            {securityScan && <SecurityBadge scan={securityScan} />}
-          </div>
+          {/* Activity Feed */}
+          {events.length > 0 && (
+            <div className="mc-card" style={{ padding: 12, maxHeight: 180, overflowY: "auto" }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                Activity
+              </div>
+              {events.slice(-6).reverse().map((e, i) => (
+                <div key={i} style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", display: "flex", gap: 6, marginBottom: 3 }}>
+                  <span style={{ fontFamily: "monospace", flexShrink: 0, opacity: 0.6, fontSize: 10 }}>{e.time}</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ===== Modals ===== */}
-      {inspectingAgent && (
-        <AgentIntrospection
-          projectId={projectId}
-          role={inspectingAgent}
-          onClose={() => setInspectingAgent(null)}
-        />
-      )}
-
-      {showPreview && previewUrl && (
-        <div className="card animate-fade-in" style={{ padding: 0, overflow: "hidden", position: "fixed", top: 40, left: 40, right: 40, bottom: 40, zIndex: 50 }}>
+      {/* ===== Slide-in Detail Panel ===== */}
+      {detailPanel && detailOutput && (
+        <div style={{
+          position: "fixed", top: 0, right: 0, bottom: 0, width: "min(600px, 85vw)",
+          background: "linear-gradient(180deg, #0c0f24, #111528)",
+          borderLeft: "1px solid rgba(99,91,255,0.2)",
+          zIndex: 50, overflowY: "auto", padding: "0",
+          boxShadow: "-8px 0 40px rgba(0,0,0,0.5)",
+          "--bg-card": "rgba(255,255,255,0.04)",
+          "--bg-card-hover": "rgba(255,255,255,0.07)",
+          "--bg-elevated": "rgba(255,255,255,0.06)",
+          "--bg-secondary": "rgba(255,255,255,0.03)",
+          "--border": "rgba(255,255,255,0.08)",
+          "--border-hover": "rgba(255,255,255,0.15)",
+          "--text-primary": "rgba(255,255,255,0.92)",
+          "--text-secondary": "rgba(255,255,255,0.6)",
+          "--text-muted": "rgba(255,255,255,0.35)",
+          "--accent": "#7a73ff",
+          "--accent-bg": "rgba(99,91,255,0.12)",
+          "--accent-border": "rgba(99,91,255,0.25)",
+          "--success": "#34d399",
+          "--success-bg": "rgba(16,185,129,0.12)",
+          "--success-border": "rgba(16,185,129,0.25)",
+          "--warning": "#fbbf24",
+          "--warning-bg": "rgba(245,166,35,0.12)",
+          "--warning-border": "rgba(245,166,35,0.25)",
+          "--danger": "#f87171",
+        } as React.CSSProperties} className="detail-panel">
+          {/* Panel header */}
           <div style={{
+            position: "sticky", top: 0, zIndex: 2,
+            background: "linear-gradient(180deg, #0c0f24, rgba(12,15,36,0.95))",
+            padding: "16px 20px",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "10px 16px", borderBottom: "1px solid var(--border)",
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", animation: "pulse 2s infinite" }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Live Preview</span>
-              <a href={previewUrl} target="_blank" rel="noopener noreferrer"
-                 style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none" }}>
-                Open in new tab ↗
-              </a>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 22 }}>{AGENT_CONFIG[detailPanel]?.icon}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "rgba(255,255,255,0.95)" }}>
+                {AGENT_CONFIG[detailPanel]?.label || detailPanel}
+              </span>
+              {pendingOutput?.role === detailPanel && (
+                <span className="mc-chip" style={{ background: "rgba(245,166,35,0.15)", color: "#f5a623", border: "1px solid rgba(245,166,35,0.3)" }}>
+                  Needs Approval
+                </span>
+              )}
             </div>
-            <button onClick={() => setShowPreview(false)}
-              style={{ fontSize: 18, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer" }}>
+            <button onClick={() => setDetailPanel(null)}
+              style={{ fontSize: 20, color: "rgba(255,255,255,0.4)", background: "none", border: "none", cursor: "pointer", padding: "4px 8px" }}>
               ✕
             </button>
           </div>
-          <iframe src={previewUrl} style={{ width: "100%", height: "calc(100% - 45px)", border: "none" }}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+
+          {/* Panel content */}
+          <div style={{ padding: 20 }}>
+            <AgentOutputCard
+              role={detailOutput.role}
+              content={detailOutput.content as Record<string, unknown>}
+              status={detailOutput.status}
+              outputId={detailOutput.id}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onRevise={handleRevise}
+              showActions={pendingOutput?.role === detailPanel}
+              peerReview={getPeerReview(detailOutput.role)}
+            />
+            {detailPanel === "engineer" && validationResult && (
+              <div style={{ marginTop: 16 }}>
+                <BuildStatus validationResult={validationResult} />
+                {previewUrl && (
+                  <button className="mc-btn-success" onClick={() => setShowPreview(true)} style={{ marginTop: 8 }}>
+                    <span>🌐</span> Live Preview
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {showCodePreview && (
-        <CodePreview
-          projectId={projectId}
-          onClose={() => setShowCodePreview(false)}
-        />
+      {/* Backdrop for detail panel */}
+      {detailPanel && detailOutput && (
+        <div onClick={() => setDetailPanel(null)} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 49,
+        }} />
       )}
 
-      {showGitHubPush && (
-        <GitHubPush
-          projectId={projectId}
-          problemStatement={project.problem_statement}
-          onClose={() => setShowGitHubPush(false)}
-        />
+      {/* ===== Modals ===== */}
+      {inspectingAgent && (
+        <AgentIntrospection projectId={projectId} role={inspectingAgent} onClose={() => setInspectingAgent(null)} />
       )}
+
+      {showPreview && previewUrl && (
+        <div style={{ padding: 0, overflow: "hidden", position: "fixed", top: 40, left: 40, right: 40, bottom: 40, zIndex: 50, background: "#0c0f24", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#34d399" }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>Live Preview</span>
+              <a href={previewUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#a5a0ff", textDecoration: "none" }}>Open ↗</a>
+            </div>
+            <button onClick={() => setShowPreview(false)} style={{ fontSize: 18, color: "rgba(255,255,255,0.4)", background: "none", border: "none", cursor: "pointer" }}>✕</button>
+          </div>
+          <iframe src={previewUrl} style={{ width: "100%", height: "calc(100% - 45px)", border: "none" }} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+        </div>
+      )}
+
+      {showCodePreview && <CodePreview projectId={projectId} onClose={() => setShowCodePreview(false)} />}
+      {showGitHubPush && <GitHubPush projectId={projectId} problemStatement={project.problem_statement} onClose={() => setShowGitHubPush(false)} />}
 
       {showArchDiagram && (() => {
         const archOutput = outputs.find((o) => o.role === "architect");
         if (!archOutput) return null;
-        return (
-          <ArchitectureDiagram
-            architectOutput={archOutput.content as Record<string, unknown>}
-            onClose={() => setShowArchDiagram(false)}
-          />
-        );
+        return <ArchitectureDiagram architectOutput={archOutput.content as Record<string, unknown>} onClose={() => setShowArchDiagram(false)} />;
       })()}
     </div>
   );

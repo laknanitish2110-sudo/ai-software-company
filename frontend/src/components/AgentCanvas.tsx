@@ -10,13 +10,10 @@ interface Props {
   elapsed: number;
   onNodeClick?: (role: string) => void;
   visibleAgents?: string[];
+  selectedAgent?: string | null;
 }
 
-const R = 30;
-const NODE_SPACING = 88;
-const CENTER_X = 75;
-const START_Y = 55;
-const BRAND_X = 18;
+const R = 36;
 
 const CONN_LABELS: Record<string, string> = {
   ceo: "Product Brief",
@@ -90,6 +87,7 @@ export default function AgentCanvas({
   elapsed,
   onNodeClick,
   visibleAgents,
+  selectedAgent,
 }: Props) {
   const agents = visibleAgents || PIPELINE_ORDER;
   const completedCount = agents.filter(
@@ -97,17 +95,14 @@ export default function AgentCanvas({
   ).length;
   const totalAgents = agents.length;
 
-  const totalHeight = START_Y + (agents.length - 1) * NODE_SPACING + 65;
+  const NODE_SPACING = Math.min(180, 900 / agents.length);
+  const SVG_W = Math.max(700, agents.length * NODE_SPACING + 120);
+  const SVG_H = 320;
+  const CENTER_Y = 145;
+  const START_X = 80;
 
   return (
-    <div
-      className="card overflow-hidden"
-      style={{
-        background: "linear-gradient(145deg, #080b1a, #0f1330)",
-        border: "1px solid #1a1f3a",
-        position: "relative",
-      }}
-    >
+    <div style={{ position: "relative", overflow: "hidden" }}>
       <style>{`
         @keyframes canvasPulse {
           0%, 100% { opacity: 0.6; transform: scale(1); }
@@ -117,198 +112,171 @@ export default function AgentCanvas({
           0%, 100% { transform: translateY(0px); opacity: 0.3; }
           50% { transform: translateY(-8px); opacity: 0.7; }
         }
-        @keyframes rippleExpand {
-          0% { r: ${R + 4}; opacity: 0.4; }
-          100% { r: ${R + 30}; opacity: 0; }
-        }
-        @keyframes glowPulse {
-          0%, 100% { opacity: 0.15; }
-          50% { opacity: 0.35; }
-        }
         @keyframes energyFlow {
           0% { stroke-dashoffset: 0; }
           100% { stroke-dashoffset: -60; }
         }
-        .agent-node { transition: transform 0.15s ease; }
-        .agent-node:hover { transform: scale(1.04); }
-        .agent-node:hover .node-hover-ring { opacity: 0.4 !important; }
+        @keyframes selectedPulse {
+          0%, 100% { stroke-opacity: 0.6; }
+          50% { stroke-opacity: 1; }
+        }
+        @keyframes gridPulse {
+          0%, 100% { opacity: 0.02; }
+          50% { opacity: 0.05; }
+        }
+        .hq-agent-node { transition: transform 0.2s ease; cursor: pointer; }
+        .hq-agent-node:hover { transform: scale(1.08); }
+        .hq-agent-node:hover .node-hover-ring { opacity: 0.5 !important; }
       `}</style>
 
-      {/* Header */}
+      {/* Header bar */}
       <div style={{
-        padding: "12px 16px",
+        padding: "16px 24px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{
-            width: 8, height: 8, borderRadius: "50%",
+            width: 12, height: 12, borderRadius: "50%",
             background: streamingAgent ? "#635bff" : completedCount === totalAgents ? "#0bbf8c" : "#2a2f4a",
-            boxShadow: streamingAgent ? "0 0 10px #635bff" : completedCount === totalAgents ? "0 0 10px #0bbf8c" : "none",
+            boxShadow: streamingAgent ? "0 0 16px #635bff" : completedCount === totalAgents ? "0 0 16px #0bbf8c" : "none",
             animation: streamingAgent ? "canvasPulse 2s infinite" : undefined,
           }} />
           <span style={{
-            color: "rgba(255,255,255,0.9)", fontSize: 13, fontWeight: 700,
-            letterSpacing: "0.04em", textTransform: "uppercase" as const,
+            color: "rgba(255,255,255,0.95)", fontSize: 18, fontWeight: 800,
+            letterSpacing: "0.08em", textTransform: "uppercase" as const,
           }}>
             Company HQ
           </span>
           {completedCount === totalAgents && (
             <span style={{
-              fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+              fontSize: 11, fontWeight: 700, padding: "4px 14px", borderRadius: 14,
               background: "rgba(11,191,140,0.15)", color: "#0bbf8c", border: "1px solid rgba(11,191,140,0.3)",
+              letterSpacing: "0.05em",
             }}>
               PRODUCT READY
             </span>
           )}
+          {streamingAgent && (
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 14,
+              background: "rgba(99,91,255,0.15)", color: "#a5a0ff", border: "1px solid rgba(99,91,255,0.3)",
+            }}>
+              {AGENT_CONFIG[streamingAgent]?.label || streamingAgent} working...
+            </span>
+          )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, fontWeight: 600 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {streamingAgent && streamTokens > 0 && (
+            <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, fontFamily: "monospace" }}>
+              {streamTokens} tokens
+            </span>
+          )}
+          <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14, fontWeight: 700, fontFamily: "monospace" }}>
             {completedCount}/{totalAgents}
           </span>
           <div style={{
-            width: 60, height: 5, borderRadius: 3,
+            width: 120, height: 8, borderRadius: 4,
             background: "rgba(255,255,255,0.06)", overflow: "hidden",
           }}>
             <div style={{
-              width: `${(completedCount / totalAgents) * 100}%`, height: "100%", borderRadius: 3,
+              width: `${(completedCount / totalAgents) * 100}%`, height: "100%", borderRadius: 4,
               background: completedCount === totalAgents ? "#0bbf8c" : "linear-gradient(90deg, #635bff, #7a73ff)",
               transition: "width 0.5s ease",
+              boxShadow: completedCount === totalAgents ? "0 0 12px rgba(11,191,140,0.4)" : "0 0 12px rgba(99,91,255,0.3)",
             }} />
           </div>
         </div>
       </div>
 
-      {/* SVG Canvas — Vertical */}
+      {/* SVG Canvas */}
       <svg
-        viewBox={`0 0 310 ${totalHeight}`}
+        viewBox={`0 0 ${SVG_W} ${SVG_H}`}
         style={{ width: "100%", display: "block" }}
+        preserveAspectRatio="xMidYMid meet"
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
           <filter id="activeGlow">
-            <feGaussianBlur stdDeviation="8" result="blur" />
+            <feGaussianBlur stdDeviation="10" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <filter id="particleGlow">
-            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feGaussianBlur stdDeviation="4" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <filter id="nodeGlow">
-            <feGaussianBlur stdDeviation="12" result="blur" />
+            <feGaussianBlur stdDeviation="16" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
-          <pattern id="bgDots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-            <circle cx="12" cy="12" r="0.4" fill="rgba(255,255,255,0.03)" />
+          <filter id="bigGlow">
+            <feGaussianBlur stdDeviation="24" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <pattern id="bgGrid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+            <line x1="40" y1="0" x2="40" y2="40" stroke="rgba(99,91,255,0.04)" strokeWidth="0.5" />
+            <line x1="0" y1="40" x2="40" y2="40" stroke="rgba(99,91,255,0.04)" strokeWidth="0.5" />
           </pattern>
-          <linearGradient id="brandGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#635bff" stopOpacity="0.12" />
-            <stop offset="50%" stopColor="#635bff" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#635bff" stopOpacity="0.08" />
-          </linearGradient>
-          <filter id="brandGlow">
-            <feGaussianBlur stdDeviation="2" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <linearGradient id="connGlow" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#635bff" stopOpacity="0" />
-            <stop offset="50%" stopColor="#635bff" stopOpacity="0.15" />
+          <radialGradient id="centerSpot" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#635bff" stopOpacity="0.06" />
             <stop offset="100%" stopColor="#635bff" stopOpacity="0" />
-          </linearGradient>
+          </radialGradient>
         </defs>
 
-        <rect width="310" height={totalHeight} fill="url(#bgDots)" />
+        <rect width={SVG_W} height={SVG_H} fill="url(#bgGrid)" style={{ animation: "gridPulse 8s ease-in-out infinite" }} />
+        <ellipse cx={SVG_W / 2} cy={CENTER_Y} rx={SVG_W * 0.4} ry={SVG_H * 0.35} fill="url(#centerSpot)" />
 
-        {/* Branding strip — left edge */}
-        <rect x="0" y="0" width={BRAND_X + 12} height={totalHeight} fill="url(#brandGrad)" />
-        <line x1={BRAND_X + 12} y1="0" x2={BRAND_X + 12} y2={totalHeight}
-          stroke="rgba(99,91,255,0.4)" strokeWidth="2" />
-        {/* Glowing accent dots along the brand line */}
-        {agents.map((_, i) => (
-          <circle key={`bd-${i}`} cx={BRAND_X + 12} cy={START_Y + i * NODE_SPACING} r="3"
-            fill="#635bff" opacity="0.7" filter="url(#brandGlow)" />
-        ))}
+        {/* Ambient particles */}
+        {Array.from({ length: 12 }).map((_, i) => {
+          const angle = (i / 12) * Math.PI * 2;
+          const rx = SVG_W * 0.35 + Math.sin(i * 3) * 40;
+          const ry = 80 + Math.cos(i * 2) * 30;
+          return (
+            <circle key={`amb-${i}`}
+              cx={SVG_W / 2 + Math.cos(angle) * rx}
+              cy={CENTER_Y + Math.sin(angle) * ry}
+              r={1 + (i % 3) * 0.5}
+              fill="rgba(99,91,255,0.25)"
+              style={{ animation: `ambientFloat ${3 + i * 0.3}s ease-in-out ${i * 0.4}s infinite` }}
+            />
+          );
+        })}
 
-        {/* Vertical brand text — large and visible */}
-        <text
-          x={BRAND_X - 1}
-          y={totalHeight / 2}
-          textAnchor="middle"
-          fill="rgba(99,91,255,0.7)"
-          fontSize="14"
-          fontWeight="900"
-          letterSpacing="0.5em"
-          filter="url(#brandGlow)"
-          transform={`rotate(-90 ${BRAND_X - 1} ${totalHeight / 2})`}
-        >
-          FORGEAI CO.
-        </text>
-
-        {/* Bottom horizontal brand mark */}
-        <text
-          x={CENTER_X + 50}
-          y={totalHeight - 8}
-          textAnchor="middle"
-          fill="rgba(99,91,255,0.4)"
-          fontSize="8"
-          fontWeight="700"
-          letterSpacing="0.3em"
-        >
-          BUILT BY FORGEAI
-        </text>
-
-        {/* Ambient floating particles */}
-        {[
-          { cx: 250, cy: 80, delay: 0 },
-          { cx: 280, cy: 200, delay: 1.2 },
-          { cx: 40, cy: 320, delay: 0.5 },
-          { cx: 260, cy: 420, delay: 2 },
-          { cx: 45, cy: 150, delay: 1.5 },
-          { cx: 290, cy: 350, delay: 0.8 },
-        ].map((p, i) => (
-          <circle key={`amb-${i}`} cx={p.cx} cy={p.cy} r="1.5"
-            fill="rgba(99,91,255,0.3)"
-            style={{ animation: `ambientFloat ${3 + i * 0.4}s ease-in-out ${p.delay}s infinite` }} />
-        ))}
-
-        {/* Connections */}
+        {/* Horizontal connections */}
         {agents.slice(0, -1).map((role, i) => {
           const nextRole = agents[i + 1];
-          const y1 = START_Y + i * NODE_SPACING + R;
-          const y2 = START_Y + (i + 1) * NODE_SPACING - R;
+          const x1 = START_X + i * NODE_SPACING + R + 2;
+          const x2 = START_X + (i + 1) * NODE_SPACING - R - 2;
           const connState = getConnState(role, nextRole, status, outputs);
           const color =
             connState === "passed" ? "#0bbf8c"
             : connState === "flowing" ? "#635bff"
             : connState === "blocked" ? "#f5a623"
             : "#1e2340";
-          const pathId = `vp-${i}`;
-          const pathD = `M ${CENTER_X},${y1} L ${CENTER_X},${y2}`;
-          const gateY = (y1 + y2) / 2;
+          const pathId = `hp-${i}`;
+          const pathD = `M ${x1},${CENTER_Y} L ${x2},${CENTER_Y}`;
+          const gateX = (x1 + x2) / 2;
 
           return (
             <g key={`c-${i}`}>
-              {/* Glow behind active connections */}
+              {/* Wide glow behind active connections */}
               {(connState === "flowing" || connState === "passed") && (
-                <line x1={CENTER_X} y1={y1} x2={CENTER_X} y2={y2}
-                  stroke={color} strokeWidth="8" opacity="0.08" />
+                <line x1={x1} y1={CENTER_Y} x2={x2} y2={CENTER_Y}
+                  stroke={color} strokeWidth="12" opacity="0.06" />
               )}
 
               <path id={pathId} d={pathD} fill="none" stroke={color}
-                strokeWidth={connState === "idle" ? 1.5 : 2.5}
-                strokeDasharray={connState === "idle" || connState === "blocked" ? "4 4" : undefined}
-                opacity={connState === "idle" ? 0.3 : 0.7} />
+                strokeWidth={connState === "idle" ? 1.5 : 3}
+                strokeDasharray={connState === "idle" || connState === "blocked" ? "6 6" : undefined}
+                opacity={connState === "idle" ? 0.25 : 0.7} />
 
-              {/* Flowing energy line */}
               {connState === "flowing" && (
-                <path d={pathD} fill="none" stroke="#635bff" strokeWidth="3" strokeDasharray="8 14" opacity="0.6"
-                  style={{ animation: "energyFlow 0.8s linear infinite" }} />
+                <path d={pathD} fill="none" stroke="#635bff" strokeWidth="3" strokeDasharray="10 16" opacity="0.7"
+                  style={{ animation: "energyFlow 0.7s linear infinite" }} />
               )}
 
-              {/* Particles */}
               {(connState === "flowing" || connState === "passed") &&
                 [0, 0.4, 0.8].map((delay, j) => (
-                  <circle key={j} r={j === 0 ? 3.5 : 2} fill={color} filter="url(#particleGlow)"
+                  <circle key={j} r={j === 0 ? 4 : 2.5} fill={color} filter="url(#particleGlow)"
                     opacity={j === 0 ? 1 : 0.5}>
                     <animateMotion dur="1.2s" repeatCount="indefinite" begin={`${delay}s`} calcMode="linear">
                       <mpath href={`#${pathId}`} />
@@ -316,44 +284,43 @@ export default function AgentCanvas({
                   </circle>
                 ))}
 
-              {/* Data label */}
-              {(connState === "flowing" || connState === "passed") && (
-                <text x={CENTER_X + 18} y={gateY + 4} fill="rgba(255,255,255,0.3)" fontSize="9" fontFamily="monospace" fontWeight="500">
-                  {CONN_LABELS[role] || ""}
+              {/* Connection label */}
+              {(connState === "flowing" || connState === "passed") && CONN_LABELS[role] && (
+                <text x={gateX} y={CENTER_Y - 26} textAnchor="middle" fill="rgba(255,255,255,0.35)" fontSize="9" fontFamily="monospace" fontWeight="500">
+                  {CONN_LABELS[role]}
                 </text>
               )}
 
-              {/* Approval gate */}
-              {i > 0 && (
-                <g>
-                  <rect x={CENTER_X - 6} y={gateY - 6} width="12" height="12" rx="2"
-                    transform={`rotate(45 ${CENTER_X} ${gateY})`}
-                    fill={connState === "blocked" ? "rgba(245,166,35,0.2)" : connState === "passed" || connState === "flowing" ? "rgba(11,191,140,0.15)" : "rgba(255,255,255,0.02)"}
-                    stroke={connState === "blocked" ? "#f5a623" : connState === "passed" || connState === "flowing" ? "#0bbf8c" : "#2a2f4a"}
-                    strokeWidth="1.5" opacity={connState === "idle" ? 0.4 : 1}>
-                    {connState === "blocked" && (
-                      <animate attributeName="opacity" values="0.5;1;0.5" dur="1.5s" repeatCount="indefinite" />
-                    )}
-                  </rect>
+              {/* Gate diamond */}
+              <g>
+                <rect x={gateX - 6} y={CENTER_Y - 6} width="12" height="12" rx="2"
+                  transform={`rotate(45 ${gateX} ${CENTER_Y})`}
+                  fill={connState === "blocked" ? "rgba(245,166,35,0.2)" : connState === "passed" || connState === "flowing" ? "rgba(11,191,140,0.15)" : "rgba(255,255,255,0.02)"}
+                  stroke={connState === "blocked" ? "#f5a623" : connState === "passed" || connState === "flowing" ? "#0bbf8c" : "#2a2f4a"}
+                  strokeWidth="1.5" opacity={connState === "idle" ? 0.4 : 1}>
                   {connState === "blocked" && (
-                    <text x={CENTER_X} y={gateY + 3.5} textAnchor="middle" fill="#f5a623" fontSize="8" fontWeight="bold">!</text>
+                    <animate attributeName="opacity" values="0.5;1;0.5" dur="1.5s" repeatCount="indefinite" />
                   )}
-                  {(connState === "passed" || connState === "flowing") && (
-                    <text x={CENTER_X} y={gateY + 3.5} textAnchor="middle" fill="#0bbf8c" fontSize="8" fontWeight="bold">✓</text>
-                  )}
-                </g>
-              )}
+                </rect>
+                {connState === "blocked" && (
+                  <text x={gateX} y={CENTER_Y + 4} textAnchor="middle" fill="#f5a623" fontSize="8" fontWeight="bold">!</text>
+                )}
+                {(connState === "passed" || connState === "flowing") && (
+                  <text x={gateX} y={CENTER_Y + 4} textAnchor="middle" fill="#0bbf8c" fontSize="8" fontWeight="bold">✓</text>
+                )}
+              </g>
             </g>
           );
         })}
 
         {/* Agent Nodes */}
         {agents.map((role, i) => {
-          const x = CENTER_X;
-          const y = START_Y + i * NODE_SPACING;
+          const x = START_X + i * NODE_SPACING;
+          const y = CENTER_Y;
           const config = AGENT_CONFIG[role];
           const state = getStepState(role, status, outputs);
           const isStreaming = streamingAgent === role;
+          const isSelected = selectedAgent === role;
 
           const sc =
             state === "done" ? { fill: "rgba(11,191,140,0.12)", stroke: "#0bbf8c", text: "#0bbf8c" }
@@ -362,53 +329,59 @@ export default function AgentCanvas({
             : { fill: "rgba(255,255,255,0.03)", stroke: "#2a2f4a", text: "rgba(255,255,255,0.25)" };
 
           return (
-            <g key={role} className="agent-node"
-              onClick={() => onNodeClick?.(role)}
-              style={{ cursor: onNodeClick ? "pointer" : undefined }}>
+            <g key={role} className="hq-agent-node"
+              onClick={() => onNodeClick?.(role)}>
 
-              {/* Radial glow behind active/done nodes */}
+              {/* Large background glow */}
               {(state === "done" || state === "active") && (
-                <circle cx={x} cy={y} r={R + 18} fill={state === "done" ? "#0bbf8c" : config.color}
-                  opacity={state === "active" ? 0.08 : 0.06} filter="url(#nodeGlow)">
+                <circle cx={x} cy={y} r={R + 30} fill={state === "done" ? "#0bbf8c" : config.color}
+                  opacity={state === "active" ? 0.06 : 0.04} filter="url(#bigGlow)">
                   {state === "active" && (
-                    <animate attributeName="opacity" values="0.04;0.12;0.04" dur="3s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.03;0.08;0.03" dur="3s" repeatCount="indefinite" />
                   )}
                 </circle>
               )}
 
-              {/* Expanding ripple (active only) */}
+              {/* Active ripples */}
               {state === "active" && (
                 <>
-                  <circle cx={x} cy={y} fill="none" stroke={config.color} strokeWidth="1" opacity="0">
-                    <animate attributeName="r" values={`${R + 4};${R + 28}`} dur="2.5s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" values="0.35;0" dur="2.5s" repeatCount="indefinite" />
+                  <circle cx={x} cy={y} fill="none" stroke={config.color} strokeWidth="1.5" opacity="0">
+                    <animate attributeName="r" values={`${R + 5};${R + 35}`} dur="2.5s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.4;0" dur="2.5s" repeatCount="indefinite" />
                   </circle>
-                  <circle cx={x} cy={y} fill="none" stroke={config.color} strokeWidth="1" opacity="0">
-                    <animate attributeName="r" values={`${R + 4};${R + 28}`} dur="2.5s" begin="1.25s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" values="0.35;0" dur="2.5s" begin="1.25s" repeatCount="indefinite" />
+                  <circle cx={x} cy={y} fill="none" stroke={config.color} strokeWidth="1.5" opacity="0">
+                    <animate attributeName="r" values={`${R + 5};${R + 35}`} dur="2.5s" begin="1.25s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.4;0" dur="2.5s" begin="1.25s" repeatCount="indefinite" />
                   </circle>
                 </>
               )}
 
-              <circle className="node-hover-ring" cx={x} cy={y} r={R + 3}
-                fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" strokeDasharray="4 3" opacity={0} />
+              {/* Selected ring */}
+              {isSelected && (
+                <circle cx={x} cy={y} r={R + 8} fill="none" stroke="#635bff" strokeWidth="2.5"
+                  strokeDasharray="8 4" style={{ animation: "selectedPulse 1.5s infinite" }} />
+              )}
+
+              {/* Hover ring */}
+              <circle className="node-hover-ring" cx={x} cy={y} r={R + 4}
+                fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" strokeDasharray="5 4" opacity={0} />
 
               {/* Spinning orbit (active) */}
               {state === "active" && (
-                <circle cx={x} cy={y} r={R + 5} fill="none" stroke={config.color}
-                  strokeWidth="1.5" strokeDasharray="5 7" opacity="0.5">
+                <circle cx={x} cy={y} r={R + 6} fill="none" stroke={config.color}
+                  strokeWidth="2" strokeDasharray="6 8" opacity="0.5">
                   <animateTransform attributeName="transform" type="rotate"
-                    from={`0 ${x} ${y}`} to={`360 ${x} ${y}`} dur="5s" repeatCount="indefinite" />
+                    from={`0 ${x} ${y}`} to={`360 ${x} ${y}`} dur="4s" repeatCount="indefinite" />
                 </circle>
               )}
 
-              {/* Main circle */}
+              {/* Main circle — larger */}
               <circle cx={x} cy={y} r={R} fill={sc.fill} stroke={sc.stroke}
-                strokeWidth={state === "waiting" ? 1 : 2.5} />
+                strokeWidth={state === "waiting" ? 1.5 : 3} />
 
               {/* Agent icon */}
-              <foreignObject x={x - 14} y={y - 14} width="28" height="28">
-                <div style={{ fontSize: 22, lineHeight: "28px", textAlign: "center", width: 28, height: 28 }}>
+              <foreignObject x={x - 16} y={y - 16} width="32" height="32">
+                <div style={{ fontSize: 24, lineHeight: "32px", textAlign: "center", width: 32, height: 32 }}>
                   {config.icon}
                 </div>
               </foreignObject>
@@ -416,46 +389,47 @@ export default function AgentCanvas({
               {/* Done badge */}
               {state === "done" && (
                 <g>
-                  <circle cx={x + R - 3} cy={y - R + 3} r="9" fill="#0bbf8c" stroke="#080b1a" strokeWidth="2" />
-                  <text x={x + R - 3} y={y - R + 6.5} textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">✓</text>
+                  <circle cx={x + R - 5} cy={y - R + 5} r="10" fill="#0bbf8c" stroke="#080b1a" strokeWidth="2.5" />
+                  <text x={x + R - 5} y={y - R + 9} textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">✓</text>
                 </g>
               )}
 
               {/* Review badge */}
               {state === "review" && (
                 <g>
-                  <circle cx={x + R - 3} cy={y - R + 3} r="9" fill="#f5a623" stroke="#080b1a" strokeWidth="2">
+                  <circle cx={x + R - 5} cy={y - R + 5} r="10" fill="#f5a623" stroke="#080b1a" strokeWidth="2.5">
                     <animate attributeName="fill-opacity" values="0.7;1;0.7" dur="1.5s" repeatCount="indefinite" />
                   </circle>
-                  <text x={x + R - 3} y={y - R + 6.5} textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">!</text>
+                  <text x={x + R - 5} y={y - R + 9} textAnchor="middle" fill="white" fontSize="9" fontWeight="bold">!</text>
                 </g>
               )}
 
-              {/* Name + status to the right */}
-              <text x={x + R + 14} y={y - 4}
+              {/* Label below node */}
+              <text x={x} y={y + R + 20} textAnchor="middle"
                 fill={state === "waiting" ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.95)"}
-                fontSize="14.5" fontWeight="700">
+                fontSize="13" fontWeight="700">
                 {config.label}
               </text>
-              <text x={x + R + 14} y={y + 13} fill={sc.text} fontSize="11" fontFamily="monospace"
+              <text x={x} y={y + R + 34} textAnchor="middle" fill={sc.text} fontSize="10" fontFamily="monospace"
                 opacity={state === "waiting" ? 0.3 : 0.85}>
-                {state === "done" ? "Complete" : state === "active" ? "Working..." : state === "review" ? "Awaiting Approval" : "Standby"}
+                {state === "done" ? "Complete" : state === "active" ? "Working..." : state === "review" ? "Review" : "Standby"}
               </text>
 
-              {MODEL_LABELS[role] && (
-                <text x={x + R + 14} y={y + 27} fill={MODEL_LABELS[role].providerColor}
-                  fontSize="10" fontFamily="monospace" opacity={state === "waiting" ? 0.2 : 0.6}>
+              {/* Model label */}
+              {MODEL_LABELS[role] && state !== "waiting" && (
+                <text x={x} y={y + R + 48} textAnchor="middle" fill={MODEL_LABELS[role].providerColor}
+                  fontSize="8" fontFamily="monospace" opacity={0.4}>
                   {MODEL_LABELS[role].model}
                 </text>
               )}
 
-              {/* Streaming badge — above node */}
+              {/* Streaming badge */}
               {isStreaming && (
                 <g>
-                  <rect x={x - 48} y={y - R - 24} width="96" height="20" rx="10"
+                  <rect x={x - 48} y={y - R - 26} width="96" height="20" rx="10"
                     fill="rgba(99,91,255,0.2)" stroke="rgba(99,91,255,0.4)" strokeWidth="1" />
-                  <text x={x} y={y - R - 11} textAnchor="middle" fill="#a5a0ff" fontSize="10" fontFamily="monospace" fontWeight="600">
-                    {streamTokens > 0 ? `${streamTokens} tok` : "..."}
+                  <text x={x} y={y - R - 12} textAnchor="middle" fill="#a5a0ff" fontSize="10" fontFamily="monospace" fontWeight="600">
+                    {streamTokens > 0 ? `${streamTokens} tok` : "thinking..."}
                     {" · "}
                     {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
                   </text>
@@ -464,6 +438,11 @@ export default function AgentCanvas({
             </g>
           );
         })}
+
+        {/* Brand mark */}
+        <text x={SVG_W / 2} y={SVG_H - 10} textAnchor="middle" fill="rgba(99,91,255,0.2)" fontSize="9" fontWeight="700" letterSpacing="0.35em">
+          BUILT BY FORGEAI
+        </text>
       </svg>
     </div>
   );

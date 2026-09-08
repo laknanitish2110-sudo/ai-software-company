@@ -15,6 +15,7 @@ from app.core.config import (
     GEMINI_API_KEY, GEMINI_BASE_URL,
     NVIDIA_API_KEY, NVIDIA_API_KEY_2, NVIDIA_BASE_URL,
     GROQ_API_KEY, GROQ_BASE_URL,
+    BYTEZ_API_KEY, BYTEZ_BASE_URL,
     SMART_MODEL, MODEL_MAP, FALLBACK_MAP,
     PROVIDER_MAP, FALLBACK_PROVIDER_MAP,
 )
@@ -65,6 +66,8 @@ def get_client(provider: str = "openrouter") -> Any:
             _clients[provider] = AsyncOpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY_2 or NVIDIA_API_KEY)
         elif provider == "groq" and GROQ_API_KEY:
             _clients[provider] = AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=GROQ_API_KEY)
+        elif provider == "bytez" and BYTEZ_API_KEY:
+            _clients[provider] = AsyncOpenAI(base_url=BYTEZ_BASE_URL, api_key=BYTEZ_API_KEY)
         elif provider in _OR_KEY_MAP:
             idx = _OR_KEY_MAP[provider]
             key = OPENROUTER_KEYS[idx] if idx < len(OPENROUTER_KEYS) and OPENROUTER_KEYS[idx] else (OPENROUTER_KEYS[0] if OPENROUTER_KEYS else OPENROUTER_API_KEY)
@@ -98,7 +101,7 @@ ROLE_LABELS = {
 }
 
 AGENT_TIMEOUTS = {
-    AgentRole.CEO: 30,
+    AgentRole.CEO: 90,
     AgentRole.BUSINESS_ANALYST: 60,
     AgentRole.RESEARCHER: 60,
     AgentRole.ARCHITECT: 60,
@@ -303,10 +306,17 @@ async def _llm_call_single(
         return str(response).strip(), usage
 
 
-def _all_or_providers(exclude: str) -> list[str]:
-    """Return all available OpenRouter provider names except the excluded one."""
-    all_names = ["openrouter", "openrouter2", "openrouter3", "openrouter4", "openrouter5", "openrouter6"]
-    return [name for i, name in enumerate(all_names) if name != exclude and i < len(OPENROUTER_KEYS)]
+def _all_fallback_providers(exclude: str) -> list[str]:
+    """Return all available provider names except the excluded one."""
+    groq_names = ["groq"] if GROQ_API_KEY else []
+    nvidia_names = []
+    if NVIDIA_API_KEY:
+        nvidia_names.append("nvidia")
+    if NVIDIA_API_KEY_2:
+        nvidia_names.append("nvidia2")
+    bytez_names = ["bytez"] if BYTEZ_API_KEY else []
+    or_names = [f"openrouter{'' if i == 0 else i+1}" for i in range(len(OPENROUTER_KEYS))]
+    return [name for name in groq_names + nvidia_names + bytez_names + or_names if name != exclude]
 
 
 from app.services.resource_budget import resource_budget, ResourceBudgetExceededError
@@ -366,7 +376,7 @@ async def _llm_call_with_retry(
 
     fb_model = fallback_model or model
     tried = {provider}
-    candidates = [fallback_provider] + _all_or_providers(provider)
+    candidates = [fallback_provider] + _all_fallback_providers(provider)
     for fb_prov in candidates:
         if fb_prov in tried:
             continue
@@ -384,7 +394,7 @@ async def _llm_call_with_retry(
             last_error = e
             clean_err = _sanitize_error(str(e))
             logger.warning(f"Key {fb_prov} failed: {clean_err}")
-            if not _is_fatal(e):
+            if _is_fatal(e):
                 break
 
     raise RuntimeError(f"LLM call failed on all keys (tried {len(tried)}): {_sanitize_error(str(last_error))}")

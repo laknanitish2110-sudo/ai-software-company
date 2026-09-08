@@ -90,6 +90,7 @@ class Orchestrator:
         first_post_ceo = AgentRole(route_agents[1])
 
         async def _run_pipeline():
+            logger.warning(f"[PIPELINE] _run_pipeline STARTED for {project_id}")
             token = lock_token
             heartbeat = None
             try:
@@ -124,7 +125,9 @@ class Orchestrator:
                     "message": "CEO is analyzing the problem statement..."
                 })
 
+                logger.warning(f"[PIPELINE] About to run CEO agent for {project_id}")
                 ceo_output = await run_agent(project_id, AgentRole.CEO)
+                logger.warning(f"[PIPELINE] CEO agent completed for {project_id}")
                 await update_output_status(ceo_output["id"], "approved")
                 await set_memory(project_id, "ceo_brief", str(ceo_output["content"]), "ceo")
 
@@ -188,7 +191,8 @@ class Orchestrator:
                     "message": f"Pipeline startup error: {str(e)}"
                 })
 
-        asyncio.create_task(_run_pipeline())
+        task = asyncio.create_task(_run_pipeline())
+        self._running_tasks[project_id] = task
         return project
 
     async def _start_next_agent(self, project_id: str, role: AgentRole, execution_id: Optional[str] = None):

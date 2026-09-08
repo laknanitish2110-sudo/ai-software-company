@@ -23,6 +23,8 @@ NVIDIA_API_KEY_2 = os.getenv("NVIDIA_API_KEY_2", "").strip()
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").strip()
+BYTEZ_API_KEY = os.getenv("BYTEZ_API_KEY", "").strip()
+BYTEZ_BASE_URL = os.getenv("BYTEZ_BASE_URL", "https://api.bytez.com/models/v2/openai/v1").strip()
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "").strip()
 DATABASE_PATH = os.getenv("DATABASE_PATH", "company.db")
@@ -138,6 +140,8 @@ def _best_provider(preferred: str, role_idx: int) -> str:
         return "nvidia2"
     if preferred == "groq" and GROQ_API_KEY:
         return "groq"
+    if preferred == "bytez" and BYTEZ_API_KEY:
+        return "bytez"
     return _or(role_idx)
 
 # 6 OR keys = 1 dedicated key per agent, zero sharing
@@ -184,13 +188,17 @@ FALLBACK_MAP = {
 # Fallback provider: use the other NVIDIA key for resilience (OpenRouter has no credits)
 def _fallback_provider(primary: str) -> str:
     """Pick a fallback provider on different infrastructure than the primary."""
+    if primary == "groq":
+        return "bytez" if BYTEZ_API_KEY else ("nvidia" if NVIDIA_API_KEY else "openrouter")
     if primary == "nvidia":
-        return "nvidia2" if NVIDIA_API_KEY_2 else "openrouter"
+        return "groq" if GROQ_API_KEY else ("nvidia2" if NVIDIA_API_KEY_2 else ("bytez" if BYTEZ_API_KEY else "openrouter"))
     if primary == "nvidia2":
-        return "nvidia" if NVIDIA_API_KEY else "openrouter"
+        return "groq" if GROQ_API_KEY else ("nvidia" if NVIDIA_API_KEY else ("bytez" if BYTEZ_API_KEY else "openrouter"))
+    if primary == "bytez":
+        return "groq" if GROQ_API_KEY else ("nvidia" if NVIDIA_API_KEY else "openrouter")
     if primary == "openrouter" or primary.startswith("openrouter"):
-        return "nvidia" if NVIDIA_API_KEY else "nvidia2"
-    return "nvidia2" if NVIDIA_API_KEY_2 else "nvidia"
+        return "groq" if GROQ_API_KEY else ("bytez" if BYTEZ_API_KEY else ("nvidia" if NVIDIA_API_KEY else "nvidia2"))
+    return "groq" if GROQ_API_KEY else ("nvidia2" if NVIDIA_API_KEY_2 else ("bytez" if BYTEZ_API_KEY else "nvidia"))
 
 FALLBACK_PROVIDER_MAP = {
     role: os.getenv(f"FALLBACK_PROVIDER_{role.upper()}", _fallback_provider(PROVIDER_MAP.get(role, "openrouter")))
@@ -225,6 +233,9 @@ def _model_display(model_id: str) -> dict:
     if "groq" in m or "llama" in m or "mixtral" in m:
         label = model_id.split("/")[-1] if "/" in model_id else model_id
         return {"model": label.split(":")[0].title(), "provider": "Groq", "providerColor": "#f55036"}
+    if "bytez" in m:
+        label = model_id.split("/")[-1] if "/" in model_id else model_id
+        return {"model": label.split(":")[0].title(), "provider": "Bytez", "providerColor": "#00c9ff"}
     if "openrouter/free" in m:
         return {"model": "Auto (Free)", "provider": "OpenRouter", "providerColor": "#6366f1"}
     return {"model": model_id.split("/")[-1] if "/" in model_id else model_id, "provider": "OpenRouter", "providerColor": "#6366f1"}
@@ -282,5 +293,6 @@ _logging.getLogger(__name__).info(
     f"Anthropic={'yes' if ANTHROPIC_API_KEY else 'no'} | "
     f"Gemini={'yes' if GEMINI_API_KEY else 'no'} | "
     f"Nvidia={'yes' if NVIDIA_API_KEY else 'no'} | "
-    f"Groq={'yes' if GROQ_API_KEY else 'no'}"
+    f"Groq={'yes' if GROQ_API_KEY else 'no'} | "
+    f"Bytez={'yes' if BYTEZ_API_KEY else 'no'}"
 )
