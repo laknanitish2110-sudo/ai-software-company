@@ -67,15 +67,15 @@ function LoginForm() {
     }
   }, [user, router]);
 
-  if (user) {
-    return null;
-  }
-
   useEffect(() => {
     if (pendingVerificationEmail) {
       router.push("/verify-email");
     }
   }, [pendingVerificationEmail, router]);
+
+  if (user) {
+    return null;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

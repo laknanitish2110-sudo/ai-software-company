@@ -16,7 +16,7 @@ from app.core.database import (
     set_memory,
     get_memory,
 )
-from app.agents.engine import run_agent, cross_review, _sanitize_error
+from app.agents.engine import run_agent, cross_review, _sanitize_error, _extract_files_from_raw
 from app.services.workflow_search import analyze_for_problem, analyze_by_components
 from app.services.file_generator import generate_project_files, get_generated_files_list
 from app.services.workflow_generator import generate_workflow_json
@@ -191,6 +191,9 @@ class Orchestrator:
                     "message": f"Pipeline startup error: {str(e)}"
                 })
 
+        old_task = self._running_tasks.get(project_id)
+        if old_task and not old_task.done():
+            old_task.cancel()
         task = asyncio.create_task(_run_pipeline())
         self._running_tasks[project_id] = task
         return project
@@ -323,6 +326,10 @@ class Orchestrator:
                 if role == AgentRole.ENGINEER and isinstance(output.get("content"), dict):
                     try:
                         eng_files = output["content"].get("files", [])
+                        if not eng_files:
+                            raw_resp = output["content"].get("raw_response", "")
+                            if raw_resp:
+                                eng_files = _extract_files_from_raw(raw_resp)
                         mem_data = await get_memory(project_id)
                         repaired_json = mem_data.get("repaired_files")
                         if repaired_json:
@@ -345,6 +352,12 @@ class Orchestrator:
                     # Generate project files immediately after engineer completes
                     try:
                         eng_files_for_gen = output["content"].get("files", [])
+                        if not eng_files_for_gen:
+                            raw_resp = output["content"].get("raw_response", "")
+                            if raw_resp:
+                                eng_files_for_gen = _extract_files_from_raw(raw_resp)
+                                if eng_files_for_gen:
+                                    logger.info(f"Extracted {len(eng_files_for_gen)} files from raw engineer output for {project_id}")
                         mem_fg = await get_memory(project_id)
                         repaired_fg = mem_fg.get("repaired_files")
                         if repaired_fg:
@@ -474,6 +487,9 @@ class Orchestrator:
             finally:
                 self._active_executions.discard(project_id)
 
+        old_task = self._running_tasks.get(project_id)
+        if old_task and not old_task.done():
+            old_task.cancel()
         task = asyncio.create_task(_run())
         self._running_tasks[project_id] = task
 
@@ -491,6 +507,13 @@ class Orchestrator:
                 engineer_output = await get_latest_output(project_id, AgentRole.ENGINEER.value)
                 if engineer_output and isinstance(engineer_output.get("content"), dict):
                     content = dict(engineer_output["content"])
+                    if not content.get("files"):
+                        raw_resp = content.get("raw_response", "")
+                        if raw_resp:
+                            extracted = _extract_files_from_raw(raw_resp)
+                            if extracted:
+                                content["files"] = extracted
+                                logger.info(f"Safety net: extracted {len(extracted)} files from raw output")
                     mem = await get_memory(project_id)
                     repaired_json = mem.get("repaired_files")
                     if repaired_json:
@@ -587,6 +610,12 @@ class Orchestrator:
                 engineer_output = await get_latest_output(project_id, AgentRole.ENGINEER.value)
                 if engineer_output and isinstance(engineer_output.get("content"), dict):
                     content = dict(engineer_output["content"])
+                    if not content.get("files"):
+                        raw_resp = content.get("raw_response", "")
+                        if raw_resp:
+                            extracted = _extract_files_from_raw(raw_resp)
+                            if extracted:
+                                content["files"] = extracted
                     mem = await get_memory(project_id)
                     repaired_json = mem.get("repaired_files")
                     if repaired_json:

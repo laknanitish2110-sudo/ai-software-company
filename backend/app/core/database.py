@@ -418,6 +418,21 @@ async def init_db():
                 """)
             await db.execute("UPDATE users SET email_verified = 1 WHERE email_verified = 0 AND verification_code IS NULL")
             await db.commit()
+
+        # Performance indexes on frequently queried columns
+        index_stmts = [
+            "CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_agent_outputs_project_id ON agent_outputs(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_executions_project_id ON executions(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cost_tracking_project_id ON cost_tracking(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_shared_memory_project_id ON shared_memory(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_domain_learnings_project_id ON domain_learnings(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_share_links_project_id ON share_links(project_id)",
+        ]
+        for stmt in index_stmts:
+            await db.execute(stmt)
+        await db.commit()
+        logger.info("Database indexes ensured")
     finally:
         await db.close()
 

@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import LandingPage from "@/components/LandingPage";
 import StartProject from "@/components/StartProject";
-import AuthGuard from "@/components/AuthGuard";
 import { useToast } from "@/components/Toast";
 import { createProject, getProjects, getDemoStatus, loadDemoCache } from "@/lib/api";
 
@@ -14,6 +15,7 @@ interface RecentProject {
 }
 
 export default function Home() {
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [hasDemo, setHasDemo] = useState(false);
@@ -21,6 +23,7 @@ export default function Home() {
   const { toast } = useToast();
 
   useEffect(() => {
+    if (!user) return;
     getProjects()
       .then((projects) => {
         const recent = projects
@@ -35,7 +38,7 @@ export default function Home() {
     getDemoStatus()
       .then((s) => setHasDemo(s.has_demo))
       .catch(() => {});
-  }, []);
+  }, [user]);
 
   async function handleStart(problem: string, autoApprove: boolean = false, domain?: string | null, route?: string) {
     setLoading(true);
@@ -65,15 +68,32 @@ export default function Home() {
     }
   }
 
+  if (authLoading) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: "#060918",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <div style={{
+          width: 32, height: 32, border: "3px solid rgba(99,91,255,0.2)",
+          borderTopColor: "#635bff", borderRadius: "50%",
+          animation: "spin 0.6s linear infinite",
+        }} />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LandingPage />;
+  }
+
   return (
-    <AuthGuard>
-      <StartProject
-        onStart={handleStart}
-        loading={loading}
-        recentProjects={recentProjects}
-        hasDemo={hasDemo}
-        onLoadDemo={handleLoadDemo}
-      />
-    </AuthGuard>
+    <StartProject
+      onStart={handleStart}
+      loading={loading}
+      recentProjects={recentProjects}
+      hasDemo={hasDemo}
+      onLoadDemo={handleLoadDemo}
+    />
   );
 }

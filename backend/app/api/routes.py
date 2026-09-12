@@ -1074,6 +1074,11 @@ async def generate_share_link_endpoint(project_id: str, current_user: dict = Dep
     return {"token": token}
 
 
+_INTERNAL_MEMORY_PREFIXES = (
+    "introspection_", "peer_review_", "security_scan",
+    "research_raw_data", "_internal_", "debug_",
+)
+
 @router.get("/shared/{token}")
 async def get_shared_project(token: str):
     project = await get_project_by_share_token(token)
@@ -1081,7 +1086,11 @@ async def get_shared_project(token: str):
         raise HTTPException(404, "Shared project not found")
     project_id = project["id"]
     outputs = await get_project_outputs(project_id)
-    memory = await get_memory(project_id)
+    raw_memory = await get_memory(project_id)
+    memory = {
+        k: v for k, v in raw_memory.items()
+        if not k.startswith(_INTERNAL_MEMORY_PREFIXES)
+    }
     return {
         "project": dict(project),
         "outputs": outputs,

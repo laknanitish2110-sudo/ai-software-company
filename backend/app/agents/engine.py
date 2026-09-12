@@ -164,6 +164,77 @@ def _repair_json(raw: str) -> str:
     return text
 
 
+def _extract_files_from_raw(raw: str) -> list[dict]:
+    """Extract file entries from raw LLM text when JSON parsing fails."""
+    files = []
+
+    # Pattern 1: === FILE: path === ... === END FILE ===
+    file_blocks = re.findall(
+        r'===\s*FILE:\s*(.+?)\s*===\s*\n(.*?)===\s*END\s*FILE\s*===',
+        raw, re.DOTALL
+    )
+    if file_blocks:
+        for path, content in file_blocks:
+            path = path.strip()
+            if path and content.strip():
+                files.append({"path": path, "content": content.rstrip()})
+        return files
+
+    # Pattern 2: ```filename or ```language\n with path-like header
+    code_blocks = re.findall(
+        r'(?:^|\n)(?:#+\s*)?[`*]*(\S+\.\w+)[`*]*\s*\n```\w*\n(.*?)```',
+        raw, re.DOTALL
+    )
+    if code_blocks:
+        for path, content in code_blocks:
+            path = path.strip().strip('`*')
+            if path and '.' in path and content.strip():
+                files.append({"path": path, "content": content.rstrip()})
+        return files
+
+    # Pattern 3: Try extracting just the files array from partial JSON
+    files_match = re.search(r'"files"\s*:\s*\[', raw)
+    if files_match:
+        start = files_match.start()
+        bracket_count = 0
+        arr_start = raw.index('[', start)
+        closed = False
+        for i in range(arr_start, len(raw)):
+            if raw[i] == '[':
+                bracket_count += 1
+            elif raw[i] == ']':
+                bracket_count -= 1
+                if bracket_count == 0:
+                    closed = True
+                    try:
+                        arr_text = raw[arr_start:i+1]
+                        arr_text = re.sub(r',\s*]', ']', arr_text)
+                        parsed = json.loads(arr_text)
+                        if isinstance(parsed, list):
+                            for item in parsed:
+                                if isinstance(item, dict) and item.get("path") and item.get("content"):
+                                    files.append({"path": item["path"], "content": item["content"]})
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    break
+
+        if not closed or not files:
+            for m in re.finditer(
+                r'\{\s*"path"\s*:\s*"([^"]+)"\s*,\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*(?:,\s*"[^"]+"\s*:\s*(?:"(?:[^"\\]|\\.)*"|\d+|null|true|false|\[.*?\]|\{.*?\})\s*)*\}',
+                raw, re.DOTALL
+            ):
+                path = m.group(1)
+                content = m.group(2)
+                try:
+                    content = json.loads(f'"{content}"')
+                except (json.JSONDecodeError, ValueError):
+                    content = content.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+                if path and content.strip():
+                    files.append({"path": path, "content": content})
+
+    return files
+
+
 def _sanitize_error(err_str: str) -> str:
     if not err_str:
         return ""
@@ -590,6 +661,13 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
         except json.JSONDecodeError:
             content = {"raw_response": raw_text, "_parse_error": "Agent did not return valid JSON"}
 
+    if role == AgentRole.ENGINEER and not content.get("files"):
+        extracted = _extract_files_from_raw(raw_text)
+        if extracted:
+            content["files"] = extracted
+            content.pop("_parse_error", None)
+            logger.info(f"Extracted {len(extracted)} files from raw engineer output")
+
     output = await save_agent_output(project_id, role.value, content)
 
     if role == AgentRole.ENGINEER and memory.get("engineer_revision_feedback"):
@@ -792,24 +870,50 @@ Be specific, helpful, and concise. You have full access to the project state.
     messages.extend([{"role": m["role"], "content": m["content"]} for m in conversation])
 
     chat_model = MODEL_MAP.get(role.value, SMART_MODEL)
+    chat_fallback = FALLBACK_MAP.get(role.value)
     chat_provider = PROVIDER_MAP.get(role.value, "openrouter")
-    client = get_client(chat_provider)
+    chat_fb_provider = FALLBACK_PROVIDER_MAP.get(role.value, "openrouter")
 
     full_response = ""
-    try:
-        stream = await client.chat.completions.create(
-            model=chat_model,
-            messages=messages,
-            max_tokens=4096,
-            stream=True,
-        )
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                token = chunk.choices[0].delta.content
-                full_response += token
-                yield f"data: {json.dumps({'token': token})}\n\n"
-    except Exception as e:
-        logger.error(f"Streaming call_employee error: {e}", exc_info=True)
+    success = False
+
+    providers_to_try = [(chat_provider, chat_model)]
+    fb_model = chat_fallback or chat_model
+    tried = {chat_provider}
+    for fb_prov in [chat_fb_provider] + _all_fallback_providers(chat_provider):
+        if fb_prov not in tried:
+            providers_to_try.append((fb_prov, fb_model))
+            tried.add(fb_prov)
+
+    for prov, mdl in providers_to_try:
+        for attempt in range(MAX_RETRIES):
+            try:
+                client = get_client(prov)
+                stream = await client.chat.completions.create(
+                    model=mdl,
+                    messages=messages,
+                    max_tokens=4096,
+                    stream=True,
+                )
+                async for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        token = chunk.choices[0].delta.content
+                        full_response += token
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+                success = True
+                break
+            except (AuthenticationError, ) as e:
+                logger.warning(f"Stream auth error ({prov}:{mdl}): {_sanitize_error(str(e))}")
+                break
+            except Exception as e:
+                clean_err = _sanitize_error(str(e))
+                logger.warning(f"Stream attempt {attempt + 1}/{MAX_RETRIES} failed ({prov}:{mdl}): {clean_err}")
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(RETRY_DELAYS[attempt])
+        if success:
+            break
+
+    if not success:
         yield f"data: {json.dumps({'error': 'An error occurred while generating the response. Please try again.'})}\n\n"
 
     conversation.append({"role": "assistant", "content": full_response})
