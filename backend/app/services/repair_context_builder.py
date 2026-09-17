@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from app.models.execution_schema import (
@@ -12,7 +11,7 @@ from app.models.execution_schema import (
 )
 from app.services.sandbox_runner import ExecutionResult, StageResult
 from app.agents.qa import QAReport
-from app.services.file_generator import PROJECTS_DIR
+from app.core.artifact_store import get_artifact_store
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,7 @@ class RepairContextBuilder:
         self.project_id = project_id
         self.attempt = attempt
 
-    def build(
+    async def build(
         self,
         qa_report: QAReport,
         exec_result: ExecutionResult,
@@ -87,9 +86,6 @@ class RepairContextBuilder:
                     norm = f["path"].lstrip("/").lstrip("\\").replace("\\", "/")
                     memory_files_map[norm] = f.get("content", "")
 
-        project_dir = (PROJECTS_DIR / self.project_id).resolve()
-        has_disk_dir = project_dir.exists()
-
         # Prioritize affected paths first, then remaining project files from codebase
         all_candidate_paths = list(affected_paths)
         for p in memory_files_map.keys():
@@ -98,6 +94,7 @@ class RepairContextBuilder:
 
         total_chars = 0
         file_count = 0
+        store = get_artifact_store()
 
         for raw_path in all_candidate_paths:
             if file_count >= MAX_AFFECTED_FILES:
@@ -118,20 +115,12 @@ class RepairContextBuilder:
             content = None
 
             # Check disk storage first if available
-            if has_disk_dir:
-                try:
-                    target_file = (project_dir / norm_path).resolve()
-                    if target_file.is_relative_to(project_dir) and target_file.exists() and target_file.is_file():
-                        content = target_file.read_text(encoding="utf-8", errors="ignore")
-                    elif not target_file.is_relative_to(project_dir):
-                        ctx.missing_files.append(MissingFileError(
-                            path=raw_path,
-                            error="Path traversal attempt rejected",
-                            security_flag=True
-                        ))
-                        continue
-                except Exception as e:
-                    logger.debug(f"Disk read check error for {norm_path}: {e}")
+            try:
+                if await store.file_exists(self.project_id, norm_path):
+                    raw_content = await store.read_file(self.project_id, norm_path)
+                    content = raw_content.decode("utf-8", errors="ignore")
+            except Exception as e:
+                logger.debug(f"Disk read check error for {norm_path}: {e}")
 
             # Check memory files if not found on disk
             if content is None and norm_path in memory_files_map:
@@ -158,7 +147,7 @@ class RepairContextBuilder:
         return ctx
 
 
-def build_repair_context(
+async def build_repair_context(
     project_id: str,
     qa_report: QAReport,
     exec_result: ExecutionResult,
@@ -169,7 +158,7 @@ def build_repair_context(
     previous_attempts: Optional[List[dict]] = None
 ) -> RepairContext:
     builder = RepairContextBuilder(project_id=project_id, attempt=attempt)
-    return builder.build(
+    return await builder.build(
         qa_report=qa_report,
         exec_result=exec_result,
         dod=dod,

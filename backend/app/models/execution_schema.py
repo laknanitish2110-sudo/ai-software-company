@@ -106,6 +106,7 @@ class FinalValidationResult(BaseModel):
     final_status: str = "VALIDATED"  # VALIDATED, VALIDATION_FAILED
     final_execution_result: Optional[Dict[str, Any]] = None
     final_qa_report: Optional[Dict[str, Any]] = None
+    final_files: Optional[List[Dict[str, Any]]] = None
     repair_history: List[RepairAttempt] = Field(default_factory=list)
     regression_results: List[Dict[str, Any]] = Field(default_factory=list)
     reason: str = ""

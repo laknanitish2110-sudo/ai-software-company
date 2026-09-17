@@ -1,47 +1,33 @@
 import os
 import json
-import shutil
-import zipfile
 from pathlib import Path
+from app.core.artifact_store import get_artifact_store, PROJECTS_DIR
 
-PROJECTS_DIR = Path("generated_projects")
+async def ensure_projects_dir():
+    # Deprecated: Artifact store handles its own initialization
+    pass
 
+async def generate_project_files(project_id: str, engineer_output: dict) -> str | None:
+    """
+    Writes the engineer's generated files to the ArtifactStore.
+    Returns None since there is no longer a local zip file path to return.
+    """
+    if "files" not in engineer_output or not isinstance(engineer_output["files"], list):
+        return None
 
-def ensure_projects_dir():
-    PROJECTS_DIR.mkdir(exist_ok=True)
-
-
-def generate_project_files(project_id: str, engineer_output: dict) -> str:
-    ensure_projects_dir()
-
-    project_dir = PROJECTS_DIR / project_id
-    if project_dir.exists():
-        shutil.rmtree(project_dir)
-    project_dir.mkdir(parents=True)
-
-    files = engineer_output.get("files", [])
-    resolved_root = project_dir.resolve()
-    for file_entry in files:
-        file_path = file_entry.get("path", "")
-        content = file_entry.get("content", "")
-
-        if not file_path or not content:
+    store = get_artifact_store()
+    
+    for file_obj in engineer_output["files"]:
+        path = file_obj.get("path")
+        content = file_obj.get("content")
+        if not path or content is None:
+            continue
+            
+        # Prevent path traversal
+        if ".." in path or path.startswith("/"):
             continue
 
-        file_path = file_path.lstrip("/").lstrip("\\")
-        full_path = (project_dir / file_path).resolve()
-        
-        # Security check: Ensure file stays within project_dir (prevents ../ path traversal)
-        try:
-            if not full_path.is_relative_to(resolved_root):
-                continue
-        except AttributeError:
-            # Fallback for Python < 3.9
-            if not str(full_path).startswith(str(resolved_root)):
-                continue
-
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(content, encoding="utf-8")
+        await store.write_file(project_id, path, content)
 
     setup = engineer_output.get("setup_instructions", "")
     if setup:
@@ -78,70 +64,52 @@ def generate_project_files(project_id: str, engineer_output: dict) -> str:
                 for k, v in env_vars.items():
                     readme_parts.append(f"- `{k}`: {v}")
 
-        setup_readme = project_dir / "SETUP.md"
-        if not (project_dir / "README.md").exists():
-            setup_readme = project_dir / "README.md"
-        setup_readme.write_text("\n".join(readme_parts), encoding="utf-8")
+        setup_readme_path = "SETUP.md"
+        if not await store.file_exists(project_id, "README.md"):
+            setup_readme_path = "README.md"
+        await store.write_file(project_id, setup_readme_path, "\n".join(readme_parts))
 
-    zip_path = PROJECTS_DIR / f"{project_id}.zip"
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file in project_dir.rglob("*"):
-            if file.is_file():
-                arcname = file.relative_to(project_dir)
-                zf.write(file, arcname)
-
-    return str(zip_path)
-
-
-def get_project_zip_path(project_id: str) -> str | None:
-    zip_path = PROJECTS_DIR / f"{project_id}.zip"
-    if zip_path.exists():
-        return str(zip_path)
     return None
 
+def get_project_zip_path(project_id: str) -> str | None:
+    # Deprecated: zip files are streamed on the fly via ArtifactStore
+    return None
 
-def get_generated_files_list(project_id: str) -> list[dict]:
-    project_dir = PROJECTS_DIR / project_id
-    if not project_dir.exists():
-        return []
+async def get_generated_files_list(project_id: str) -> list[str]:
+    store = get_artifact_store()
+    return await store.list_files(project_id)
 
+async def get_generated_file_contents(project_id: str) -> list[dict]:
+    store = get_artifact_store()
+    file_paths = await store.list_files(project_id)
     files = []
-    for file in sorted(project_dir.rglob("*")):
-        if file.is_file():
-            rel_path = str(file.relative_to(project_dir))
-            size = file.stat().st_size
-            files.append({"path": rel_path, "size": size})
-    return files
-
-
-def get_generated_file_contents(project_id: str) -> list[dict]:
-    project_dir = PROJECTS_DIR / project_id
-    if not project_dir.exists():
-        return []
-
-    files = []
-    for file in sorted(project_dir.rglob("*")):
-        if file.is_file():
-            rel_path = str(file.relative_to(project_dir))
-            size = file.stat().st_size
-            content = ""
+    
+    for rel_path in sorted(file_paths):
+        try:
+            raw_bytes = await store.read_file(project_id, rel_path)
+            size = len(raw_bytes)
             try:
-                content = file.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
+                content = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError:
                 content = "(binary file)"
-            ext = file.suffix.lstrip(".")
-            lang_map = {
-                "py": "python", "js": "javascript", "ts": "typescript",
-                "tsx": "tsx", "jsx": "jsx", "html": "html", "css": "css",
-                "json": "json", "md": "markdown", "yml": "yaml", "yaml": "yaml",
-                "toml": "toml", "sql": "sql", "sh": "bash", "env": "bash",
-                "txt": "text", "cfg": "ini", "ini": "ini", "dockerfile": "dockerfile",
-            }
-            language = lang_map.get(ext, ext or "text")
-            files.append({
-                "path": rel_path,
-                "size": size,
-                "content": content,
-                "language": language,
-            })
+        except OSError:
+            content = "(error reading)"
+            size = 0
+            
+        ext = rel_path.split(".")[-1] if "." in rel_path else ""
+        lang_map = {
+            "py": "python", "js": "javascript", "ts": "typescript",
+            "tsx": "tsx", "jsx": "jsx", "html": "html", "css": "css",
+            "json": "json", "md": "markdown", "yml": "yaml", "yaml": "yaml",
+            "toml": "toml", "sql": "sql", "sh": "bash", "env": "bash",
+            "txt": "text", "cfg": "ini", "ini": "ini", "dockerfile": "dockerfile",
+        }
+        language = lang_map.get(ext, ext or "text")
+        files.append({
+            "path": rel_path,
+            "size": size,
+            "content": content,
+            "language": language,
+        })
     return files
+

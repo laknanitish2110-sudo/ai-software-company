@@ -41,6 +41,8 @@ class InMemoryCoordinator:
         self._budgets: Dict[str, Dict[str, int]] = {}
         self._subscribers: Dict[str, list[asyncio.Queue]] = {}
         self._cancellation_flags: Dict[str, float] = {}  # exec_id -> expire_ts
+        self._event_seqs: Dict[str, int] = {}
+        self._event_buffers: Dict[str, list[dict]] = {}
 
     def _clean(self):
         now = time.time()
@@ -50,6 +52,20 @@ class InMemoryCoordinator:
         expired_cancels = [k for k, exp in self._cancellation_flags.items() if exp < now]
         for k in expired_cancels:
             self._cancellation_flags.pop(k, None)
+
+    async def next_sequence(self, project_id: str) -> int:
+        if project_id not in self._event_seqs:
+            self._event_seqs[project_id] = 0
+            from app.core.database import get_execution_events_since
+            try:
+                db_events = await get_execution_events_since(project_id, last_seq=0)
+                max_seq = max([e.get("seq", 0) for e in db_events], default=0)
+                self._event_seqs[project_id] = max(self._event_seqs.get(project_id, 0), max_seq)
+            except Exception:
+                pass
+        seq = self._event_seqs.get(project_id, 0) + 1
+        self._event_seqs[project_id] = seq
+        return seq
 
     async def acquire_lock(self, project_id: str, ttl_seconds: int = 60) -> Optional[str]:
         self._clean()
@@ -79,6 +95,13 @@ class InMemoryCoordinator:
                 self._locks.pop(key, None)
                 return True
         return False
+
+    async def force_release_lock(self, project_id: str) -> bool:
+        """Unconditionally releases execution lock without token verification. For recovery worker use only."""
+        key = f"lock:execution:{project_id}"
+        removed = key in self._locks
+        self._locks.pop(key, None)
+        return removed
 
     def check_rate_limit(self, user_id: str, action: str = "run", limit: Optional[int] = None, window_seconds: Optional[int] = None) -> Tuple[bool, int]:
         window = window_seconds or RATE_LIMIT_WINDOW_SECONDS
@@ -117,15 +140,64 @@ class InMemoryCoordinator:
         self._clean()
         return execution_id in self._cancellation_flags
 
-    async def publish_event(self, project_id: str, event_type: str, data: dict):
+    async def publish_event_durable(self, project_id: str, event_type: str, data: dict, execution_id: Optional[str] = None) -> dict:
+        seq = await self.next_sequence(project_id)
+        event_id = uuid.uuid4().hex[:12]
+        ts = time.time()
+        event_payload = {
+            "type": event_type,
+            "project_id": project_id,
+            "execution_id": execution_id or "",
+            "seq": seq,
+            "event_id": event_id,
+            "timestamp": ts,
+            "data": data
+        }
+        buf = self._event_buffers.setdefault(project_id, [])
+        buf.append(event_payload)
+        if len(buf) > 1000:
+            buf.pop(0)
+
+        from app.core.database import save_execution_event
+        try:
+            await save_execution_event(project_id, execution_id, seq, event_type, data)
+        except Exception as e:
+            logger.debug(f"InMemory DB event save notice: {e}")
+
         channel = f"ws:project:{project_id}"
         queues = self._subscribers.get(channel, [])
-        payload = json.dumps({"type": event_type, "project_id": project_id, "data": data})
+        payload_str = json.dumps(event_payload)
         for q in list(queues):
             try:
-                q.put_nowait(payload)
+                q.put_nowait(payload_str)
             except Exception:
                 pass
+        return event_payload
+
+    async def publish_event(self, project_id: str, event_type: str, data: dict, execution_id: Optional[str] = None):
+        return await self.publish_event_durable(project_id, event_type, data, execution_id)
+
+    async def get_events_since(self, project_id: str, last_seq: int = 0) -> list[dict]:
+        buf = self._event_buffers.get(project_id, [])
+        events = [dict(e) for e in buf if e.get("seq", 0) > last_seq]
+        if not events:
+            from app.core.database import get_execution_events_since
+            try:
+                db_events = await get_execution_events_since(project_id, last_seq)
+                for d in db_events:
+                    events.append({
+                        "type": d["event_type"],
+                        "project_id": d["project_id"],
+                        "execution_id": d.get("execution_id", ""),
+                        "seq": d["seq"],
+                        "event_id": d["id"],
+                        "timestamp": d.get("created_at", ""),
+                        "data": d["data"]
+                    })
+            except Exception as e:
+                logger.debug(f"InMemory DB event fetch notice: {e}")
+        events.sort(key=lambda x: x.get("seq", 0))
+        return events
 
     async def subscribe_events(self, project_id: str) -> AsyncGenerator[str, None]:
         channel = f"ws:project:{project_id}"
@@ -146,6 +218,8 @@ class InMemoryCoordinator:
         self._budgets.clear()
         self._subscribers.clear()
         self._cancellation_flags.clear()
+        self._event_seqs.clear()
+        self._event_buffers.clear()
 
 
 class AwaitableBool:
@@ -301,6 +375,22 @@ class RedisCoordinator:
             logger.warning(f"Redis release_lock error: {e}")
             return await self._in_memory_fallback.release_lock(project_id, token)
 
+    async def force_release_lock(self, project_id: str) -> bool:
+        """Unconditionally deletes execution lock without token verification. For recovery worker use only."""
+        client = await self._get_client()
+        if client is None:
+            return await self._in_memory_fallback.force_release_lock(project_id)
+
+        key = f"lock:execution:{project_id}"
+        try:
+            res = await client.delete(key)
+            return bool(res)
+        except Exception as e:
+            if get_environment() == "production":
+                raise RedisUnavailableError(f"Production Redis error during force_release_lock: {e}")
+            logger.warning(f"Redis force_release_lock error: {e}")
+            return await self._in_memory_fallback.force_release_lock(project_id)
+
     async def check_rate_limit_async(self, user_id: str, action: str = "run", limit: Optional[int] = None, window_seconds: Optional[int] = None) -> Tuple[bool, int]:
         """Async sliding window rate limit check."""
         client = await self._get_client()
@@ -438,21 +528,123 @@ class RedisCoordinator:
             sync_func=lambda: self._is_cancelled_sync(execution_id)
         )
 
-    async def publish_event(self, project_id: str, event_type: str, data: dict):
-        """Publishes JSON event payload to Redis Pub/Sub channel ws:project:{project_id}."""
+    async def next_sequence(self, project_id: str) -> int:
+        """Atomically increments sequence counter for project_id in Redis with DB sync fallback."""
         client = await self._get_client()
         if client is None:
-            return await self._in_memory_fallback.publish_event(project_id, event_type, data)
-
-        channel = f"ws:project:{project_id}"
-        payload = json.dumps({"type": event_type, "project_id": project_id, "data": data})
+            return await self._in_memory_fallback.next_sequence(project_id)
+        key = f"events:seq:{project_id}"
         try:
-            await client.publish(channel, payload)
+            seq = await client.incr(key)
+            if seq == 1:
+                from app.core.database import get_execution_events_since
+                try:
+                    db_events = await get_execution_events_since(project_id, last_seq=0)
+                    max_seq = max([e.get("seq", 0) for e in db_events], default=0)
+                    if max_seq > 0:
+                        new_seq = max_seq + 1
+                        await client.set(key, str(new_seq))
+                        return new_seq
+                except Exception as sync_err:
+                    logger.debug(f"DB max seq sync notice: {sync_err}")
+            return seq
         except Exception as e:
             if get_environment() == "production":
-                raise RedisUnavailableError(f"Production Redis error during publish_event: {e}")
-            logger.warning(f"Redis publish_event error: {e}")
-            return await self._in_memory_fallback.publish_event(project_id, event_type, data)
+                raise RedisUnavailableError(f"Production Redis error during next_sequence: {e}")
+            logger.warning(f"Redis next_sequence error: {e}")
+            return await self._in_memory_fallback.next_sequence(project_id)
+
+    async def publish_event_durable(self, project_id: str, event_type: str, data: dict, execution_id: Optional[str] = None) -> dict:
+        """
+        Atomically assigns sequence number, persists event to DB and Redis Stream,
+        and broadcasts via Redis Pub/Sub.
+        """
+        client = await self._get_client()
+        if client is None:
+            return await self._in_memory_fallback.publish_event_durable(project_id, event_type, data, execution_id)
+
+        seq = await self.next_sequence(project_id)
+        event_id = uuid.uuid4().hex[:12]
+        ts = time.time()
+
+        event_payload = {
+            "type": event_type,
+            "project_id": project_id,
+            "execution_id": execution_id or "",
+            "seq": seq,
+            "event_id": event_id,
+            "timestamp": ts,
+            "data": data
+        }
+
+        # 1. DB Persistence
+        from app.core.database import save_execution_event
+        try:
+            await save_execution_event(project_id, execution_id, seq, event_type, data)
+        except Exception as db_err:
+            logger.error(f"Failed to persist execution event to DB: {db_err}")
+
+        # 2. Redis Stream & PubSub
+        stream_key = f"events:stream:{project_id}"
+        channel = f"ws:project:{project_id}"
+        payload_str = json.dumps(event_payload)
+        try:
+            await client.xadd(stream_key, {"payload": payload_str}, maxlen=1000, approximate=True)
+            await client.expire(stream_key, 86400)
+            await client.publish(channel, payload_str)
+        except Exception as e:
+            if get_environment() == "production":
+                raise RedisUnavailableError(f"Production Redis error during publish_event_durable: {e}")
+            logger.warning(f"Redis publish_event_durable error: {e}")
+            return await self._in_memory_fallback.publish_event_durable(project_id, event_type, data, execution_id)
+
+        return event_payload
+
+    async def publish_event(self, project_id: str, event_type: str, data: dict, execution_id: Optional[str] = None):
+        """Publishes JSON event payload with durability and sequence ordering."""
+        return await self.publish_event_durable(project_id, event_type, data, execution_id)
+
+    async def get_events_since(self, project_id: str, last_seq: int = 0) -> list[dict]:
+        """
+        Fetches historical missed events for project_id with sequence > last_seq.
+        Reads from Redis Stream first, falling back to database.
+        """
+        client = await self._get_client()
+        if client is None:
+            return await self._in_memory_fallback.get_events_since(project_id, last_seq)
+
+        stream_key = f"events:stream:{project_id}"
+        events = []
+        try:
+            raw_entries = await client.xrange(stream_key, min="-", max="+")
+            for _id, entry_dict in raw_entries:
+                payload_str = entry_dict.get("payload")
+                if payload_str:
+                    ev = json.loads(payload_str)
+                    if ev.get("seq", 0) > last_seq:
+                        events.append(ev)
+        except Exception as e:
+            logger.warning(f"Redis get_events_since stream read notice: {e}")
+
+        if not events:
+            from app.core.database import get_execution_events_since
+            try:
+                db_events = await get_execution_events_since(project_id, last_seq)
+                for d in db_events:
+                    events.append({
+                        "type": d["event_type"],
+                        "project_id": d["project_id"],
+                        "execution_id": d.get("execution_id", ""),
+                        "seq": d["seq"],
+                        "event_id": d["id"],
+                        "timestamp": d.get("created_at", ""),
+                        "data": d["data"]
+                    })
+            except Exception as db_err:
+                logger.error(f"DB get_execution_events_since error: {db_err}")
+
+        events.sort(key=lambda x: x.get("seq", 0))
+        return events
 
     async def subscribe_events(self, project_id: str) -> AsyncGenerator[str, None]:
         """Subscribes to Redis Pub/Sub channel ws:project:{project_id} yielding messages."""

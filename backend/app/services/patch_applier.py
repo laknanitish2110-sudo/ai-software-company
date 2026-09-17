@@ -1,7 +1,6 @@
 import os
 import time
 import logging
-from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 
 from app.models.execution_schema import (
@@ -10,7 +9,7 @@ from app.models.execution_schema import (
     PatchApplyResult,
     ProjectSnapshot
 )
-from app.services.file_generator import PROJECTS_DIR
+from app.core.artifact_store import get_artifact_store
 from app.agents.fixer import compute_patch_hash, MAX_PATCH_FILES, MAX_FILE_PATCH_CHARS, ALLOWED_ACTIONS
 
 logger = logging.getLogger(__name__)
@@ -21,29 +20,24 @@ class PatchApplier:
     Dedicated service for safely applying LLM-generated targeted patches.
     Enforces atomic file writes, filesystem boundary security, and snapshot rollback capabilities.
     """
-    def create_snapshot(self, project_id: str, memory_files: List[dict]) -> ProjectSnapshot:
+    async def create_snapshot(self, project_id: str, memory_files: List[dict]) -> ProjectSnapshot:
         """Captures a pre-patch snapshot of project files for rollback."""
         files_backup = {}
-
-        # 1. Capture memory files
+        store = get_artifact_store()
+        
+        # Capture memory files (and their disk state)
         if isinstance(memory_files, list):
             for f in memory_files:
                 if isinstance(f, dict) and f.get("path"):
                     norm = f["path"].lstrip("/").lstrip("\\").replace("\\", "/")
-                    files_backup[norm] = f.get("content", "")
-
-        # 2. Capture disk files if project directory exists
-        project_dir = (PROJECTS_DIR / project_id).resolve()
-        if project_dir.exists():
-            for root, _, files in os.walk(project_dir):
-                for fname in files:
-                    full_p = Path(root) / fname
-                    if full_p.is_file():
+                    if await store.file_exists(project_id, norm):
                         try:
-                            rel = full_p.relative_to(project_dir).as_posix()
-                            files_backup[rel] = full_p.read_text(encoding="utf-8", errors="ignore")
+                            raw = await store.read_file(project_id, norm)
+                            files_backup[norm] = raw.decode("utf-8")
                         except Exception:
-                            pass
+                            files_backup[norm] = f.get("content", "")
+                    else:
+                        files_backup[norm] = f.get("content", "")
 
         return ProjectSnapshot(
             project_id=project_id,
@@ -51,22 +45,17 @@ class PatchApplier:
             files_backup=files_backup
         )
 
-    def rollback_snapshot(self, project_id: str, snapshot: ProjectSnapshot, memory_files: List[dict]) -> List[dict]:
+    async def rollback_snapshot(self, project_id: str, snapshot: ProjectSnapshot, memory_files: List[dict]) -> List[dict]:
         """Restores project files on disk and memory back to the snapshot state."""
         logger.info(f"Rolling back project {project_id} to snapshot taken at {snapshot.timestamp}")
-        
-        project_dir = (PROJECTS_DIR / project_id).resolve()
+        store = get_artifact_store()
         
         # 1. Restore disk files
-        if project_dir.exists():
-            for rel_path, content in snapshot.files_backup.items():
-                try:
-                    target_file = (project_dir / rel_path).resolve()
-                    if target_file.is_relative_to(project_dir):
-                        target_file.parent.mkdir(parents=True, exist_ok=True)
-                        target_file.write_text(content, encoding="utf-8")
-                except Exception as e:
-                    logger.error(f"Rollback file write error for {rel_path}: {e}")
+        for rel_path, content in snapshot.files_backup.items():
+            try:
+                await store.write_file(project_id, rel_path, content)
+            except Exception as e:
+                logger.error(f"Rollback file write error for {rel_path}: {e}")
 
         # 2. Restore memory files array
         restored_memory = []
@@ -84,7 +73,7 @@ class PatchApplier:
         execution_id: Optional[str] = None
     ) -> Tuple[PatchApplyResult, List[dict]]:
         
-        # Correction 6: Cancellation checkpoint immediately before patch application
+        # Cancellation checkpoint immediately before patch application
         if execution_id:
             from app.services.redis_coordinator import redis_coordinator
             from app.services.task_queue import ExecutionCancelledError
@@ -105,7 +94,6 @@ class PatchApplier:
             errors.append(f"Patch exceeds max changed files limit ({MAX_PATCH_FILES})")
 
         seen_paths = set()
-        project_dir = (PROJECTS_DIR / project_id).resolve()
 
         if patch_result:
             for change in patch_result.changes:
@@ -126,11 +114,6 @@ class PatchApplier:
                 if len(change.content or "") > MAX_FILE_PATCH_CHARS:
                     errors.append(f"File content exceeds {MAX_FILE_PATCH_CHARS} limit for path: {raw_path}")
 
-                # Filesystem Boundary Gate
-                target_file = (project_dir / norm_path).resolve()
-                if project_dir.exists() and not target_file.is_relative_to(project_dir):
-                    errors.append(f"Target path escapes project root: {raw_path}")
-
         # If ANY validation error occurs, ABORT IMMEDIATELY (Atomicity guarantee: 0 files written)
         if errors:
             logger.warning(f"Patch application rejected for project {project_id}: {errors}")
@@ -139,6 +122,9 @@ class PatchApplier:
                 attempt=attempt,
                 errors=errors
             ), memory_files
+
+        # 1. Capture snapshot before applying
+        snapshot = await self.create_snapshot(project_id, memory_files)
 
         # Step 2: Atomic Execution Phase
         modified_files = []
@@ -152,19 +138,19 @@ class PatchApplier:
         }
 
         patch_hash = compute_patch_hash(patch_result.changes)
+        store = get_artifact_store()
+        apply_errors = []
 
         for change in patch_result.changes:
             norm_path = change.path.lstrip("/").lstrip("\\").replace("\\", "/")
             new_content = change.content
 
-            # Write to disk if project directory exists
-            if project_dir.exists():
-                try:
-                    target_file = (project_dir / norm_path).resolve()
-                    target_file.parent.mkdir(parents=True, exist_ok=True)
-                    target_file.write_text(new_content, encoding="utf-8")
-                except Exception as write_err:
-                    logger.error(f"Failed writing file {norm_path}: {write_err}")
+            try:
+                await store.write_file(project_id, norm_path, new_content)
+            except Exception as write_err:
+                logger.error(f"Failed writing file {norm_path}: {write_err}")
+                apply_errors.append(f"Failed writing {norm_path}")
+                break # Stop on first error
 
             # Update memory files
             if norm_path in memory_index:
@@ -174,6 +160,11 @@ class PatchApplier:
             else:
                 updated_memory.append({"path": norm_path, "content": new_content})
                 created_files.append(norm_path)
+
+        if apply_errors:
+            logger.warning(f"Patch apply failed midway for {project_id}, rolling back. Errors: {apply_errors}")
+            updated_memory = await self.rollback_snapshot(project_id, snapshot, memory_files)
+            return PatchApplyResult(status="REJECTED", attempt=attempt, errors=apply_errors), updated_memory
 
         res = PatchApplyResult(
             status="APPLIED",

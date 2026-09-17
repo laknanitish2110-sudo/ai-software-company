@@ -11,7 +11,7 @@ import aiosqlite
 import json
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, List, Optional, Dict
 
 from app.core.config import DATABASE_PATH, DATABASE_URL
@@ -58,6 +58,22 @@ class DBCursorWrapper:
                 return [dict(r) for r in self.raw]
             return []
 
+    @property
+    def rowcount(self) -> int:
+        if self.backend_type == "sqlite":
+            return getattr(self.raw, "rowcount", 0)
+        else:
+            if isinstance(self.raw, list):
+                return len(self.raw)
+            elif isinstance(self.raw, str):
+                parts = self.raw.strip().split()
+                if parts:
+                    try:
+                        return int(parts[-1])
+                    except ValueError:
+                        return 0
+            return 0
+
 
 class DBWrapper:
     """Unified Database Connection Wrapper abstracting SQLite & PostgreSQL."""
@@ -78,7 +94,7 @@ class DBWrapper:
             return DBCursorWrapper("sqlite", cursor)
         else:
             pg_sql = self._to_pg_sql(sql)
-            if pg_sql.strip().upper().startswith("SELECT"):
+            if pg_sql.strip().upper().startswith("SELECT") or "RETURNING" in pg_sql.strip().upper():
                 rows = await self.conn.fetch(pg_sql, *params)
                 return DBCursorWrapper("postgres", rows)
             else:
@@ -114,6 +130,13 @@ class DBWrapper:
 
     def _to_pg_sql(self, sql: str) -> str:
         """Translates SQLite query dialect to PostgreSQL syntax."""
+        # Translate INSERT OR IGNORE (SQLite-only) to INSERT ... ON CONFLICT DO NOTHING (PostgreSQL-compatible)
+        if "INSERT OR IGNORE INTO" in sql:
+            sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+            if "ON CONFLICT" not in sql:
+                # Append ON CONFLICT DO NOTHING before any trailing semicolon
+                sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+
         if "?" in sql:
             parts = sql.split("?")
             res = []
@@ -122,9 +145,9 @@ class DBWrapper:
                 res.append(f"${i+1}")
             res.append(parts[-1])
             sql = "".join(res)
-        
-        # Dialect adjustments
-        sql = sql.replace("ON CONFLICT DO NOTHING", "ON CONFLICT (project_id, agent_role) DO NOTHING")
+
+        # Note: Bare "ON CONFLICT DO NOTHING" (without column specification) is valid
+        # PostgreSQL 9.5+ syntax. No column target rewriting is needed for DO NOTHING.
         return sql
 
 
@@ -205,6 +228,19 @@ async def init_db():
                     FOREIGN KEY (project_id) REFERENCES projects(id),
                     UNIQUE(project_id, key)
                 );
+
+                CREATE TABLE IF NOT EXISTS execution_events (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    execution_id TEXT,
+                    seq INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    data TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (project_id) REFERENCES projects(id),
+                    UNIQUE(project_id, seq)
+                );
+                CREATE INDEX IF NOT EXISTS idx_exec_events_proj_seq ON execution_events(project_id, seq);
             """)
         else:
             # PostgreSQL DDL
@@ -266,6 +302,18 @@ async def init_db():
                     updated_at TEXT NOT NULL,
                     CONSTRAINT unq_mem_proj_key UNIQUE(project_id, key)
                 );
+
+                CREATE TABLE IF NOT EXISTS execution_events (
+                    id VARCHAR(255) PRIMARY KEY,
+                    project_id VARCHAR(255) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    execution_id VARCHAR(255),
+                    seq INTEGER NOT NULL,
+                    event_type VARCHAR(255) NOT NULL,
+                    data TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    CONSTRAINT unq_exec_events_proj_seq UNIQUE(project_id, seq)
+                );
+                CREATE INDEX IF NOT EXISTS idx_exec_events_proj_seq ON execution_events(project_id, seq);
             """)
         await db.commit()
     finally:
@@ -373,6 +421,7 @@ async def delete_project(project_id: str, user_id: str) -> bool:
         if not await cursor.fetchone():
             return False
         
+        await db.execute("DELETE FROM execution_events WHERE project_id = ?", (project_id,))
         await db.execute("DELETE FROM shared_memory WHERE project_id = ?", (project_id,))
         await db.execute("DELETE FROM conversations WHERE project_id = ?", (project_id,))
         await db.execute("DELETE FROM agent_outputs WHERE project_id = ?", (project_id,))
@@ -417,6 +466,38 @@ async def update_output_status(output_id: str, status: str):
     try:
         await db.execute("UPDATE agent_outputs SET status = ? WHERE id = ?", (status, output_id))
         await db.commit()
+    finally:
+        await db.close()
+
+
+async def update_output_status_atomic(
+    output_id: str,
+    project_id: str,
+    new_status: str,
+    expected_status: str = "pending",
+) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "UPDATE agent_outputs SET status = ? WHERE id = ? AND project_id = ? AND status = ?",
+            (new_status, output_id, project_id, expected_status),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def update_agent_output_content(output_id: str, project_id: str, content: dict) -> bool:
+    db = await get_db()
+    try:
+        content_str = json.dumps(content) if isinstance(content, dict) else str(content)
+        cursor = await db.execute(
+            "UPDATE agent_outputs SET content = ? WHERE id = ? AND project_id = ?",
+            (content_str, output_id, project_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
     finally:
         await db.close()
 
@@ -558,3 +639,128 @@ async def list_projects(user_id: str | None = None) -> list[dict]:
         return rows
     finally:
         await db.close()
+
+
+async def save_execution_event(project_id: str, execution_id: Optional[str], seq: int, event_type: str, data: dict) -> dict:
+    db = await get_db()
+    try:
+        event_id = new_id()
+        ts = now_iso()
+        data_json = json.dumps(data)
+        if db.backend_type == "sqlite":
+            await db.execute(
+                """INSERT INTO execution_events (id, project_id, execution_id, seq, event_type, data, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(project_id, seq) DO NOTHING""",
+                (event_id, project_id, execution_id or "", seq, event_type, data_json, ts)
+            )
+        else:
+            await db.execute(
+                """INSERT INTO execution_events (id, project_id, execution_id, seq, event_type, data, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (project_id, seq) DO NOTHING""",
+                (event_id, project_id, execution_id or "", seq, event_type, data_json, ts)
+            )
+        await db.commit()
+        return {
+            "id": event_id,
+            "project_id": project_id,
+            "execution_id": execution_id or "",
+            "seq": seq,
+            "event_type": event_type,
+            "data": data,
+            "created_at": ts
+        }
+    finally:
+        await db.close()
+
+
+async def get_execution_events_since(project_id: str, last_seq: int = 0) -> List[dict]:
+    db = await get_db()
+    try:
+        cur = await db.execute(
+            """SELECT id, project_id, execution_id, seq, event_type, data, created_at
+               FROM execution_events
+               WHERE project_id = ? AND seq > ?
+               ORDER BY seq ASC""",
+            (project_id, last_seq)
+        )
+        rows = await cur.fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            try:
+                if isinstance(d.get("data"), str):
+                    d["data"] = json.loads(d["data"])
+            except Exception:
+                pass
+            result.append(d)
+        return result
+    finally:
+        await db.close()
+
+
+async def claim_and_recover_stale_executions(stale_running_seconds: int = 30, stale_queued_seconds: int = 300) -> List[dict]:
+    """
+    Atomically claims and recovers stale RUNNING, CANCELLING, and QUEUED executions across PostgreSQL and SQLite.
+    Prevents race conditions when multiple recovery workers run concurrently.
+    """
+    db = await get_db()
+    try:
+        now = datetime.now(timezone.utc)
+        running_cutoff = (now - timedelta(seconds=stale_running_seconds)).isoformat()
+        queued_cutoff = (now - timedelta(seconds=stale_queued_seconds)).isoformat()
+
+        claimed = []
+        if db.backend_type == "postgres":
+            # Intentionally bypasses DBWrapper.execute() to use PostgreSQL-specific
+            # FOR UPDATE SKIP LOCKED + subquery + RETURNING — features with no SQLite
+            # equivalent. The SQL uses native $N positional placeholders directly.
+            sql = """
+                UPDATE executions
+                SET status = CASE 
+                        WHEN status = 'CANCELLING' THEN 'CANCELLED'
+                        ELSE 'RECOVERABLE'
+                    END,
+                    completed_at = $1
+                WHERE id IN (
+                    SELECT id FROM executions
+                    WHERE (status IN ('RUNNING', 'CANCELLING') AND (last_heartbeat IS NULL OR last_heartbeat < $2))
+                       OR (status = 'QUEUED' AND created_at < $3)
+                    FOR UPDATE SKIP LOCKED
+                )
+                RETURNING id, project_id, status, user_id;
+            """
+            rows = await db.conn.fetch(sql, now.isoformat(), running_cutoff, queued_cutoff)
+            claimed = [dict(r) for r in rows]
+        else:
+            cur = await db.execute(
+                """SELECT id, project_id, status, user_id FROM executions
+                   WHERE (status IN ('RUNNING', 'CANCELLING') AND (last_heartbeat IS NULL OR last_heartbeat < ?))
+                      OR (status = 'QUEUED' AND created_at < ?)""",
+                (running_cutoff, queued_cutoff)
+            )
+            rows = await cur.fetchall()
+            for r in rows:
+                exec_id = r["id"]
+                proj_id = r["project_id"]
+                st = r["status"]
+                new_st = "CANCELLED" if st == "CANCELLING" else "RECOVERABLE"
+                await db.execute(
+                    "UPDATE executions SET status = ?, completed_at = ? WHERE id = ? AND status = ?",
+                    (new_st, now.isoformat(), exec_id, st)
+                )
+                claimed.append({"id": exec_id, "project_id": proj_id, "status": new_st, "user_id": r["user_id"]})
+
+        if claimed:
+            for c in claimed:
+                p_id = c["project_id"]
+                await db.execute(
+                    "UPDATE projects SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('completed', 'failed', 'cancelled')",
+                    ("failed", now.isoformat(), p_id)
+                )
+            await db.commit()
+        return claimed
+    finally:
+        await db.close()
+

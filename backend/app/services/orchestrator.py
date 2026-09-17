@@ -12,6 +12,8 @@ from app.core.database import (
     update_project_status,
     save_agent_output,
     update_output_status,
+    update_output_status_atomic,
+    update_agent_output_content,
     get_latest_output,
     set_memory,
     get_memory,
@@ -52,11 +54,11 @@ class Orchestrator:
     def set_ws_callback(self, callback: WSCallback):
         self._ws_callback = callback
 
-    async def _notify(self, msg_type: str, project_id: str, data: dict):
+    async def _notify(self, msg_type: str, project_id: str, data: dict, execution_id: Optional[str] = None):
         if self._ws_callback:
             await self._ws_callback(msg_type, project_id, data)
         try:
-            await redis_coordinator.publish_event(project_id, msg_type, data)
+            await redis_coordinator.publish_event(project_id, msg_type, data, execution_id=execution_id)
         except Exception:
             pass
 
@@ -182,6 +184,8 @@ class Orchestrator:
         })
 
         async def _run():
+            heartbeat = None
+            token = None
             try:
                 if exec_id and await redis_coordinator.is_cancelled(exec_id):
                     from app.services.task_queue import ExecutionCancelledError
@@ -226,6 +230,15 @@ class Orchestrator:
                         plan = validate_and_detect_execution_plan(eng_content)
                         files = eng_content.get("files", [])
                         
+                        # P2 Workspace Consistency: Reconstruct workspace cleanly from canonical Engineer files
+                        from app.core.artifact_store import get_artifact_store
+                        store = get_artifact_store()
+                        await store.delete_project(project_id)
+                        if isinstance(files, list):
+                            for f in files:
+                                if isinstance(f, dict) and f.get("path") and f.get("content") is not None:
+                                    await store.write_file(project_id, f["path"], f["content"])
+                        
                         ba_out = await get_latest_output(project_id, AgentRole.BUSINESS_ANALYST.value)
                         ba_content = ba_out.get("content", {}) if ba_out else {}
                         dod = parse_or_convert_dod(ba_content, plan)
@@ -246,6 +259,7 @@ class Orchestrator:
                             problem_statement=project.get("problem_statement", "") if 'project' in locals() else "",
                             engineer_output=eng_content,
                             architect_output=arch_content,
+                            ba_output=ba_content,
                             notify_cb=notify_bridge,
                             execution_id=exec_id
                         )
@@ -253,18 +267,34 @@ class Orchestrator:
                         val_json = final_val_res.model_dump_json() if hasattr(final_val_res, "model_dump_json") else json.dumps(final_val_res.dict())
                         await set_memory(project_id, "final_validation_result", val_json, "repair_loop")
 
+                        if final_val_res.final_status == "VALIDATED" and final_val_res.final_files:
+                            eng_content["files"] = final_val_res.final_files
+                            output["content"] = eng_content
+                            await update_agent_output_content(output["id"], project_id, eng_content)
+
                         await self._notify("sandbox_completed", project_id, {
                             "role": "sandbox",
                             "status": final_val_res.final_status,
                             "attempts_used": final_val_res.attempts_used,
                             "message": f"Repair Loop finished ({final_val_res.final_status}) after {final_val_res.attempts_used} attempt(s): {final_val_res.reason}"
                         })
+
+                        if final_val_res.final_status != "VALIDATED":
+                            logger.warning(f"Repair loop failed for project {project_id} ({final_val_res.final_status}). Setting project status FAILED.")
+                            await update_project_status(project_id, ProjectStatus.FAILED.value)
+                            await self._notify("error", project_id, {
+                                "role": "sandbox",
+                                "message": f"Software repair/validation failed ({final_val_res.final_status}): {final_val_res.reason}"
+                            })
+                            return
                     except Exception as sbx_err:
                         logger.warning(f"Sandbox/QA repair loop execution failed: {sbx_err}")
                         await self._notify("error", project_id, {
                             "role": "sandbox",
                             "message": f"Sandbox/QA execution error: {str(sbx_err)}"
                         })
+                        await update_project_status(project_id, ProjectStatus.FAILED.value)
+                        return
 
                 review_status = REVIEW_STAGES.get(role)
                 if review_status:
@@ -298,8 +328,8 @@ class Orchestrator:
                 elif role == AgentRole.PPT:
                     if isinstance(output["content"], dict):
                         try:
-                            pptx_path = generate_pptx(project_id, output["content"])
-                            await self._notify("pptx_generated", project_id, {
+                            pptx_path = await generate_pptx(project_id, output["content"])
+                            await self._notify("files_generated", project_id, {
                                 "message": "Presentation (.pptx) generated and ready for download!"
                             })
                         except Exception as e:
@@ -311,8 +341,8 @@ class Orchestrator:
                         all_outputs = await get_project_outputs(project_id)
                         all_memory = await get_mem(project_id)
                         proj = await get_project(project_id)
-                        docx_path = generate_docx(project_id, proj, all_outputs, all_memory)
-                        await self._notify("docx_generated", project_id, {
+                        docx_path = await generate_docx(project_id, proj, all_outputs, all_memory)
+                        await self._notify("files_generated", project_id, {
                             "message": "Project report (.docx) generated and ready for download!"
                         })
                     except Exception as e:
@@ -376,7 +406,10 @@ class Orchestrator:
             exec_id = mem.get("active_execution_id")
 
         if approved:
-            await update_output_status(output_id, "approved")
+            updated = await update_output_status_atomic(output_id, project_id, "approved")
+            if not updated:
+                logger.info(f"Approval for output {output_id} already handled.")
+                return
 
             project = await get_project(project_id)
             if not project:
@@ -404,13 +437,31 @@ class Orchestrator:
             elif status == ProjectStatus.ARCHITECT_REVIEW.value:
                 next_role = AgentRole.ENGINEER
             elif status == ProjectStatus.ENGINEER_REVIEW.value:
+                mem = await get_memory(project_id)
+                val_json = mem.get("final_validation_result")
+                is_validated = False
+                if val_json:
+                    try:
+                        val_data = json.loads(val_json)
+                        if isinstance(val_data, dict) and val_data.get("final_status") == "VALIDATED":
+                            is_validated = True
+                    except Exception:
+                        pass
+                if not is_validated:
+                    logger.warning(f"Approval rejected for project {project_id}: final validation result is not VALIDATED.")
+                    await update_project_status(project_id, ProjectStatus.FAILED.value)
+                    await self._notify("error", project_id, {
+                        "message": "Approval rejected: Software validation did not achieve VALIDATED status."
+                    })
+                    return
+
                 engineer_output = await get_latest_output(project_id, AgentRole.ENGINEER.value)
                 if engineer_output and isinstance(engineer_output.get("content"), dict):
                     content = engineer_output["content"]
                     if content.get("files"):
                         try:
-                            zip_path = generate_project_files(project_id, content)
-                            files_list = get_generated_files_list(project_id)
+                            zip_path = await generate_project_files(project_id, content)
+                            files_list = await get_generated_files_list(project_id)
                             await self._notify("files_generated", project_id, {
                                 "message": f"Project files generated! {len(files_list)} files ready for download.",
                                 "files": files_list,
@@ -421,7 +472,7 @@ class Orchestrator:
                             })
                     if content.get("n8n_workflow"):
                         try:
-                            wf_path = generate_workflow_json(project_id, content)
+                            wf_path = await generate_workflow_json(project_id, content)
                             if wf_path:
                                 await self._notify("workflow_generated", project_id, {
                                     "message": "n8n workflow JSON generated! Ready for import into n8n.",
@@ -438,7 +489,10 @@ class Orchestrator:
                 })
                 await self._start_next_agent(project_id, next_role, execution_id=exec_id)
         else:
-            await update_output_status(output_id, "rejected")
+            updated = await update_output_status_atomic(output_id, project_id, "rejected")
+            if not updated:
+                logger.info(f"Rejection for output {output_id} already handled.")
+                return
 
             project = await get_project(project_id)
             if not project:

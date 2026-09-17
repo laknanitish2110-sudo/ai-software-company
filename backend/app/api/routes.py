@@ -1,6 +1,8 @@
 import json
 import logging
+import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from app.services.redis_coordinator import redis_coordinator
 
 logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse
@@ -117,7 +119,8 @@ async def ws_broadcast(msg_type: str, project_id: str, data: dict):
 orchestrator.set_ws_callback(ws_broadcast)
 
 
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from app.core.artifact_store import get_artifact_store
 from app.services.rate_limiter import rate_limiter
 from app.services.resource_budget import resource_budget, ResourceBudgetExceededError
 
@@ -346,67 +349,100 @@ async def get_agent_introspection(project_id: str, role: str, current_user: dict
 @router.get("/projects/{project_id}/download/code")
 async def download_code(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
-    zip_path = get_project_zip_path(project_id)
-    if not zip_path:
+    store = get_artifact_store()
+    try:
+        archive_gen = store.get_project_archive(project_id)
+        return StreamingResponse(
+            archive_gen,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename=project-{project_id}.zip"}
+        )
+    except Exception:
         zip_path = get_demo_deliverable("zip")
-    if not zip_path:
-        raise HTTPException(404, "No generated files found. Engineer must complete first.")
-    return FileResponse(
-        zip_path,
-        media_type="application/zip",
-        filename=f"project-{project_id}.zip",
-    )
+        if not zip_path:
+            raise HTTPException(404, "No generated files found. Engineer must complete first.")
+        
+        async def file_sender(path):
+            with open(path, "rb") as f:
+                yield f.read()
+                
+        return StreamingResponse(
+            file_sender(zip_path),
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename=project-{project_id}.zip"}
+        )
 
 
 @router.get("/projects/{project_id}/download/pptx")
 async def download_pptx(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
-    pptx_path = get_pptx_path(project_id)
-    if not pptx_path:
-        pptx_path = get_demo_deliverable("pptx")
-    if not pptx_path:
-        raise HTTPException(404, "No presentation found. PPT agent must complete first.")
-    return FileResponse(
-        pptx_path,
+    store = get_artifact_store()
+    
+    async def yield_artifact_or_demo(p_id, a_path, demo_type):
+        if await store.file_exists(p_id, a_path):
+            yield await store.read_file(p_id, a_path)
+        else:
+            demo_path = get_demo_deliverable(demo_type)
+            if not demo_path:
+                raise HTTPException(404, f"No {demo_type} found.")
+            with open(demo_path, "rb") as f:
+                yield f.read()
+
+    return StreamingResponse(
+        yield_artifact_or_demo(project_id, "presentation.pptx", "pptx"),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename=f"project-{project_id}-presentation.pptx",
+        headers={"Content-Disposition": f"attachment; filename=project-{project_id}-presentation.pptx"}
     )
 
 
 @router.get("/projects/{project_id}/download/docx")
 async def download_docx(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
-    docx_path = get_docx_path(project_id)
-    if not docx_path:
-        docx_path = get_demo_deliverable("docx")
-    if not docx_path:
-        raise HTTPException(404, "No report found. Project must complete first.")
-    return FileResponse(
-        docx_path,
+    store = get_artifact_store()
+    
+    async def yield_artifact_or_demo(p_id, a_path, demo_type):
+        if await store.file_exists(p_id, a_path):
+            yield await store.read_file(p_id, a_path)
+        else:
+            demo_path = get_demo_deliverable(demo_type)
+            if not demo_path:
+                raise HTTPException(404, f"No {demo_type} found.")
+            with open(demo_path, "rb") as f:
+                yield f.read()
+
+    return StreamingResponse(
+        yield_artifact_or_demo(project_id, "report.docx", "docx"),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=f"project-{project_id}-report.docx",
+        headers={"Content-Disposition": f"attachment; filename=project-{project_id}-report.docx"}
     )
 
 
 @router.get("/projects/{project_id}/download/workflow")
 async def download_workflow(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
-    wf_path = get_workflow_json_path(project_id)
-    if not wf_path:
-        wf_path = get_demo_deliverable("workflow")
-    if not wf_path:
-        raise HTTPException(404, "No workflow JSON found. Engineer must complete with deliverable_type 'workflow' or 'hybrid'.")
-    return FileResponse(
-        wf_path,
+    store = get_artifact_store()
+    
+    async def yield_artifact_or_demo(p_id, a_path, demo_type):
+        if await store.file_exists(p_id, a_path):
+            yield await store.read_file(p_id, a_path)
+        else:
+            demo_path = get_demo_deliverable(demo_type)
+            if not demo_path:
+                raise HTTPException(404, f"No {demo_type} found.")
+            with open(demo_path, "rb") as f:
+                yield f.read()
+
+    return StreamingResponse(
+        yield_artifact_or_demo(project_id, "n8n_workflow.json", "workflow"),
         media_type="application/json",
-        filename=f"project-{project_id}-workflow.json",
+        headers={"Content-Disposition": f"attachment; filename=project-{project_id}-workflow.json"}
     )
 
 
 @router.get("/projects/{project_id}/files")
 async def list_generated_files(project_id: str, current_user: dict = Depends(get_current_user)):
     await _verify_project_owner(project_id, current_user["id"])
-    files = get_generated_files_list(project_id)
+    files = await get_generated_files_list(project_id)
     return {"project_id": project_id, "files": files, "count": len(files)}
 
 
@@ -515,16 +551,16 @@ async def load_demo_cache():
                 if isinstance(raw_files, dict):
                     eng["files"] = [{"path": p, "content": c} for p, c in raw_files.items() if isinstance(c, str)]
                 try:
-                    generate_project_files(pid, eng)
+                    await generate_project_files(pid, eng)
                 except Exception:
                     pass
                 try:
-                    generate_workflow_json(pid, eng)
+                    await generate_workflow_json(pid, eng)
                 except Exception:
                     pass
             if out.get("role") == "ppt" and isinstance(out.get("content"), dict):
                 try:
-                    generate_pptx(pid, out["content"])
+                    await generate_pptx(pid, out["content"])
                 except Exception:
                     pass
         try:
@@ -592,8 +628,16 @@ async def workflow_detail(workflow_id: int):
 
 
 @router.websocket("/ws/{project_id}")
-async def websocket_endpoint(websocket: WebSocket, project_id: str, token: str | None = None):
+async def websocket_endpoint(websocket: WebSocket, project_id: str, token: str | None = None, last_seq: int | None = None):
     token_str = token or websocket.query_params.get("token")
+    last_seq_param = last_seq
+    if last_seq_param is None:
+        try:
+            raw_seq = websocket.query_params.get("last_seq")
+            last_seq_param = int(raw_seq) if raw_seq is not None else 0
+        except (ValueError, TypeError):
+            last_seq_param = 0
+
     user_id = None
     if token_str:
         payload = decode_access_token(token_str)
@@ -617,17 +661,77 @@ async def websocket_endpoint(websocket: WebSocket, project_id: str, token: str |
         active_connections[project_id] = []
     active_connections[project_id].append(websocket)
 
+    highest_replayed_seq = last_seq_param
+    replay_ready = asyncio.Event()
+
     async def _forward_redis_events():
+        nonlocal highest_replayed_seq
+        pending_live_events = []
         try:
             async for event_msg in redis_coordinator.subscribe_events(project_id):
-                await websocket.send_text(event_msg)
+                if not replay_ready.is_set():
+                    pending_live_events.append(event_msg)
+                    continue
+
+                # Flush any pending events buffered during replay setup
+                while pending_live_events:
+                    buffered_msg = pending_live_events.pop(0)
+                    try:
+                        ev = json.loads(buffered_msg) if isinstance(buffered_msg, str) else buffered_msg
+                        ev_seq = ev.get("seq", 0)
+                        if ev_seq > 0:
+                            if ev_seq <= highest_replayed_seq:
+                                continue
+                            highest_replayed_seq = ev_seq
+                        msg_str = json.dumps(ev) if isinstance(ev, dict) else buffered_msg
+                        await websocket.send_text(msg_str)
+                    except Exception:
+                        await websocket.send_text(buffered_msg)
+
+                try:
+                    ev = json.loads(event_msg) if isinstance(event_msg, str) else event_msg
+                    ev_seq = ev.get("seq", 0)
+                    if ev_seq > 0:
+                        if ev_seq <= highest_replayed_seq:
+                            continue  # Duplicate protection
+                        highest_replayed_seq = ev_seq
+                    msg_str = json.dumps(ev) if isinstance(ev, dict) else event_msg
+                    await websocket.send_text(msg_str)
+                except Exception:
+                    await websocket.send_text(event_msg)
         except Exception:
             pass
 
     forward_task = asyncio.create_task(_forward_redis_events())
+
+    # Replay Phase: Send historical missed events with seq > last_seq
+    try:
+        past_events = await redis_coordinator.get_events_since(project_id, last_seq=last_seq_param)
+        for ev in past_events:
+            ev_seq = ev.get("seq", 0)
+            if ev_seq > highest_replayed_seq:
+                highest_replayed_seq = ev_seq
+            await websocket.send_text(json.dumps(ev))
+    except Exception as e:
+        print(f"WS Replay error for project {project_id}: {e}")
+    finally:
+        replay_ready.set()
+
     try:
         while True:
-            await websocket.receive_text()
+            client_msg = await websocket.receive_text()
+            try:
+                msg_data = json.loads(client_msg)
+                if isinstance(msg_data, dict) and msg_data.get("action") == "replay":
+                    req_seq = int(msg_data.get("last_seq", 0))
+                    replay_events = await redis_coordinator.get_events_since(project_id, last_seq=req_seq)
+                    for ev in replay_events:
+                        ev_seq = ev.get("seq", 0)
+                        if ev_seq > highest_replayed_seq:
+                            highest_replayed_seq = ev_seq
+                        await websocket.send_text(json.dumps(ev))
+            except Exception:
+                pass
     except Exception:
         pass
     finally:

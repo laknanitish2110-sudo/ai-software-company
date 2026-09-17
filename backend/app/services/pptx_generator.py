@@ -9,6 +9,8 @@ from lxml import etree
 import math
 import random
 import hashlib
+import io
+from app.core.artifact_store import get_artifact_store
 
 PROJECTS_DIR = Path("generated_projects")
 ASSETS_DIR = Path(__file__).parent.parent.parent / "assets"
@@ -439,7 +441,7 @@ def _build_title_slide(prs, slide_data):
     title_box = slide.shapes.add_textbox(Inches(1), Inches(2.2), Inches(11.3), Inches(2.2))
     tf = title_box.text_frame
     tf.word_wrap = True
-    p = tf.paragraphs[0]
+    p = title_box.text_frame.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     p.text = str(title_text)
     p.font.size = Pt(48)
@@ -966,9 +968,7 @@ BUILDERS = {
 
 # ─── Main Generator ─────────────────────────────────────────────
 
-def generate_pptx(project_id: str, ppt_output: dict) -> str:
-    PROJECTS_DIR.mkdir(exist_ok=True)
-
+async def generate_pptx(project_id: str, ppt_output: dict) -> str:
     prs = _create_presentation(project_id)
 
     slides_data = ppt_output.get("slides", [])
@@ -992,9 +992,14 @@ def generate_pptx(project_id: str, ppt_output: dict) -> str:
         else:
             builder(prs, slide_data, num, total)
 
-    output_path = PROJECTS_DIR / f"{project_id}_presentation.pptx"
-    prs.save(str(output_path))
-    return str(output_path)
+    out_io = io.BytesIO()
+    prs.save(out_io)
+    out_io.seek(0)
+    
+    store = get_artifact_store()
+    await store.write_file(project_id, "presentation.pptx", out_io.read())
+    
+    return "presentation.pptx"
 
 
 def _pitch_to_slides(pitch: dict) -> list[dict]:
@@ -1075,7 +1080,5 @@ def _pitch_to_slides(pitch: dict) -> list[dict]:
 
 
 def get_pptx_path(project_id: str) -> str | None:
-    path = PROJECTS_DIR / f"{project_id}_presentation.pptx"
-    if path.exists():
-        return str(path)
+    # Deprecated: files are streamed via ArtifactStore
     return None

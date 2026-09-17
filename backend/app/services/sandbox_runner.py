@@ -51,6 +51,7 @@ class ExecutionResult(BaseModel):
         "HEALTH_CHECK": StageResult(),
     })
     environment_used: Dict[str, str] = Field(default_factory=dict)
+    independent_qa_result: Optional[Dict[str, Any]] = None  # FIND-01: transient IQA results
 
 
 def _truncate_log(text: str, max_size: int = MAX_LOG_SIZE) -> str:
@@ -70,7 +71,7 @@ def _generate_error_signature(failed_stage: str, stderr: str) -> str:
 
 
 class BaseSandboxRunner:
-    async def execute(self, project_id: str, files: List[dict], plan: ExecutionPlan) -> ExecutionResult:
+    async def execute(self, project_id: str, files: List[dict], plan: ExecutionPlan, iqa_assertions: Optional[list] = None) -> ExecutionResult:
         raise NotImplementedError
 
 
@@ -79,7 +80,7 @@ class LocalSubprocessSandboxRunner(BaseSandboxRunner):
     Isolated local temporary directory runner for local development / testing ONLY.
     Requires SANDBOX_MODE=local_dev and ENVIRONMENT != production.
     """
-    async def execute(self, project_id: str, files: List[dict], plan: ExecutionPlan) -> ExecutionResult:
+    async def execute(self, project_id: str, files: List[dict], plan: ExecutionPlan, iqa_assertions: Optional[list] = None) -> ExecutionResult:
         validate_sandbox_config()
         if get_sandbox_mode() != "local_dev":
             raise SandboxUnavailableError(
@@ -246,6 +247,17 @@ class LocalSubprocessSandboxRunner(BaseSandboxRunner):
             if not overall_failed:
                 result.overall_status = "PASSED"
 
+            # FIND-01: Execute independent QA assertions while server is alive
+            if not overall_failed and iqa_assertions:
+                try:
+                    from app.services.independent_qa_runner import execute_assertions_http
+                    iqa_port = plan.commands.health_check.port if isinstance(plan.commands.health_check, HealthCheckSpec) else 3000
+                    iqa_res = await execute_assertions_http(iqa_assertions, "127.0.0.1", iqa_port)
+                    result.independent_qa_result = iqa_res.model_dump() if hasattr(iqa_res, "model_dump") else {}
+                except Exception as iqa_err:
+                    logger.warning(f"IQA execution error for {project_id}: {iqa_err}")
+                    result.independent_qa_result = {"status": "ERROR", "reason": str(iqa_err), "assertions_total": 0, "assertions_passed": 0, "assertions_failed": 0, "results": []}
+
         finally:
             if bg_process:
                 try:
@@ -271,7 +283,7 @@ class E2BSandboxRunner(BaseSandboxRunner):
     Hardware Firecracker microVM execution runner using E2B API SDK.
     Never falls back to host execution.
     """
-    async def execute(self, project_id: str, files: List[dict], plan: ExecutionPlan) -> ExecutionResult:
+    async def execute(self, project_id: str, files: List[dict], plan: ExecutionPlan, iqa_assertions: Optional[list] = None) -> ExecutionResult:
         e2b_key = os.getenv("E2B_API_KEY", "").strip()
         if not e2b_key:
             raise SandboxUnavailableError("E2B API key missing. Host execution is strictly forbidden in production.")
@@ -400,6 +412,31 @@ class E2BSandboxRunner(BaseSandboxRunner):
             if not overall_failed:
                 result.overall_status = "PASSED"
 
+            # FIND-01: Execute independent QA assertions inside E2B sandbox
+            if not overall_failed and iqa_assertions and sbx:
+                try:
+                    from app.services.independent_qa_runner import build_e2b_iqa_script
+                    iqa_port = plan.commands.health_check.port if isinstance(plan.commands.health_check, HealthCheckSpec) else 3000
+                    assertions_json = json.dumps([a.model_dump() if hasattr(a, 'model_dump') else a for a in iqa_assertions])
+                    await asyncio.to_thread(sbx.files.write, "/tmp/.forgeai_iqa_assertions.json", assertions_json)
+                    iqa_script = build_e2b_iqa_script(iqa_port)
+                    await asyncio.to_thread(sbx.files.write, "/tmp/.forgeai_iqa_runner.py", iqa_script)
+                    iqa_cmd_res = await asyncio.to_thread(sbx.commands.run, "python3 /tmp/.forgeai_iqa_runner.py", timeout=30)
+                    iqa_output = json.loads(iqa_cmd_res.stdout.strip()) if iqa_cmd_res and iqa_cmd_res.stdout else []
+                    iqa_passed_count = sum(1 for r in iqa_output if r.get("passed"))
+                    iqa_failed_count = len(iqa_output) - iqa_passed_count
+                    result.independent_qa_result = {
+                        "status": "PASS" if iqa_failed_count == 0 and iqa_output else "FAIL",
+                        "assertions_total": len(iqa_output),
+                        "assertions_passed": iqa_passed_count,
+                        "assertions_failed": iqa_failed_count,
+                        "results": iqa_output,
+                        "reason": "All assertions passed." if iqa_failed_count == 0 else f"{iqa_failed_count} assertion(s) failed.",
+                    }
+                except Exception as iqa_err:
+                    logger.warning(f"IQA E2B execution error for {project_id}: {iqa_err}")
+                    result.independent_qa_result = {"status": "ERROR", "reason": str(iqa_err), "assertions_total": 0, "assertions_passed": 0, "assertions_failed": 0, "results": []}
+
         except Exception as e:
             logger.error(f"E2B sandbox execution error: {e}")
             result.overall_status = "FAILED"
@@ -445,7 +482,8 @@ async def run_sandbox_execution(
     project_id: str,
     files: List[dict],
     plan: ExecutionPlan,
-    custom_runner: Optional[BaseSandboxRunner] = None
+    custom_runner: Optional[BaseSandboxRunner] = None,
+    iqa_assertions: Optional[list] = None
 ) -> ExecutionResult:
     """
     Main sandbox entrypoint. Resolves sandbox runner per security policy and returns
@@ -456,7 +494,7 @@ async def run_sandbox_execution(
     try:
         resource_budget.check_e2b_budget(project_id)
         runner = custom_runner or get_sandbox_runner()
-        res = await runner.execute(project_id, files, plan)
+        res = await runner.execute(project_id, files, plan, iqa_assertions=iqa_assertions)
         resource_budget.record_e2b_execution(project_id)
         return res
     except (SandboxUnavailableError, ResourceBudgetExceededError) as e:

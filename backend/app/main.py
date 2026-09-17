@@ -7,12 +7,17 @@ from app.core.database import init_db
 from app.api.routes import router
 
 
+from app.services.recovery_worker import stale_recovery_worker
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_sandbox_config()
     validate_jwt_config()
     await init_db()
+    await stale_recovery_worker.start()
     yield
+    await stale_recovery_worker.stop()
 
 
 app = FastAPI(

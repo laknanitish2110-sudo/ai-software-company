@@ -1,9 +1,13 @@
 import json
 import os
+import io
+import re
 
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+from app.core.artifact_store import get_artifact_store
 
 
 GENERATED_DIR = "generated_projects"
@@ -115,7 +119,7 @@ def _extract_list(content, *keys):
     return None
 
 
-def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -> str:
+async def generate_docx(project_id: str, proj: dict, all_outputs: list, all_memory: dict) -> str:
     os.makedirs(GENERATED_DIR, exist_ok=True)
     doc = Document()
 
@@ -123,12 +127,12 @@ def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -
     style.font.name = "Calibri"
     style.font.size = Pt(11)
 
-    ceo = _get_output_by_role(outputs, "ceo")
-    ba = _get_output_by_role(outputs, "business_analyst")
-    researcher = _get_output_by_role(outputs, "researcher")
-    architect = _get_output_by_role(outputs, "architect")
-    engineer = _get_output_by_role(outputs, "engineer")
-    ppt = _get_output_by_role(outputs, "ppt")
+    ceo = _get_output_by_role(all_outputs, "ceo")
+    ba = _get_output_by_role(all_outputs, "business_analyst")
+    researcher = _get_output_by_role(all_outputs, "researcher")
+    architect = _get_output_by_role(all_outputs, "architect")
+    engineer = _get_output_by_role(all_outputs, "engineer")
+    ppt = _get_output_by_role(all_outputs, "ppt")
 
     ceo_c = ceo["content"] if ceo and isinstance(ceo.get("content"), dict) else {}
     ba_c = ba["content"] if ba and isinstance(ba.get("content"), dict) else {}
@@ -146,7 +150,7 @@ def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -
     project_name = (
         report.get("title")
         or _extract(ceo_c, "project_name", "title", "name")
-        or project.get("problem_statement", "Untitled Project")[:80]
+        or proj.get("problem_statement", "Untitled Project")[:80]
     )
 
     title = doc.add_heading(project_name, 0)
@@ -179,7 +183,7 @@ def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -
         report.get("what_it_does")
         or _extract(ceo_c, "vision", "description", "executive_summary", "overview", "problem_summary")
         or _extract(ba_c, "product_overview", "description", "executive_summary")
-        or project.get("problem_statement", "")
+        or proj.get("problem_statement", "")
     )
     _para(doc, what_it_does)
     doc.add_paragraph()
@@ -193,7 +197,7 @@ def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -
         report.get("the_problem")
         or _extract(ceo_c, "problem_analysis", "problem_statement", "problem_summary", "problem", "challenge")
         or _extract(ba_c, "problem_analysis", "problem_statement", "pain_points", "problem")
-        or project.get("problem_statement", "")
+        or proj.get("problem_statement", "")
     )
     _para(doc, the_problem)
     doc.add_paragraph()
@@ -297,7 +301,7 @@ def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -
     ]
 
     for role, section_title in sections:
-        output = _get_output_by_role(outputs, role)
+        output = _get_output_by_role(all_outputs, role)
         if not output:
             continue
 
@@ -315,7 +319,7 @@ def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -
             _para(doc, str(content))
 
         review_key = f"peer_review_{role}"
-        review_raw = memory.get(review_key)
+        review_raw = all_memory.get(review_key)
         if review_raw:
             try:
                 review = json.loads(review_raw)
@@ -348,7 +352,7 @@ def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -
     #  APPENDIX: RESEARCH SOURCES
     # ═══════════════════════════════════════════
 
-    research_raw = memory.get("research_raw_data")
+    research_raw = all_memory.get("research_raw_data")
     if research_raw:
         doc.add_page_break()
         _heading(doc, "Appendix: Research Sources")
@@ -373,11 +377,17 @@ def generate_docx(project_id: str, project: dict, outputs: list, memory: dict) -
         except (json.JSONDecodeError, TypeError):
             _para(doc, str(research_raw))
 
-    file_path = os.path.join(GENERATED_DIR, f"{project_id}_report.docx")
-    doc.save(file_path)
-    return file_path
+    # 5. Save document via ArtifactStore
+    out_io = io.BytesIO()
+    doc.save(out_io)
+    out_io.seek(0)
+    
+    store = get_artifact_store()
+    await store.write_file(project_id, "report.docx", out_io.read())
+    
+    return "report.docx"
 
 
 def get_docx_path(project_id: str) -> str | None:
-    path = os.path.join(GENERATED_DIR, f"{project_id}_report.docx")
-    return path if os.path.exists(path) else None
+    # Deprecated: files are streamed via ArtifactStore
+    return None
