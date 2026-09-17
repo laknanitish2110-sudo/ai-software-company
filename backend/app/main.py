@@ -10,13 +10,17 @@ from app.api.routes import router
 logger = logging.getLogger(__name__)
 
 
+from app.services.recovery_worker import stale_recovery_worker
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_sandbox_config()
     validate_jwt_config()
     await init_db()
+    await stale_recovery_worker.start()
     yield
-    # Graceful shutdown
+    await stale_recovery_worker.stop()
     try:
         pool = await get_pg_pool()
         if pool is not None:

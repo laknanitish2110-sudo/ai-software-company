@@ -169,6 +169,8 @@ class TestP47DCancellation(unittest.TestCase):
 
         repair_service = RepairLoopService()
         plan = ExecutionPlan(deliverable_type="code", language="python", framework="fastapi", install_command="pip install", build_command="python -m py_compile main.py", test_command="pytest", start_command="uvicorn main:app", health_check_endpoint="/health", stages=[])
+        from app.models.execution_schema import HealthCheckSpec
+        plan.commands.health_check = HealthCheckSpec(port=8000, path="/health", expected_status=200)
         dod = DefinitionOfDone(deliverable_type="code", required_files=["main.py"], expected_routes=["/health"], test_requirements=["pytest"], validation_criteria=[])
 
         with self.assertRaises(ExecutionCancelledError):
@@ -177,7 +179,9 @@ class TestP47DCancellation(unittest.TestCase):
                 files=[{"path": "main.py", "content": "print(1)"}],
                 plan=plan,
                 dod=dod,
-                execution_id=exec_id
+                execution_id=exec_id,
+                ba_output={"functional_requirements": ["Users can create tasks"]},
+                architect_output={"api_structure": [{"method": "GET", "path": "/api/tasks", "purpose": "List"}]}
             ))
         print("[PASS] CASE 7 (Cancellation During Repair Loop -> Attempt 2 HALTED) PASSED.")
 

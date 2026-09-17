@@ -1,38 +1,32 @@
 import os
 import json
-import shutil
-import zipfile
 from pathlib import Path
+from app.core.artifact_store import get_artifact_store, PROJECTS_DIR
 
-PROJECTS_DIR = Path("generated_projects")
+async def ensure_projects_dir():
+    # Deprecated: Artifact store handles its own initialization
+    pass
 
+async def generate_project_files(project_id: str, engineer_output: dict) -> str | None:
+    """
+    Writes the engineer's generated files to the ArtifactStore.
+    Returns None since there is no longer a local zip file path to return.
+    """
+    if "files" not in engineer_output or not isinstance(engineer_output["files"], list):
+        return None
 
-def ensure_projects_dir():
-    PROJECTS_DIR.mkdir(exist_ok=True)
+    store = get_artifact_store()
 
-
-def generate_project_files(project_id: str, engineer_output: dict) -> str:
-    ensure_projects_dir()
-
-    project_dir = PROJECTS_DIR / project_id
-    if project_dir.exists():
-        shutil.rmtree(project_dir)
-    project_dir.mkdir(parents=True)
-
-    files = engineer_output.get("files", [])
-    for file_entry in files:
-        file_path = file_entry.get("path", "")
-        content = file_entry.get("content", "")
-
-        if not file_path or not content:
+    for file_obj in engineer_output["files"]:
+        path = file_obj.get("path")
+        content = file_obj.get("content")
+        if not path or content is None:
             continue
 
-        full_path = _is_safe_path(project_dir, file_path)
-        if not full_path:
+        if ".." in path or path.startswith("/"):
             continue
 
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(content, encoding="utf-8")
+        await store.write_file(project_id, path, content)
 
     setup = engineer_output.get("setup_instructions", "")
     if setup:
@@ -69,120 +63,62 @@ def generate_project_files(project_id: str, engineer_output: dict) -> str:
                 for k, v in env_vars.items():
                     readme_parts.append(f"- `{k}`: {v}")
 
-        setup_readme = project_dir / "SETUP.md"
-        if not (project_dir / "README.md").exists():
-            setup_readme = project_dir / "README.md"
-        setup_readme.write_text("\n".join(readme_parts), encoding="utf-8")
+        setup_readme_path = "SETUP.md"
+        if not await store.file_exists(project_id, "README.md"):
+            setup_readme_path = "README.md"
+        await store.write_file(project_id, setup_readme_path, "\n".join(readme_parts))
 
-    zip_path = PROJECTS_DIR / f"{project_id}.zip"
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file in project_dir.rglob("*"):
-            if file.is_file():
-                arcname = file.relative_to(project_dir)
-                zf.write(file, arcname)
-
-    return str(zip_path)
-
+    return None
 
 def get_project_zip_path(project_id: str) -> str | None:
-    zip_path = PROJECTS_DIR / f"{project_id}.zip"
-    if zip_path.exists():
-        return str(zip_path)
+    # Deprecated: zip files are streamed on the fly via ArtifactStore
     return None
 
+async def get_generated_files_list(project_id: str) -> list[str]:
+    store = get_artifact_store()
+    return await store.list_files(project_id)
 
-def get_generated_files_list(project_id: str) -> list[dict]:
-    project_dir = PROJECTS_DIR / project_id
-    if not project_dir.exists():
-        return []
-
+async def get_generated_file_contents(project_id: str) -> list[dict]:
+    store = get_artifact_store()
+    file_paths = await store.list_files(project_id)
     files = []
-    for file in sorted(project_dir.rglob("*")):
-        if file.is_file():
-            rel_path = str(file.relative_to(project_dir))
-            size = file.stat().st_size
-            files.append({"path": rel_path, "size": size})
-    return files
-
-
-def get_generated_file_contents(project_id: str) -> list[dict]:
-    project_dir = PROJECTS_DIR / project_id
-    if not project_dir.exists():
-        return []
-
-    files = []
-    for file in sorted(project_dir.rglob("*")):
-        if file.is_file():
-            rel_path = str(file.relative_to(project_dir))
-            size = file.stat().st_size
-            content = ""
+    
+    for rel_path in sorted(file_paths):
+        try:
+            raw_bytes = await store.read_file(project_id, rel_path)
+            size = len(raw_bytes)
             try:
-                content = file.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
+                content = raw_bytes.decode("utf-8")
+            except UnicodeDecodeError:
                 content = "(binary file)"
-            ext = file.suffix.lstrip(".")
-            lang_map = {
-                "py": "python", "js": "javascript", "ts": "typescript",
-                "tsx": "tsx", "jsx": "jsx", "html": "html", "css": "css",
-                "json": "json", "md": "markdown", "yml": "yaml", "yaml": "yaml",
-                "toml": "toml", "sql": "sql", "sh": "bash", "env": "bash",
-                "txt": "text", "cfg": "ini", "ini": "ini", "dockerfile": "dockerfile",
-            }
-            language = lang_map.get(ext, ext or "text")
-            files.append({
-                "path": rel_path,
-                "size": size,
-                "content": content,
-                "language": language,
-            })
+        except OSError:
+            content = "(error reading)"
+            size = 0
+            
+        ext = rel_path.split(".")[-1] if "." in rel_path else ""
+        lang_map = {
+            "py": "python", "js": "javascript", "ts": "typescript",
+            "tsx": "tsx", "jsx": "jsx", "html": "html", "css": "css",
+            "json": "json", "md": "markdown", "yml": "yaml", "yaml": "yaml",
+            "toml": "toml", "sql": "sql", "sh": "bash", "env": "bash",
+            "txt": "text", "cfg": "ini", "ini": "ini", "dockerfile": "dockerfile",
+        }
+        language = lang_map.get(ext, ext or "text")
+        files.append({
+            "path": rel_path,
+            "size": size,
+            "content": content,
+            "language": language,
+        })
     return files
-
-
-def generate_deployable_bundle(project_id: str, artifacts: list[dict]) -> str:
-    """Create a ZIP of built artifacts (dist/, build/ contents) from sandbox execution."""
-    ensure_projects_dir()
-
-    bundle_dir = PROJECTS_DIR / f"{project_id}_bundle"
-    if bundle_dir.exists():
-        shutil.rmtree(bundle_dir)
-    bundle_dir.mkdir(parents=True)
-
-    for entry in artifacts:
-        file_path = entry.get("path", "")
-        content = entry.get("content", "")
-        if not file_path or not content:
-            continue
-
-        full_path = _is_safe_path(bundle_dir, file_path)
-        if not full_path:
-            continue
-
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(content, encoding="utf-8")
-
-    zip_path = PROJECTS_DIR / f"{project_id}_bundle.zip"
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file in bundle_dir.rglob("*"):
-            if file.is_file():
-                zf.write(file, file.relative_to(bundle_dir))
-
-    return str(zip_path)
-
-
-def get_deployable_bundle_path(project_id: str) -> str | None:
-    zip_path = PROJECTS_DIR / f"{project_id}_bundle.zip"
-    if zip_path.exists():
-        return str(zip_path)
-    return None
 
 
 MAX_APPLY_FILES = 200
-MAX_APPLY_FILE_SIZE = 500 * 1024  # 500KB per file
-MAX_APPLY_TOTAL_SIZE = 50 * 1024 * 1024  # 50MB total
+MAX_APPLY_FILE_SIZE = 500 * 1024
+MAX_APPLY_TOTAL_SIZE = 50 * 1024 * 1024
 
 
 def _is_safe_path(project_dir: Path, file_path: str) -> Path | None:
-    """Validate a file path is safe and contained within the project directory."""
     cleaned = file_path.replace("\\", "/").lstrip("/")
     if not cleaned or ".." in cleaned.split("/"):
         return None
@@ -194,27 +130,56 @@ def _is_safe_path(project_dir: Path, file_path: str) -> Path | None:
     return full_path
 
 
+def generate_deployable_bundle(project_id: str, artifacts: list[dict]) -> str:
+    import shutil, zipfile
+    PROJECTS_DIR.mkdir(exist_ok=True)
+    bundle_dir = PROJECTS_DIR / f"{project_id}_bundle"
+    if bundle_dir.exists():
+        shutil.rmtree(bundle_dir)
+    bundle_dir.mkdir(parents=True)
+    for entry in artifacts:
+        fp = entry.get("path", "")
+        content = entry.get("content", "")
+        if not fp or not content:
+            continue
+        full_path = _is_safe_path(bundle_dir, fp)
+        if not full_path:
+            continue
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content, encoding="utf-8")
+    zip_path = PROJECTS_DIR / f"{project_id}_bundle.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in bundle_dir.rglob("*"):
+            if file.is_file():
+                zf.write(file, file.relative_to(bundle_dir))
+    return str(zip_path)
+
+
+def get_deployable_bundle_path(project_id: str) -> str | None:
+    zip_path = PROJECTS_DIR / f"{project_id}_bundle.zip"
+    if zip_path.exists():
+        return str(zip_path)
+    return None
+
+
 def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
-    """Apply file changes from Engineer chat iteration. Regenerates ZIP."""
+    import shutil, zipfile
     if len(file_updates) > MAX_APPLY_FILES:
         return {"status": "error", "message": f"Too many files (max {MAX_APPLY_FILES})"}
-
     project_dir = PROJECTS_DIR / project_id
     if not project_dir.exists():
         return {"status": "error", "message": "Project files not found"}
-
     backup_dir = PROJECTS_DIR / f"{project_id}_backup"
     try:
         if backup_dir.exists():
             shutil.rmtree(backup_dir)
-        shutil.copytree(project_dir, backup_dir)
+        import shutil as _s
+        _s.copytree(project_dir, backup_dir)
     except OSError:
         return {"status": "error", "message": "Failed to create safety snapshot"}
-
     total_size = 0
     updated = []
     skipped = []
-
     try:
         for entry in file_updates:
             path = entry.get("path", "")
@@ -223,26 +188,21 @@ def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
             if "content" not in entry:
                 skipped.append(path)
                 continue
-
             full_path = _is_safe_path(project_dir, path)
             if not full_path:
                 skipped.append(path)
                 continue
-
             content = entry["content"]
             content_bytes = content.encode("utf-8") if isinstance(content, str) else b""
             if len(content_bytes) > MAX_APPLY_FILE_SIZE:
                 skipped.append(path)
                 continue
-
             total_size += len(content_bytes)
             if total_size > MAX_APPLY_TOTAL_SIZE:
                 raise ValueError("Total payload size exceeds limit")
-
             full_path.parent.mkdir(parents=True, exist_ok=True)
             full_path.write_bytes(content_bytes)
             updated.append(path)
-
         zip_path = PROJECTS_DIR / f"{project_id}.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for file in project_dir.rglob("*"):
@@ -252,9 +212,7 @@ def apply_file_updates(project_id: str, file_updates: list[dict]) -> dict:
         shutil.rmtree(project_dir)
         shutil.move(str(backup_dir), str(project_dir))
         return {"status": "error", "message": "Apply failed, project restored from snapshot"}
-
     shutil.rmtree(backup_dir, ignore_errors=True)
-
     result = {"status": "ok", "updated_files": updated, "count": len(updated)}
     if skipped:
         result["skipped"] = skipped

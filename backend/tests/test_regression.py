@@ -31,10 +31,11 @@ from app.services.regression_checker import (
 from app.agents.qa import evaluate_qa_results
 from app.services.repair_context_builder import build_repair_context
 from app.agents.fixer import validate_patch
-from app.services.patch_applier import PatchApplier, PROJECTS_DIR
+from app.services.patch_applier import PatchApplier
+from app.core.artifact_store import PROJECTS_DIR
 
 
-class TestP24RegressionChecker(unittest.TestCase):
+class TestP24RegressionChecker(unittest.IsolatedAsyncioTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -174,7 +175,7 @@ class TestP24RegressionChecker(unittest.TestCase):
         self.assertIn("BUILD", reg_result.reason)
         print("[PASS] CASE D (New Stage Failure REGRESSION) PASSED.")
 
-    def test_case_e_real_e2b_cloud_regression_validation(self):
+    async def test_case_e_real_e2b_cloud_regression_validation(self):
         """CASE E: Real AWS Firecracker E2B Cloud Sandbox Regression Validation & Automatic Rollback."""
         api_key = os.getenv("E2B_API_KEY", "")
         if not api_key:
@@ -208,7 +209,7 @@ class TestP24RegressionChecker(unittest.TestCase):
         runner = E2BSandboxRunner()
 
         # Step 1: E2B Attempt 1 -> TEST-A passes, TEST-B fails
-        res1: ExecutionResult = asyncio.run(runner.execute("e2b_reg_test_202", initial_files, plan))
+        res1: ExecutionResult = await runner.execute(self.test_pid, initial_files, plan)
         self.assertEqual(res1.environment_used.get("runner"), "e2b_firecracker")
         self.assertEqual(res1.overall_status, "FAILED")
 
@@ -230,12 +231,12 @@ class TestP24RegressionChecker(unittest.TestCase):
         )
 
         applier = PatchApplier()
-        snapshot = applier.create_snapshot("e2b_reg_test_202", initial_files)
-        apply_res, patched_files = asyncio.run(applier.apply_patch("e2b_reg_test_202", regressive_patch, initial_files, attempt=1))
+        snapshot = await applier.create_snapshot(self.test_pid, initial_files)
+        apply_res, patched_files = await applier.apply_patch(self.test_pid, regressive_patch, initial_files, attempt=1)
         self.assertEqual(apply_res.status, "APPLIED")
 
         # Step 3: E2B Attempt 2 -> TEST-A fails (REGRESSION), TEST-B passes
-        res2: ExecutionResult = asyncio.run(runner.execute("e2b_reg_test_202", patched_files, plan))
+        res2: ExecutionResult = await runner.execute(self.test_pid, patched_files, plan)
 
         reg_result = compare_execution_baseline(baseline, res2)
         self.assertEqual(reg_result.status, "REGRESSION")
@@ -243,7 +244,7 @@ class TestP24RegressionChecker(unittest.TestCase):
         self.assertIn("TEST-A", reg_result.regressions)
 
         # Step 4: Perform Rollback and Verify Files Restored
-        restored_files = applier.rollback_snapshot("e2b_reg_test_202", snapshot, patched_files)
+        restored_files = await applier.rollback_snapshot(self.test_pid, snapshot, patched_files)
         calc_content = [f["content"] for f in restored_files if f["path"] == "src/calc.py"][0]
         self.assertIn("def mult(a, b): return a * b", calc_content)
         self.assertNotIn("return 99", calc_content)

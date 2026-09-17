@@ -18,7 +18,7 @@ class QAReport(BaseModel):
     status: str = "PASS"  # PASS, FAIL
     severity: str = "LOW"  # LOW, MEDIUM, HIGH, CRITICAL
     failed_criteria: List[str] = Field(default_factory=list)
-    failure_category: str = "NONE"  # BUILD_FAILURE, TEST_FAILURE, RUNTIME_FAILURE, HEALTH_FAILURE, MANUAL_REVIEW_NEEDED, NONE
+    failure_category: str = "NONE"  # BUILD_FAILURE, TEST_FAILURE, RUNTIME_FAILURE, HEALTH_FAILURE, INDEPENDENT_QA_FAILURE, MANUAL_REVIEW_NEEDED, NONE
     root_cause: str = "All executed criteria passed cleanly."
     affected_files: List[str] = Field(default_factory=list)
     repair_instructions: QARepairInstructions = Field(default_factory=QARepairInstructions)

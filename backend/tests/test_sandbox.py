@@ -5,9 +5,11 @@ import shutil
 import tempfile
 import asyncio
 import unittest
+from unittest.mock import patch, MagicMock
 
 # Add backend directory to sys.path
-from app.services.file_generator import generate_project_files, PROJECTS_DIR
+from app.services.file_generator import generate_project_files
+from app.core.artifact_store import get_artifact_store
 from app.models.execution_schema import validate_and_detect_execution_plan, ExecutionPlan
 from app.services.sandbox_runner import (
     LocalSubprocessSandboxRunner,
@@ -28,14 +30,9 @@ class TestP0SandboxImplementation(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         # Cleanup generated project artifacts
-        target_dir = PROJECTS_DIR / self.test_pid
-        if target_dir.exists():
-            shutil.rmtree(target_dir, ignore_errors=True)
-        zip_file = PROJECTS_DIR / f"{self.test_pid}.zip"
-        if zip_file.exists():
-            os.remove(zip_file)
+        asyncio.run(get_artifact_store().delete_project(self.test_pid))
 
-    def test_p0_1_path_traversal_security(self):
+    async def test_p0_1_path_traversal_security(self):
         """P0.1: Verify path traversal attempt is safely blocked."""
         malicious_output = {
             "files": [
@@ -44,15 +41,11 @@ class TestP0SandboxImplementation(unittest.IsolatedAsyncioTestCase):
                 {"path": "/etc/passwd", "content": "root:x:0:0"},
             ]
         }
-        zip_path = generate_project_files(self.test_pid, malicious_output)
-        self.assertTrue(os.path.exists(zip_path))
+        await generate_project_files(self.test_pid, malicious_output)
 
-        target_dir = PROJECTS_DIR / self.test_pid
-        valid_path = target_dir / "valid_file.js"
-        outside_path = (target_dir / "../../../outside.txt").resolve()
-
-        self.assertTrue(valid_path.exists())
-        self.assertFalse(outside_path.exists(), "Path traversal file should NOT have been created!")
+        store = get_artifact_store()
+        self.assertTrue(await store.file_exists(self.test_pid, "valid_file.js"))
+        self.assertFalse(await store.file_exists(self.test_pid, "../../../outside.txt"), "Path traversal file should NOT have been created!")
         print("[PASS] P0.1 Path traversal security test PASSED.")
 
     def test_p0_2_p0_4_execution_plan_detection(self):

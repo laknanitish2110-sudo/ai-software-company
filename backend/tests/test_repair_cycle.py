@@ -24,10 +24,11 @@ from app.services.sandbox_runner import (
 from app.agents.qa import evaluate_qa_results, QAReport
 from app.services.repair_context_builder import build_repair_context
 from app.agents.fixer import validate_patch
-from app.services.patch_applier import PatchApplier, PROJECTS_DIR
+from app.services.patch_applier import PatchApplier
+from app.core.artifact_store import PROJECTS_DIR
 
 
-class TestP23RepairCycle(unittest.TestCase):
+class TestP23RepairCycle(unittest.IsolatedAsyncioTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -45,7 +46,7 @@ class TestP23RepairCycle(unittest.TestCase):
         if self.project_dir.exists():
             shutil.rmtree(self.project_dir, ignore_errors=True)
 
-    def test_1_deterministic_single_repair_cycle(self):
+    async def test_1_deterministic_single_repair_cycle(self):
         """Test 1: Full single repair cycle (Attempt 1 FAIL -> Fixer -> Patch -> Attempt 2 PASS)."""
         # Initial broken project files
         initial_files = [
@@ -72,7 +73,7 @@ class TestP23RepairCycle(unittest.TestCase):
         runner = LocalSubprocessSandboxRunner()
 
         # Step 1: Attempt 1 execution -> Expected FAIL
-        res1: ExecutionResult = asyncio.run(runner.execute(self.test_pid, initial_files, plan))
+        res1: ExecutionResult = await runner.execute(self.test_pid, initial_files, plan)
         self.assertEqual(res1.overall_status, "FAILED")
         self.assertEqual(res1.failed_stage, "TEST")
 
@@ -81,7 +82,7 @@ class TestP23RepairCycle(unittest.TestCase):
         self.assertEqual(qa1.failure_category, "TEST_FAILURE")
 
         # Step 2: Build RepairContext and Fixer Patch
-        repair_ctx = build_repair_context(self.test_pid, qa1, res1, dod, engineer_output={"files": initial_files})
+        repair_ctx = await build_repair_context(self.test_pid, qa1, res1, dod, engineer_output={"files": initial_files}, attempt=1)
         
         # Fixer generates targeted patch fixing the bug
         patch_res = PatchResult(
@@ -101,14 +102,14 @@ class TestP23RepairCycle(unittest.TestCase):
 
         # Step 3: Apply patch via PatchApplier
         applier = PatchApplier()
-        snapshot = applier.create_snapshot(self.test_pid, initial_files)
-        apply_res, patched_files = asyncio.run(applier.apply_patch(self.test_pid, validated_patch, initial_files, attempt=1))
+        snapshot = await applier.create_snapshot(self.test_pid, initial_files)
+        apply_res, patched_files = await applier.apply_patch(self.test_pid, validated_patch, initial_files, attempt=1)
 
         self.assertEqual(apply_res.status, "APPLIED")
         self.assertEqual(apply_res.modified_files, ["src/math_utils.py"])
 
         # Step 4: Attempt 2 execution -> Expected PASS
-        res2: ExecutionResult = asyncio.run(runner.execute(self.test_pid, patched_files, plan))
+        res2: ExecutionResult = await runner.execute(self.test_pid, patched_files, plan)
         self.assertEqual(res2.overall_status, "PASSED")
 
         qa2: QAReport = evaluate_qa_results(dod, res2)
@@ -117,14 +118,14 @@ class TestP23RepairCycle(unittest.TestCase):
 
         print("[PASS] Test 1: Deterministic Single Repair Cycle PASSED.")
 
-    def test_2_rollback_and_invalid_patch_atomicity(self):
+    async def test_2_rollback_and_invalid_patch_atomicity(self):
         """Test 2: Invalid patch rejection, atomicity (0 files modified), and snapshot rollback."""
         initial_files = [
             {"path": "src/app.py", "content": "print('Original Valid Code')\n"}
         ]
 
         applier = PatchApplier()
-        snapshot = applier.create_snapshot(self.test_pid, initial_files)
+        snapshot = await applier.create_snapshot(self.test_pid, initial_files)
 
         # Create invalid patch attempting path traversal
         invalid_patch = PatchResult(
@@ -135,7 +136,7 @@ class TestP23RepairCycle(unittest.TestCase):
             ]
         )
 
-        apply_res, updated_memory = asyncio.run(applier.apply_patch(self.test_pid, invalid_patch, initial_files, attempt=1))
+        apply_res, updated_memory = await applier.apply_patch(self.test_pid, invalid_patch, initial_files, attempt=1)
 
         self.assertEqual(apply_res.status, "REJECTED")
         self.assertGreater(len(apply_res.errors), 0)
@@ -144,12 +145,12 @@ class TestP23RepairCycle(unittest.TestCase):
         self.assertEqual(updated_memory[0]["content"], "print('Original Valid Code')\n")
 
         # Test snapshot rollback
-        rollbacked_memory = applier.rollback_snapshot(self.test_pid, snapshot, updated_memory)
+        rollbacked_memory = await applier.rollback_snapshot(self.test_pid, snapshot, updated_memory)
         self.assertEqual(rollbacked_memory[0]["content"], "print('Original Valid Code')\n")
 
         print("[PASS] Test 2: Rollback and Invalid Patch Atomicity PASSED.")
 
-    def test_3_real_e2b_cloud_re_execution_repair_cycle(self):
+    async def test_3_real_e2b_cloud_re_execution_repair_cycle(self):
         """Test 3: Real AWS Firecracker E2B Cloud Sandbox Re-Execution Repair Cycle."""
         api_key = os.getenv("E2B_API_KEY", "")
         if not api_key:
@@ -179,7 +180,7 @@ class TestP23RepairCycle(unittest.TestCase):
         runner = E2BSandboxRunner()
 
         # Step 1: E2B Attempt 1 -> Expected TEST FAIL
-        res1: ExecutionResult = asyncio.run(runner.execute("e2b_repair_cycle_101", initial_files, plan))
+        res1: ExecutionResult = await runner.execute(self.test_pid, initial_files, plan)
         self.assertEqual(res1.environment_used.get("runner"), "e2b_firecracker")
         self.assertEqual(res1.overall_status, "FAILED")
         self.assertEqual(res1.failed_stage, "TEST")
@@ -188,7 +189,7 @@ class TestP23RepairCycle(unittest.TestCase):
         self.assertEqual(qa1.status, "FAIL")
 
         # Step 2: Build RepairContext & Patch
-        repair_ctx = build_repair_context("e2b_repair_cycle_101", qa1, res1, dod, engineer_output={"files": initial_files})
+        repair_ctx = await build_repair_context(self.test_pid, qa1, res1, dod, engineer_output={"files": initial_files}, attempt=1)
         
         patch_res = PatchResult(
             status="PATCH_READY",
@@ -207,11 +208,11 @@ class TestP23RepairCycle(unittest.TestCase):
 
         # Step 3: Apply Patch
         applier = PatchApplier()
-        apply_res, patched_files = asyncio.run(applier.apply_patch("e2b_repair_cycle_101", validated_patch, initial_files, attempt=1))
+        apply_res, patched_files = await applier.apply_patch(self.test_pid, validated_patch, initial_files, attempt=1)
         self.assertEqual(apply_res.status, "APPLIED")
 
         # Step 4: E2B Attempt 2 -> Expected TEST PASS
-        res2: ExecutionResult = asyncio.run(runner.execute("e2b_repair_cycle_101", patched_files, plan))
+        res2: ExecutionResult = await runner.execute(self.test_pid, patched_files, plan)
         self.assertEqual(res2.environment_used.get("runner"), "e2b_firecracker")
         self.assertEqual(res2.overall_status, "PASSED")
 

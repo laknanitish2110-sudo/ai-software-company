@@ -2,9 +2,11 @@
 import os
 import pytest
 from app.services.pptx_generator import generate_pptx, _pitch_to_slides
+from app.core.artifact_store import get_artifact_store
 
 
-def test_generate_pptx_basic():
+@pytest.mark.asyncio
+async def test_generate_pptx_basic():
     content = {
         "report_data": {
             "title": "Test Project",
@@ -15,11 +17,13 @@ def test_generate_pptx_basic():
             ]
         }
     }
-    path = generate_pptx("test_pptx_001", content)
+    path = await generate_pptx("test_pptx_001", content)
     assert path is not None
-    assert os.path.exists(path)
     assert path.endswith(".pptx")
-    os.remove(path)
+    
+    store = get_artifact_store()
+    file_bytes = await store.read_file("test_pptx_001", path)
+    assert len(file_bytes) > 0
 
 
 def test_no_hackathon_branding():

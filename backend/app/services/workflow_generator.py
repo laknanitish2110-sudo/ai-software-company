@@ -3,28 +3,23 @@ Generates downloadable n8n workflow JSON files from Engineer output.
 """
 
 import json
-from pathlib import Path
+from app.core.artifact_store import get_artifact_store
 
-PROJECTS_DIR = Path("generated_projects")
-
-
-def generate_workflow_json(project_id: str, engineer_output: dict) -> str | None:
+async def generate_workflow_json(project_id: str, engineer_output: dict) -> str | None:
+    """
+    Extracts the n8n_workflow from the engineer_output and writes it to the ArtifactStore.
+    Returns None since there is no local file path to return.
+    """
     n8n_workflow = engineer_output.get("n8n_workflow")
     if not n8n_workflow:
         return None
 
-    PROJECTS_DIR.mkdir(exist_ok=True)
-    workflow_name = engineer_output.get("workflow_name", "workflow")
-    safe_name = "".join(c if c.isalnum() or c in "-_ " else "" for c in workflow_name)
-    safe_name = safe_name.strip().replace(" ", "_") or "workflow"
+    store = get_artifact_store()
+    await store.write_file(project_id, "n8n_workflow.json", json.dumps(n8n_workflow, indent=2))
 
-    out_path = PROJECTS_DIR / f"{project_id}_workflow.json"
-    out_path.write_text(json.dumps(n8n_workflow, indent=2), encoding="utf-8")
-    return str(out_path)
+    return None
 
 
 def get_workflow_json_path(project_id: str) -> str | None:
-    path = PROJECTS_DIR / f"{project_id}_workflow.json"
-    if path.exists():
-        return str(path)
+    # Deprecated: files are streamed via ArtifactStore
     return None

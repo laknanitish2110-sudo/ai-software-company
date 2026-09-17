@@ -14,11 +14,11 @@ from app.agents.qa import QAReport, QARepairInstructions
 from app.services.repair_context_builder import (
     build_repair_context,
     MAX_AFFECTED_FILES,
-    PROJECTS_DIR
 )
+from app.core.artifact_store import PROJECTS_DIR
 
 
-class TestP21RepairContextFoundation(unittest.TestCase):
+class TestP21RepairContextFoundation(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.test_pid = "test_repair_ctx_pid_789"
@@ -52,7 +52,7 @@ class TestP21RepairContextFoundation(unittest.TestCase):
         if self.project_dir.exists():
             shutil.rmtree(self.project_dir, ignore_errors=True)
 
-    def test_case_a_existing_affected_file(self):
+    async def test_case_a_existing_affected_file(self):
         """CASE A: QA identifies an existing affected file -> RepairContext contains file content."""
         qa_report = QAReport(
             status="FAIL",
@@ -61,11 +61,12 @@ class TestP21RepairContextFoundation(unittest.TestCase):
             affected_files=["src/app.py"]
         )
 
-        ctx: RepairContext = build_repair_context(
+        ctx: RepairContext = await build_repair_context(
             project_id=self.test_pid,
             qa_report=qa_report,
             exec_result=self.exec_result,
-            dod=self.dod
+            dod=self.dod,
+            attempt=1
         )
 
         self.assertIn("src/app.py", ctx.file_contents)
@@ -73,7 +74,7 @@ class TestP21RepairContextFoundation(unittest.TestCase):
         self.assertEqual(len(ctx.missing_files), 0)
         print("[PASS] CASE A: Existing affected file content included PASSED.")
 
-    def test_case_b_nonexistent_file(self):
+    async def test_case_b_nonexistent_file(self):
         """CASE B: QA identifies a nonexistent file -> Structured missing-file error."""
         qa_report = QAReport(
             status="FAIL",
@@ -82,11 +83,12 @@ class TestP21RepairContextFoundation(unittest.TestCase):
             affected_files=["src/nonexistent_file.py"]
         )
 
-        ctx: RepairContext = build_repair_context(
+        ctx: RepairContext = await build_repair_context(
             project_id=self.test_pid,
             qa_report=qa_report,
             exec_result=self.exec_result,
-            dod=self.dod
+            dod=self.dod,
+            attempt=1
         )
 
         self.assertEqual(len(ctx.file_contents), 0)
@@ -96,7 +98,7 @@ class TestP21RepairContextFoundation(unittest.TestCase):
         self.assertFalse(ctx.missing_files[0].security_flag)
         print("[PASS] CASE B: Nonexistent file structured error PASSED.")
 
-    def test_case_c_multiple_files_limit(self):
+    async def test_case_c_multiple_files_limit(self):
         """CASE C: QA identifies multiple files -> Only allowed/relevant files (up to max limit) are included."""
         qa_report = QAReport(
             status="FAIL",
@@ -105,11 +107,12 @@ class TestP21RepairContextFoundation(unittest.TestCase):
             affected_files=["file1.txt", "file2.txt", "file3.txt", "file4.txt", "file5.txt", "file6.txt"]
         )
 
-        ctx: RepairContext = build_repair_context(
+        ctx: RepairContext = await build_repair_context(
             project_id=self.test_pid,
             qa_report=qa_report,
             exec_result=self.exec_result,
-            dod=self.dod
+            dod=self.dod,
+            attempt=1
         )
 
         self.assertLessEqual(len(ctx.file_contents), MAX_AFFECTED_FILES)
@@ -117,7 +120,7 @@ class TestP21RepairContextFoundation(unittest.TestCase):
         self.assertNotIn("file6.txt", ctx.file_contents)
         print("[PASS] CASE C: Multiple files context size limit PASSED.")
 
-    def test_case_d_path_traversal_rejection(self):
+    async def test_case_d_path_traversal_rejection(self):
         """CASE D: Path traversal attempt -> Rejected with security flag."""
         qa_report = QAReport(
             status="FAIL",
@@ -126,11 +129,12 @@ class TestP21RepairContextFoundation(unittest.TestCase):
             affected_files=["../../etc/passwd", "../outside.py"]
         )
 
-        ctx: RepairContext = build_repair_context(
+        ctx: RepairContext = await build_repair_context(
             project_id=self.test_pid,
             qa_report=qa_report,
             exec_result=self.exec_result,
-            dod=self.dod
+            dod=self.dod,
+            attempt=1
         )
 
         self.assertEqual(len(ctx.file_contents), 0)

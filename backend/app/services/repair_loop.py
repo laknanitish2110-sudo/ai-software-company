@@ -20,7 +20,7 @@ from app.services.sandbox_runner import (
     ExecutionResult,
     StageResult
 )
-from app.agents.qa import evaluate_qa_results, QAReport
+from app.agents.qa import evaluate_qa_results, QAReport, QARepairInstructions
 from app.services.repair_context_builder import build_repair_context
 from app.agents.fixer import generate_targeted_patch
 from app.services.patch_applier import PatchApplier
@@ -51,6 +51,7 @@ class RepairLoopService:
         problem_statement: str = "",
         engineer_output: Optional[dict] = None,
         architect_output: Optional[dict] = None,
+        ba_output: Optional[dict] = None,
         notify_cb: Optional[Callable[[str, dict], Awaitable[None]]] = None,
         custom_runner: Optional[Any] = None,
         execution_id: Optional[str] = None
@@ -72,6 +73,19 @@ class RepairLoopService:
             history: List[RepairAttempt] = []
             previous_attempts_history: List[dict] = []
             regression_history: List[dict] = []
+
+            # FIND-01: Synthesize independent QA assertions (deterministic, before loop)
+            from app.services.qa_assertion_synthesizer import synthesize_assertions
+            independent_assertions, iqa_unavailable_reason = synthesize_assertions(
+                ba_output or {}, architect_output or {}, plan
+            )
+            if not independent_assertions:
+                logger.warning(f"IQA unavailable for project {project_id}: {iqa_unavailable_reason}")
+                return FinalValidationResult(
+                    attempts_used=0,
+                    final_status="VALIDATION_FAILED",
+                    reason=f"Independent QA unavailable: {iqa_unavailable_reason}"
+                )
 
             baseline = None
             last_exec_result = None
@@ -114,13 +128,40 @@ class RepairLoopService:
                     })
 
                 # Step 1: Sandbox Execution
-                exec_result = await run_sandbox_execution(project_id, current_files, plan, custom_runner=custom_runner)
+                exec_result = await run_sandbox_execution(project_id, current_files, plan, custom_runner=custom_runner, iqa_assertions=independent_assertions)
 
                 last_exec_result = exec_result
 
                 # Step 2: QA Evaluation against DoD
                 qa_report: QAReport = evaluate_qa_results(dod, exec_result, problem_statement=problem_statement)
                 last_qa_report = qa_report
+
+                # FIND-01: Independent QA gating (constraints 1 & 2)
+                # Engineer tests are regression evidence only — never sufficient for VALIDATED.
+                # IQA must also PASS for VALIDATED status.
+                if qa_report.status == "PASS":
+                    iqa_data = getattr(exec_result, 'independent_qa_result', None)
+                    if not iqa_data or iqa_data.get("status") != "PASS":
+                        qa_report.status = "FAIL"
+                        if iqa_data and iqa_data.get("status") == "FAIL":
+                            qa_report.failure_category = "INDEPENDENT_QA_FAILURE"
+                            qa_report.root_cause = iqa_data.get("reason", "Independent QA assertions failed")
+                            qa_report.failed_criteria = [
+                                r.get("assertion", {}).get("requirement_id", "IQA-?")
+                                for r in iqa_data.get("results", [])
+                                if not r.get("passed", True)
+                            ]
+                            qa_report.repair_instructions = QARepairInstructions(
+                                summary="Fix API endpoints to satisfy independent QA assertions",
+                                action_items=[
+                                    f"Fix {r.get('assertion', {}).get('method', '?')} {r.get('assertion', {}).get('path', '?')}: {r.get('error', '?')}"
+                                    for r in iqa_data.get("results", [])
+                                    if not r.get("passed", True)
+                                ][:5]
+                            )
+                        else:
+                            qa_report.failure_category = "INDEPENDENT_QA_FAILURE"
+                            qa_report.root_cause = "Independent QA execution did not produce valid results."
 
                 # Step 3: Baseline & Regression Evaluation
                 if attempt == 1:
@@ -132,6 +173,7 @@ class RepairLoopService:
                             final_status="VALIDATED",
                             final_execution_result=exec_result.model_dump() if hasattr(exec_result, "model_dump") else exec_result.dict(),
                             final_qa_report=qa_report.model_dump() if hasattr(qa_report, "model_dump") else qa_report.dict(),
+                            final_files=[dict(f) for f in current_files],
                             repair_history=[],
                             reason="Project passed all Definition of Done criteria cleanly on Attempt 1.",
                             final_files=current_files,
@@ -145,7 +187,7 @@ class RepairLoopService:
                     if not reg_result.safe_to_accept:
                         logger.warning(f"Attempt {attempt} failed regression check ({reg_result.status}): {reg_result.reason}. Rolling back.")
                         if snapshot and pre_patch_files is not None:
-                            current_files = PatchApplier().rollback_snapshot(project_id, snapshot, pre_patch_files)
+                            current_files = await PatchApplier().rollback_snapshot(project_id, snapshot, pre_patch_files)
 
                     if qa_report.status == "PASS" and reg_result.safe_to_accept:
                         logger.info(f"Project {project_id} repaired and validated on Attempt {attempt}.")
@@ -154,6 +196,7 @@ class RepairLoopService:
                             final_status="VALIDATED",
                             final_execution_result=exec_result.model_dump() if hasattr(exec_result, "model_dump") else exec_result.dict(),
                             final_qa_report=qa_report.model_dump() if hasattr(qa_report, "model_dump") else qa_report.dict(),
+                            final_files=[dict(f) for f in current_files],
                             repair_history=history,
                             regression_results=regression_history,
                             reason=f"Project repaired and validated on Attempt {attempt}.",
@@ -176,7 +219,7 @@ class RepairLoopService:
                     )
 
                 # Step 5: Build Repair Context & Generate Targeted Patch
-                repair_ctx = build_repair_context(
+                repair_ctx = await build_repair_context(
                     project_id=project_id,
                     qa_report=qa_report,
                     exec_result=exec_result,
@@ -212,7 +255,7 @@ class RepairLoopService:
 
                     applier = PatchApplier()
                     pre_patch_files = [dict(f) for f in current_files]
-                    snapshot = applier.create_snapshot(project_id, current_files)
+                    snapshot = await applier.create_snapshot(project_id, current_files)
 
                     apply_res, updated_files = await applier.apply_patch(project_id, patch_res, current_files, attempt=attempt, execution_id=execution_id)
 

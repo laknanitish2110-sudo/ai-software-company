@@ -108,11 +108,16 @@ class TestP491ExecutionIdPropagation(unittest.TestCase):
             # Mark project status at BA_REVIEW
             await update_project_status(proj_id, ProjectStatus.BA_REVIEW.value)
 
+            # Create an actual pending output
+            from app.core.database import save_agent_output
+            out = await save_agent_output(proj_id, AgentRole.BUSINESS_ANALYST.value, {"dummy": "data"})
+            out_id = out["id"]
+
             # Set cancellation flag so next_agent transition fails if execution_id is correctly passed
             await redis_coordinator.set_cancellation_flag(exec_id)
 
             with self.assertRaises(ExecutionCancelledError):
-                await orchestrator.handle_approval(proj_id, "out_ba_1", approved=True, execution_id=exec_id)
+                await orchestrator.handle_approval(proj_id, out_id, approved=True, execution_id=exec_id)
 
         asyncio.run(_run())
         print("[PASS] Test 5 (handle_approval Propagates Execution ID to Next Role) PASSED.")
