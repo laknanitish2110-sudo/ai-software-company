@@ -140,6 +140,8 @@ class TestP25RepairLoop(unittest.IsolatedAsyncioTestCase):
             executable=True,
             commands=ExecutionCommands(install="python --version", build="python -m py_compile src/math_utils.py", test="python test_math.py")
         )
+        from app.models.execution_schema import HealthCheckSpec
+        plan.commands.health_check = HealthCheckSpec(port=8000, path="/", expected_status=200)
         service = RepairLoopService()
         runner = LocalSubprocessSandboxRunner()
 
@@ -278,6 +280,8 @@ class TestP25RepairLoop(unittest.IsolatedAsyncioTestCase):
             executable=True,
             commands=ExecutionCommands(install="python --version", build="python -m py_compile src/math_utils.py", test="python test_math.py")
         )
+        from app.models.execution_schema import HealthCheckSpec
+        plan.commands.health_check = HealthCheckSpec(port=8000, path="/", expected_status=200)
 
         service = RepairLoopService()
         runner = E2BSandboxRunner()

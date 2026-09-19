@@ -176,7 +176,6 @@ class RepairLoopService:
                             final_files=[dict(f) for f in current_files],
                             repair_history=[],
                             reason="Project passed all Definition of Done criteria cleanly on Attempt 1.",
-                            final_files=current_files,
                             build_artifacts=getattr(exec_result, "build_artifacts", None),
                         )
                 else:
@@ -200,7 +199,6 @@ class RepairLoopService:
                             repair_history=history,
                             regression_results=regression_history,
                             reason=f"Project repaired and validated on Attempt {attempt}.",
-                            final_files=current_files,
                             build_artifacts=getattr(exec_result, "build_artifacts", None),
                         )
 
