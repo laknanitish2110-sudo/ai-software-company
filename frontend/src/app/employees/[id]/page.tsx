@@ -101,11 +101,8 @@ export default function EmployeeChatPage() {
 
     try {
       const result = await sendEmployeeMessage(activeSession.id, text);
-      setMessages((prev) => [
-        ...prev.filter((m) => m.id !== optimisticMsg.id),
-        result.user_message,
-        result.employee_message,
-      ]);
+      const full = await getSessionWithMessages(activeSession.id);
+      setMessages(full.messages);
     } catch (e) {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
       setError(e instanceof Error ? e.message : "Failed to send message");
@@ -375,7 +372,76 @@ export default function EmployeeChatPage() {
           )}
 
           {messages.map((msg) => {
+            if (msg.role === "tool_calls") {
+              let calls: { function: { name: string; arguments: string } }[] = [];
+              try { calls = JSON.parse(msg.content); } catch { /* skip */ }
+              if (calls.length === 0) return null;
+              return (
+                <div key={msg.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
+                  <div style={{
+                    maxWidth: "80%", padding: "8px 14px", borderRadius: 10,
+                    background: "var(--bg-card)", border: "1px dashed var(--accent-border)",
+                    fontSize: 12, color: "var(--text-secondary)",
+                  }}>
+                    {calls.map((tc, i) => {
+                      let argSummary = "";
+                      try {
+                        const args = JSON.parse(tc.function.arguments);
+                        argSummary = Object.entries(args).map(([k, v]) => {
+                          const val = typeof v === "string" && v.length > 60 ? v.slice(0, 60) + "..." : String(v);
+                          return `${k}: ${val}`;
+                        }).join(", ");
+                      } catch { argSummary = tc.function.arguments; }
+                      return (
+                        <div key={i} style={{ marginBottom: i < calls.length - 1 ? 6 : 0 }}>
+                          <span style={{ fontWeight: 600, color: "var(--accent)", fontFamily: "monospace" }}>
+                            {tc.function.name}
+                          </span>
+                          {argSummary && (
+                            <span style={{ color: "var(--text-muted)", marginLeft: 6, fontFamily: "monospace", fontSize: 11 }}>
+                              ({argSummary})
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+
+            if (msg.role === "tool_result") {
+              let result: { tool?: string; result?: string; error?: string } = {};
+              try {
+                const parsed = JSON.parse(msg.content);
+                const inner = typeof parsed.result === "string" ? JSON.parse(parsed.result) : parsed;
+                result = { tool: parsed.tool, ...inner };
+              } catch { /* skip */ }
+              const isError = !result.error ? false : true;
+              const display = result.error || (typeof result.result === "string" ? result.result : JSON.stringify(result.result));
+              const truncated = display && display.length > 200 ? display.slice(0, 200) + "..." : display;
+              return (
+                <div key={msg.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
+                  <div style={{
+                    maxWidth: "80%", padding: "6px 12px", borderRadius: 8,
+                    background: isError ? "rgba(237,95,116,0.06)" : "rgba(11,191,140,0.06)",
+                    border: `1px solid ${isError ? "rgba(237,95,116,0.2)" : "rgba(11,191,140,0.2)"}`,
+                    fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    color: isError ? "#ed5f74" : "var(--text-secondary)",
+                  }}>
+                    {result.tool && (
+                      <span style={{ fontWeight: 600, marginRight: 6, color: isError ? "#ed5f74" : "#0bbf8c" }}>
+                        {isError ? "x" : "v"} {result.tool}:
+                      </span>
+                    )}
+                    {truncated}
+                  </div>
+                </div>
+              );
+            }
+
             const isUser = msg.role === "user";
+            if (msg.role !== "user" && msg.role !== "employee") return null;
             return (
               <div key={msg.id} style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 12 }}>
                 <div style={{

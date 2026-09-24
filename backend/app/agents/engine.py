@@ -282,13 +282,21 @@ async def _llm_call_single(
     timeout: int,
     stream_callback=None,
     provider: str = "openrouter",
-) -> tuple[str, dict]:
-    """Returns (response_text, usage_dict)."""
+    tools: list[dict] | None = None,
+    tool_choice: str | dict | None = None,
+) -> tuple[str, dict, list | None]:
+    """Returns (response_text, usage_dict, tool_calls_or_none)."""
     client = get_client(provider)
     create_func = client.chat.completions.create
 
     is_async_client = isinstance(client, AsyncOpenAI) or inspect.iscoroutinefunction(create_func)
     target_model = resolve_model_name(model, provider)
+
+    extra_kwargs: dict[str, Any] = {}
+    if tools:
+        extra_kwargs["tools"] = tools
+        if tool_choice:
+            extra_kwargs["tool_choice"] = tool_choice
 
     if stream_callback:
         collected = []
@@ -301,6 +309,7 @@ async def _llm_call_single(
                 stream=True,
                 stream_options={"include_usage": True},
                 timeout=timeout,
+                **extra_kwargs,
             )
             async for chunk in response:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
@@ -318,6 +327,7 @@ async def _llm_call_single(
                     stream=True,
                     stream_options={"include_usage": True},
                     timeout=timeout,
+                    **extra_kwargs,
                 )
             response = await asyncio.to_thread(_sync_stream)
             if inspect.isasyncgen(response) or hasattr(response, "__aiter__"):
@@ -342,7 +352,7 @@ async def _llm_call_single(
         if usage["total_tokens"] == 0:
             usage["completion_tokens"] = len(result) // 4
             usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
-        return result, usage
+        return result, usage, None
     else:
         if is_async_client:
             response = await create_func(
@@ -350,6 +360,7 @@ async def _llm_call_single(
                 max_tokens=max_tokens,
                 messages=messages,
                 timeout=timeout,
+                **extra_kwargs,
             )
         else:
             def _sync_call():
@@ -358,6 +369,7 @@ async def _llm_call_single(
                     max_tokens=max_tokens,
                     messages=messages,
                     timeout=timeout,
+                    **extra_kwargs,
                 )
             response = await asyncio.to_thread(_sync_call)
 
@@ -368,13 +380,19 @@ async def _llm_call_single(
 
         if hasattr(response, "choices") and response.choices:
             choice = response.choices[0]
+            tool_calls_out = None
+            if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
+                tool_calls_out = [
+                    {"id": tc.id, "type": tc.type, "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                    for tc in choice.message.tool_calls
+                ]
             if hasattr(choice, "message") and hasattr(choice.message, "content"):
                 text = (choice.message.content or "").strip()
                 if usage["total_tokens"] == 0:
                     usage["completion_tokens"] = len(text) // 4
                     usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
-                return text, usage
-        return str(response).strip(), usage
+                return text, usage, tool_calls_out
+        return str(response).strip(), usage, None
 
 
 def _all_fallback_providers(exclude: str) -> list[str]:
@@ -403,8 +421,10 @@ async def _llm_call_with_retry(
     fallback_provider: str = "openrouter",
     project_id: str | None = None,
     role: str | None = None,
-) -> tuple[str, str, dict]:
-    """Returns (response_text, model_used, usage_dict)."""
+    tools: list[dict] | None = None,
+    tool_choice: str | dict | None = None,
+) -> tuple[str, str, dict, list | None]:
+    """Returns (response_text, model_used, usage_dict, tool_calls_or_none)."""
     if project_id:
         await resource_budget.check_llm_budget(project_id)
 
@@ -426,13 +446,16 @@ async def _llm_call_with_retry(
 
     for attempt in range(MAX_RETRIES):
         try:
-            text, usage = await _llm_call_single(model, messages, max_tokens, timeout, stream_callback, provider=provider)
+            text, usage, tool_calls = await _llm_call_single(
+                model, messages, max_tokens, timeout, stream_callback,
+                provider=provider, tools=tools, tool_choice=tool_choice,
+            )
             if project_id:
                 await resource_budget.record_llm_call(
                     project_id, tokens=usage.get("total_tokens", 0), role=role,
                     model=model, provider=provider, usage=usage,
                 )
-            return text, f"{provider}/{model}", usage
+            return text, f"{provider}/{model}", usage, tool_calls
         except Exception as e:
             last_error = e
             clean_err = _sanitize_error(str(e))
@@ -454,13 +477,16 @@ async def _llm_call_with_retry(
         tried.add(fb_prov)
         logger.warning(f"Trying key {fb_prov} with model {fb_model}")
         try:
-            text, usage = await _llm_call_single(fb_model, messages, max_tokens, timeout, stream_callback, provider=fb_prov)
+            text, usage, tool_calls = await _llm_call_single(
+                fb_model, messages, max_tokens, timeout, stream_callback,
+                provider=fb_prov, tools=tools, tool_choice=tool_choice,
+            )
             if project_id:
                 await resource_budget.record_llm_call(
                     project_id, tokens=usage.get("total_tokens", 0), role=role,
                     model=fb_model, provider=fb_prov, usage=usage,
                 )
-            return text, f"{fb_prov}/{fb_model}", usage
+            return text, f"{fb_prov}/{fb_model}", usage, tool_calls
         except Exception as e:
             last_error = e
             clean_err = _sanitize_error(str(e))
@@ -617,7 +643,7 @@ Now produce your deliverable. Respond ONLY with valid JSON. No markdown fences, 
 
     start_time = time.time()
 
-    raw_text, model_used, usage = await _llm_call_with_retry(
+    raw_text, model_used, usage, _ = await _llm_call_with_retry(
         model=agent_model,
         messages=[
             {"role": "system", "content": system_prompt},
@@ -721,7 +747,7 @@ async def cross_review(project_id: str, reviewed_role: AgentRole, output_content
     review_fb_provider = FALLBACK_PROVIDER_MAP.get("cross_review", "openrouter")
 
     try:
-        raw_text, _, _ = await _llm_call_with_retry(
+        raw_text, _, _, _ = await _llm_call_with_retry(
             model=review_model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPTS[reviewer_role]},
@@ -807,7 +833,7 @@ Be specific, helpful, and concise. You have full access to the project state.
     chat_provider = PROVIDER_MAP.get(role.value, "openrouter")
     chat_fb_provider = FALLBACK_PROVIDER_MAP.get(role.value, "openrouter")
 
-    raw_text, _, _ = await _llm_call_with_retry(
+    raw_text, _, _, _ = await _llm_call_with_retry(
         model=chat_model,
         messages=messages,
         max_tokens=4096,
@@ -920,3 +946,33 @@ Be specific, helpful, and concise. You have full access to the project state.
     await save_conversation(project_id, role.value, conversation)
 
     yield f"data: {json.dumps({'done': True})}\n\n"
+
+
+async def call_llm_with_fallback(
+    messages: list[dict],
+    role: str = "CEO",
+    temperature: float = 0.7,
+    max_tokens: int = 4096,
+    tools: list[dict] | None = None,
+    tool_choice: str | dict | None = None,
+) -> str | tuple[str, list | None]:
+    """Public wrapper for employee chat. Returns text when no tools, (text, tool_calls) when tools are provided."""
+    model = MODEL_MAP.get(role.lower(), SMART_MODEL)
+    provider = PROVIDER_MAP.get(role.lower(), "nvidia")
+    fallback = FALLBACK_MAP.get(role.lower())
+    fb_provider = FALLBACK_PROVIDER_MAP.get(role.lower(), "nvidia")
+
+    text, _, _, tool_calls = await _llm_call_with_retry(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        timeout=120,
+        fallback_model=fallback,
+        provider=provider,
+        fallback_provider=fb_provider,
+        tools=tools,
+        tool_choice=tool_choice,
+    )
+    if tools is not None:
+        return text, tool_calls
+    return text

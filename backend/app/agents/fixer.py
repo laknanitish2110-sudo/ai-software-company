@@ -178,7 +178,7 @@ async def generate_targeted_patch(
             fallback = FALLBACK_MAP.get("fixer", SMART_MODEL)
             fallback_provider = FALLBACK_PROVIDER_MAP.get("fixer", "openrouter")
 
-            raw_response, _, _ = await _llm_call_with_retry(
+            raw_response, _, _, _ = await _llm_call_with_retry(
                 model=model,
                 messages=messages,
                 max_tokens=8000,

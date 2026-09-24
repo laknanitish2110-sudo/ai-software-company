@@ -12,6 +12,7 @@ from app.models.schemas import AgentRole
 class MockChoiceMessage:
     def __init__(self, content):
         self.content = content
+        self.tool_calls = None
 
 class MockChoice:
     def __init__(self, content):
@@ -33,7 +34,7 @@ class TestP43AsyncLLMExecution(unittest.IsolatedAsyncioTestCase):
         mock_client.chat.completions.create = mock_async_create
 
         with patch("app.agents.engine.get_client", return_value=mock_client):
-            res, model_used = await _llm_call_with_retry(
+            res, model_used, _, _ = await _llm_call_with_retry(
                 model="gpt-4o",
                 messages=[{"role": "user", "content": "hello"}],
                 max_tokens=100,
@@ -81,8 +82,8 @@ class TestP43AsyncLLMExecution(unittest.IsolatedAsyncioTestCase):
         with patch("app.agents.engine.get_client", return_value=mock_client):
             # 1. Sequential Execution
             start_seq = time.time()
-            res1, _ = await _llm_call_with_retry("gpt-4o", [{"role": "user", "content": "call 1"}], 100, 5)
-            res2, _ = await _llm_call_with_retry("gpt-4o", [{"role": "user", "content": "call 2"}], 100, 5)
+            res1, _, _, _ = await _llm_call_with_retry("gpt-4o", [{"role": "user", "content": "call 1"}], 100, 5)
+            res2, _, _, _ = await _llm_call_with_retry("gpt-4o", [{"role": "user", "content": "call 2"}], 100, 5)
             dur_seq = time.time() - start_seq
 
             # 2. Concurrent Execution
@@ -128,7 +129,7 @@ class TestP43AsyncLLMExecution(unittest.IsolatedAsyncioTestCase):
         hb_task = asyncio.create_task(heartbeat())
         try:
             with patch("app.agents.engine.get_client", return_value=mock_client):
-                res, _ = await _llm_call_with_retry("gpt-4o", [{"role": "user", "content": "test"}], 100, 5)
+                res, _, _, _ = await _llm_call_with_retry("gpt-4o", [{"role": "user", "content": "test"}], 100, 5)
                 self.assertIn("DONE", res)
         finally:
             heartbeat_running = False

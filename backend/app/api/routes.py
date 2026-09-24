@@ -1582,24 +1582,105 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
         system_prompt += f"\n\n{emp['persona']}"
     if memory_context:
         system_prompt += memory_context
+    system_prompt += "\n\nYou have access to tools for code execution, file operations, GitHub, and web search. Use them when the task requires it."
 
     chat_messages.append({"role": "system", "content": system_prompt})
     for msg in history:
         if msg["role"] in ("user", "employee"):
             chat_messages.append({"role": "user" if msg["role"] == "user" else "assistant", "content": msg["content"]})
+        elif msg["role"] == "tool_calls":
+            try:
+                tc_data = json.loads(msg["content"])
+                chat_messages.append({"role": "assistant", "content": None, "tool_calls": tc_data})
+            except (json.JSONDecodeError, TypeError):
+                pass
+        elif msg["role"] == "tool_result":
+            try:
+                tr_data = json.loads(msg["content"])
+                chat_messages.append({"role": "tool", "tool_call_id": tr_data.get("tool_call_id", ""), "content": tr_data.get("result", "")})
+            except (json.JSONDecodeError, TypeError):
+                pass
 
     from app.agents.engine import call_llm_with_fallback
-    response_text = await call_llm_with_fallback(
-        messages=chat_messages,
-        role="CEO",
-        temperature=0.7,
-    )
+    from app.services.tool_executor import TOOL_SCHEMAS, execute_tool
+
+    github_token = await _get_user_github_token(user["id"])
+    project_id = req.project_id or session.get("project_id")
+
+    all_tool_calls = []
+    all_tool_results = []
+    max_iterations = 5
+    response_text = ""
+
+    for iteration in range(max_iterations):
+        text, tool_calls = await call_llm_with_fallback(
+            messages=chat_messages,
+            role="CEO",
+            temperature=0.7,
+            tools=TOOL_SCHEMAS,
+        )
+
+        if not tool_calls:
+            response_text = text
+            break
+
+        tc_msg = {"role": "assistant", "content": None, "tool_calls": tool_calls}
+        chat_messages.append(tc_msg)
+        all_tool_calls.extend(tool_calls)
+
+        await add_session_message(session_id, "tool_calls", json.dumps(tool_calls))
+
+        for tc in tool_calls:
+            func_name = tc["function"]["name"]
+            try:
+                func_args = json.loads(tc["function"]["arguments"])
+            except (json.JSONDecodeError, TypeError):
+                func_args = {}
+
+            result = await execute_tool(
+                tool_name=func_name,
+                arguments=func_args,
+                employee_id=emp["id"],
+                user_id=user["id"],
+                project_id=project_id,
+                github_token=github_token,
+            )
+
+            result_str = json.dumps(result)
+            if len(result_str) > 8000:
+                result_str = result_str[:8000] + "...(truncated)"
+
+            tool_result_record = {"tool_call_id": tc["id"], "tool": func_name, "result": result_str}
+            all_tool_results.append(tool_result_record)
+
+            chat_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
+            await add_session_message(session_id, "tool_result", json.dumps(tool_result_record))
+    else:
+        response_text = text or "I've completed the tool operations. Let me know if you need anything else."
 
     employee_msg = await add_session_message(session_id, "employee", response_text)
 
     _handle_memory_commands(emp["id"], req.content, response_text)
 
-    return {"user_message": user_msg, "employee_message": employee_msg}
+    return {
+        "user_message": user_msg,
+        "employee_message": employee_msg,
+        "tool_calls": all_tool_calls if all_tool_calls else None,
+        "tool_results": all_tool_results if all_tool_results else None,
+    }
+
+
+async def _get_user_github_token(user_id: str) -> str | None:
+    from app.core.database import get_user_setting
+    token_enc = await get_user_setting(user_id, "github_token")
+    if not token_enc:
+        return None
+    try:
+        from app.services.github_service import deobfuscate_token
+        from app.core.config import JWT_SECRET
+        return deobfuscate_token(token_enc, JWT_SECRET)
+    except Exception:
+        return None
 
 
 def _handle_memory_commands(employee_id: str, user_text: str, response_text: str):
