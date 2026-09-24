@@ -1686,6 +1686,9 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
 
     _handle_memory_commands(emp["id"], req.content, response_text)
 
+    from app.services.memory_engine import schedule_memory_extraction
+    schedule_memory_extraction(emp["id"], req.content, response_text, session_id)
+
     return {
         "user_message": user_msg,
         "employee_message": employee_msg,
@@ -1747,6 +1750,10 @@ async def api_end_session(session_id: str, user=Depends(get_current_user)):
         raise HTTPException(403, "Not your employee")
     await update_session(session_id, {"status": "completed", "ended_at": now_iso()})
     await update_employee(emp["id"], user["id"], {"status": "idle"})
+
+    from app.services.memory_engine import schedule_session_summary
+    schedule_session_summary(session_id, emp["id"], emp["name"], emp["role"])
+
     return {"status": "ended"}
 
 

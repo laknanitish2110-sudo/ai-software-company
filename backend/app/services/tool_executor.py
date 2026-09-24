@@ -192,6 +192,28 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_pipeline",
+            "description": "Trigger the AI software-building pipeline to build a complete project. This runs the full team: Business Analyst, Researcher, Architect, Engineer, QA — producing working code, tests, and documentation. Use this for substantial build requests.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "problem_statement": {
+                        "type": "string",
+                        "description": "What to build — a clear description of the software project or feature",
+                    },
+                    "route": {
+                        "type": "string",
+                        "enum": ["full", "standard", "quick_build", "backend_only", "frontend_only"],
+                        "description": "Pipeline route. 'full' runs all agents, 'quick_build' skips research/analysis for speed",
+                    },
+                },
+                "required": ["problem_statement"],
+            },
+        },
+    },
 ]
 
 TOOL_PERMISSION_MAP = {
@@ -202,6 +224,7 @@ TOOL_PERMISSION_MAP = {
     "github_read": ("github", "read"),
     "github_push": ("github", "write"),
     "web_search": ("web_search", "read"),
+    "run_pipeline": ("deploy", "execute"),
 }
 
 
@@ -250,6 +273,8 @@ async def execute_tool(
             return await _exec_github_push(arguments, github_token)
         elif tool_name == "web_search":
             return await _exec_web_search(arguments)
+        elif tool_name == "run_pipeline":
+            return await _exec_run_pipeline(arguments, user_id, project_id)
         else:
             return {"success": False, "error": f"Unknown tool: {tool_name}"}
     except Exception as e:
@@ -420,3 +445,33 @@ async def _exec_web_search(args: dict) -> dict:
         return {"success": True, "result": results}
     except Exception as e:
         return {"success": False, "error": f"Search failed: {e}"}
+
+
+async def _exec_run_pipeline(args: dict, user_id: str, project_id: str | None) -> dict:
+    from app.services.orchestrator import orchestrator
+
+    problem = args.get("problem_statement", "")
+    if not problem:
+        return {"success": False, "error": "problem_statement is required."}
+    route = args.get("route", "full")
+
+    try:
+        project = await orchestrator.start_project(
+            problem_statement=problem,
+            user_id=user_id,
+            auto_approve=False,
+            route=route,
+        )
+        return {
+            "success": True,
+            "result": f"Pipeline started! Project ID: {project['id']}. "
+                       f"Route: {route}. The team is now working on: {problem[:200]}. "
+                       f"Track progress in the Build Room or via /projects/{project['id']}.",
+            "project_id": project["id"],
+        }
+    except ValueError as e:
+        if "PROJECT_EXECUTION_IN_PROGRESS" in str(e):
+            return {"success": False, "error": "A pipeline is already running. Wait for it to finish."}
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        return {"success": False, "error": f"Pipeline start failed: {e}"}

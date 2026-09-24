@@ -89,7 +89,7 @@ TEMPLATES = [
             "You prefer boring, proven technologies over novel ones unless there's a clear advantage. "
             "You think about the system as a whole — performance, security, developer experience, and operational cost."
         ),
-        "default_tools": ["read_file", "write_file", "list_files", "web_search"],
+        "default_tools": ["read_file", "write_file", "list_files", "web_search", "run_pipeline"],
         "default_permissions": [
             ("files", "read", "allow"),
             ("files", "write", "allow"),
@@ -98,6 +98,7 @@ TEMPLATES = [
             ("github", "read", "allow"),
             ("github", "write", "deny"),
             ("e2b", "execute", "deny"),
+            ("deploy", "execute", "ask"),
         ],
     },
     {
@@ -120,7 +121,7 @@ TEMPLATES = [
             "and GitHub. Use them. Don't just describe what code should do — write it and run it.\n\n"
             "You explain your technical decisions briefly. You prefer working code over long explanations."
         ),
-        "default_tools": ["run_code", "read_file", "write_file", "list_files", "github_read", "github_push"],
+        "default_tools": ["run_code", "read_file", "write_file", "list_files", "github_read", "github_push", "run_pipeline"],
         "default_permissions": [
             ("e2b", "read", "allow"),
             ("e2b", "write", "allow"),
@@ -131,6 +132,7 @@ TEMPLATES = [
             ("github", "read", "allow"),
             ("github", "write", "ask"),
             ("web_search", "read", "allow"),
+            ("deploy", "execute", "ask"),
         ],
     },
     {
@@ -211,7 +213,7 @@ async def seed_default_templates() -> int:
             system_prompt=tmpl["system_prompt"],
             default_tools=tmpl["default_tools"],
             default_permissions=tmpl["default_permissions"],
-            version=1,
+            version=2,
         )
         count += 1
     logger.info(f"Seeded {count} employee templates")
