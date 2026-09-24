@@ -1501,6 +1501,22 @@ async def api_create_employee(req: CreateEmployeeRequest, user=Depends(get_curre
         persona=req.persona, avatar_url=req.avatar_url, config=req.config,
     )
     await init_employee_permissions(emp["id"], user["id"])
+    # Seed default skills based on role
+    try:
+        from app.core.default_team import TEMPLATES as SKILL_TEMPLATES
+        role_to_slug = {"Business Analyst": "ba", "Researcher": "researcher", "Architect": "architect",
+                        "Software Engineer": "engineer", "QA Engineer": "qa", "Technical Writer": "writer"}
+        slug = role_to_slug.get(req.role)
+        if slug:
+            skill_defs = next((t.get("default_skills", []) for t in SKILL_TEMPLATES if t["slug"] == slug), [])
+            for skill in skill_defs:
+                await create_skill(
+                    employee_id=emp["id"], name=skill["name"], description=skill["description"],
+                    procedure=skill["procedure"], trigger_pattern=skill.get("trigger_pattern"),
+                    examples=skill.get("examples"),
+                )
+    except Exception as e:
+        logger.warning(f"Failed to seed skills for new employee {emp['id']}: {e}")
     return emp
 
 
