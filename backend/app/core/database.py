@@ -288,6 +288,98 @@ async def init_db():
                     UNIQUE(project_id, seq)
                 );
                 CREATE INDEX IF NOT EXISTS idx_exec_events_proj_seq ON execution_events(project_id, seq);
+
+                CREATE TABLE IF NOT EXISTS employees (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    persona TEXT,
+                    avatar_url TEXT,
+                    status TEXT NOT NULL DEFAULT 'idle',
+                    config TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_employees_user ON employees(user_id);
+
+                CREATE TABLE IF NOT EXISTS memories (
+                    id TEXT PRIMARY KEY,
+                    employee_id TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    source TEXT,
+                    source_id TEXT,
+                    confidence REAL NOT NULL DEFAULT 0.8,
+                    importance REAL NOT NULL DEFAULT 0.5,
+                    tags TEXT,
+                    embedding_id TEXT,
+                    created_at TEXT NOT NULL,
+                    last_accessed TEXT,
+                    last_verified TEXT,
+                    stale_after TEXT,
+                    superseded_by TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_memories_employee ON memories(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(employee_id, type);
+                CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(employee_id, is_active);
+
+                CREATE TABLE IF NOT EXISTS employee_sessions (
+                    id TEXT PRIMARY KEY,
+                    employee_id TEXT NOT NULL,
+                    project_id TEXT,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    summary TEXT,
+                    started_at TEXT NOT NULL,
+                    ended_at TEXT,
+                    last_activity TEXT NOT NULL,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id),
+                    FOREIGN KEY (project_id) REFERENCES projects(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sessions_employee ON employee_sessions(employee_id);
+
+                CREATE TABLE IF NOT EXISTS session_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    tool_calls TEXT,
+                    tool_results TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES employee_sessions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_messages_session ON session_messages(session_id);
+
+                CREATE TABLE IF NOT EXISTS skills (
+                    id TEXT PRIMARY KEY,
+                    employee_id TEXT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    trigger_when TEXT,
+                    steps TEXT NOT NULL,
+                    validation TEXT,
+                    approval_rules TEXT,
+                    source TEXT DEFAULT 'manual',
+                    use_count INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS tool_permissions (
+                    id TEXT PRIMARY KEY,
+                    employee_id TEXT NOT NULL,
+                    tool TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    permission TEXT NOT NULL DEFAULT 'ask',
+                    granted_by TEXT,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id),
+                    UNIQUE(employee_id, tool, action)
+                );
             """)
         else:
             # PostgreSQL DDL
@@ -404,6 +496,91 @@ async def init_db():
                     CONSTRAINT unq_exec_events_proj_seq UNIQUE(project_id, seq)
                 );
                 CREATE INDEX IF NOT EXISTS idx_exec_events_proj_seq ON execution_events(project_id, seq);
+
+                CREATE TABLE IF NOT EXISTS employees (
+                    id VARCHAR(255) PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    role VARCHAR(255) NOT NULL,
+                    persona TEXT,
+                    avatar_url TEXT,
+                    status VARCHAR(64) NOT NULL DEFAULT 'idle',
+                    config TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_employees_user ON employees(user_id);
+
+                CREATE TABLE IF NOT EXISTS memories (
+                    id VARCHAR(255) PRIMARY KEY,
+                    employee_id VARCHAR(255) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    type VARCHAR(64) NOT NULL,
+                    content TEXT NOT NULL,
+                    source VARCHAR(255),
+                    source_id VARCHAR(255),
+                    confidence REAL NOT NULL DEFAULT 0.8,
+                    importance REAL NOT NULL DEFAULT 0.5,
+                    tags TEXT,
+                    embedding_id VARCHAR(255),
+                    created_at TEXT NOT NULL,
+                    last_accessed TEXT,
+                    last_verified TEXT,
+                    stale_after TEXT,
+                    superseded_by VARCHAR(255),
+                    is_active INTEGER NOT NULL DEFAULT 1
+                );
+                CREATE INDEX IF NOT EXISTS idx_memories_employee ON memories(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(employee_id, type);
+                CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(employee_id, is_active);
+
+                CREATE TABLE IF NOT EXISTS employee_sessions (
+                    id VARCHAR(255) PRIMARY KEY,
+                    employee_id VARCHAR(255) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    project_id VARCHAR(255) REFERENCES projects(id) ON DELETE SET NULL,
+                    status VARCHAR(64) NOT NULL DEFAULT 'active',
+                    summary TEXT,
+                    started_at TEXT NOT NULL,
+                    ended_at TEXT,
+                    last_activity TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sessions_employee ON employee_sessions(employee_id);
+
+                CREATE TABLE IF NOT EXISTS session_messages (
+                    id VARCHAR(255) PRIMARY KEY,
+                    session_id VARCHAR(255) NOT NULL REFERENCES employee_sessions(id) ON DELETE CASCADE,
+                    role VARCHAR(64) NOT NULL,
+                    content TEXT NOT NULL,
+                    tool_calls TEXT,
+                    tool_results TEXT,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_messages_session ON session_messages(session_id);
+
+                CREATE TABLE IF NOT EXISTS skills (
+                    id VARCHAR(255) PRIMARY KEY,
+                    employee_id VARCHAR(255) REFERENCES employees(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    trigger_when TEXT,
+                    steps TEXT NOT NULL,
+                    validation TEXT,
+                    approval_rules TEXT,
+                    source VARCHAR(64) DEFAULT 'manual',
+                    use_count INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS tool_permissions (
+                    id VARCHAR(255) PRIMARY KEY,
+                    employee_id VARCHAR(255) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    tool VARCHAR(255) NOT NULL,
+                    action VARCHAR(64) NOT NULL,
+                    permission VARCHAR(64) NOT NULL DEFAULT 'ask',
+                    granted_by VARCHAR(255),
+                    updated_at TEXT NOT NULL,
+                    CONSTRAINT unq_tool_perm UNIQUE(employee_id, tool, action)
+                );
             """)
         await db.commit()
 
@@ -466,6 +643,22 @@ async def init_db():
                     END $$;
                 """)
             await db.execute("UPDATE users SET email_verified = 1 WHERE email_verified = 0 AND verification_code IS NULL")
+            await db.commit()
+
+        # Migrate: add employee_id to projects table
+        if db.backend_type == "sqlite":
+            proj_cols = [r["name"] for r in await (await db.execute("PRAGMA table_info(projects)")).fetchall()]
+            if "employee_id" not in proj_cols:
+                await db.execute("ALTER TABLE projects ADD COLUMN employee_id TEXT")
+                await db.commit()
+                logger.info("Migration: added employee_id column to projects table")
+        else:
+            await db.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE projects ADD COLUMN employee_id VARCHAR(255);
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
             await db.commit()
 
         # Performance indexes on frequently queried columns
@@ -1216,6 +1409,421 @@ async def claim_and_recover_stale_executions(stale_running_seconds: int = 30, st
                 )
             await db.commit()
         return claimed
+    finally:
+        await db.close()
+
+
+# --- EMPLOYEE DATABASE FUNCTIONS ---
+
+async def create_employee(user_id: str, name: str, role: str, persona: str | None = None, avatar_url: str | None = None, config: dict | None = None) -> dict:
+    db = await get_db()
+    try:
+        eid = new_id()
+        ts = now_iso()
+        config_json = json.dumps(config) if config else None
+        await db.execute(
+            """INSERT INTO employees (id, user_id, name, role, persona, avatar_url, status, config, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)""",
+            (eid, user_id, name, role, persona, avatar_url, config_json, ts, ts),
+        )
+        await db.commit()
+        return {"id": eid, "user_id": user_id, "name": name, "role": role, "persona": persona,
+                "avatar_url": avatar_url, "status": "idle", "config": config, "created_at": ts, "updated_at": ts}
+    finally:
+        await db.close()
+
+
+async def list_employees(user_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM employees WHERE user_id = ? AND status != 'archived' ORDER BY created_at ASC",
+            (user_id,),
+        )
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("config"), str):
+                try:
+                    r["config"] = json.loads(r["config"])
+                except Exception:
+                    pass
+        return rows
+    finally:
+        await db.close()
+
+
+async def get_employee(employee_id: str, user_id: str | None = None) -> dict | None:
+    db = await get_db()
+    try:
+        if user_id:
+            cursor = await db.execute(
+                "SELECT * FROM employees WHERE id = ? AND user_id = ?", (employee_id, user_id))
+        else:
+            cursor = await db.execute("SELECT * FROM employees WHERE id = ?", (employee_id,))
+        row = await cursor.fetchone()
+        if row and isinstance(row.get("config"), str):
+            try:
+                row["config"] = json.loads(row["config"])
+            except Exception:
+                pass
+        return row
+    finally:
+        await db.close()
+
+
+async def update_employee(employee_id: str, user_id: str, updates: dict) -> dict | None:
+    db = await get_db()
+    try:
+        allowed = {"name", "role", "persona", "avatar_url", "status", "config"}
+        parts, vals = [], []
+        for k, v in updates.items():
+            if k not in allowed:
+                continue
+            if k == "config" and isinstance(v, dict):
+                v = json.dumps(v)
+            parts.append(f"{k} = ?")
+            vals.append(v)
+        if not parts:
+            return await get_employee(employee_id, user_id)
+        parts.append("updated_at = ?")
+        vals.append(now_iso())
+        vals.extend([employee_id, user_id])
+        await db.execute(
+            f"UPDATE employees SET {', '.join(parts)} WHERE id = ? AND user_id = ?", tuple(vals))
+        await db.commit()
+        return await get_employee(employee_id, user_id)
+    finally:
+        await db.close()
+
+
+async def archive_employee(employee_id: str, user_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "UPDATE employees SET status = 'archived', updated_at = ? WHERE id = ? AND user_id = ?",
+            (now_iso(), employee_id, user_id))
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+# --- EMPLOYEE SESSION FUNCTIONS ---
+
+async def create_employee_session(employee_id: str, project_id: str | None = None) -> dict:
+    db = await get_db()
+    try:
+        sid = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO employee_sessions (id, employee_id, project_id, status, started_at, last_activity)
+               VALUES (?, ?, ?, 'active', ?, ?)""",
+            (sid, employee_id, project_id, ts, ts),
+        )
+        await db.commit()
+        return {"id": sid, "employee_id": employee_id, "project_id": project_id,
+                "status": "active", "summary": None, "started_at": ts, "ended_at": None, "last_activity": ts}
+    finally:
+        await db.close()
+
+
+async def list_employee_sessions(employee_id: str, limit: int = 20) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM employee_sessions WHERE employee_id = ? ORDER BY started_at DESC LIMIT ?",
+            (employee_id, limit),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def get_session(session_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM employee_sessions WHERE id = ?", (session_id,))
+        return await cursor.fetchone()
+    finally:
+        await db.close()
+
+
+async def update_session(session_id: str, updates: dict) -> None:
+    db = await get_db()
+    try:
+        allowed = {"status", "summary", "ended_at", "last_activity", "project_id"}
+        parts, vals = [], []
+        for k, v in updates.items():
+            if k in allowed:
+                parts.append(f"{k} = ?")
+                vals.append(v)
+        if not parts:
+            return
+        vals.append(session_id)
+        await db.execute(f"UPDATE employee_sessions SET {', '.join(parts)} WHERE id = ?", tuple(vals))
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_or_create_active_session(employee_id: str) -> dict:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM employee_sessions WHERE employee_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1",
+            (employee_id,),
+        )
+        row = await cursor.fetchone()
+        if row:
+            return row
+    finally:
+        await db.close()
+    return await create_employee_session(employee_id)
+
+
+# --- SESSION MESSAGE FUNCTIONS ---
+
+async def add_session_message(session_id: str, role: str, content: str,
+                              tool_calls: list | None = None, tool_results: list | None = None) -> dict:
+    db = await get_db()
+    try:
+        mid = new_id()
+        ts = now_iso()
+        tc_json = json.dumps(tool_calls) if tool_calls else None
+        tr_json = json.dumps(tool_results) if tool_results else None
+        await db.execute(
+            """INSERT INTO session_messages (id, session_id, role, content, tool_calls, tool_results, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (mid, session_id, role, content, tc_json, tr_json, ts),
+        )
+        await db.execute(
+            "UPDATE employee_sessions SET last_activity = ? WHERE id = ?", (ts, session_id))
+        await db.commit()
+        return {"id": mid, "session_id": session_id, "role": role, "content": content,
+                "tool_calls": tool_calls, "tool_results": tool_results, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_session_messages(session_id: str, limit: int = 100) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM session_messages WHERE session_id = ? ORDER BY created_at ASC LIMIT ?",
+            (session_id, limit),
+        )
+        rows = await cursor.fetchall()
+        for r in rows:
+            for field in ("tool_calls", "tool_results"):
+                if isinstance(r.get(field), str):
+                    try:
+                        r[field] = json.loads(r[field])
+                    except Exception:
+                        pass
+        return rows
+    finally:
+        await db.close()
+
+
+# --- MEMORY FUNCTIONS ---
+
+async def create_memory(employee_id: str, mem_type: str, content: str,
+                        source: str | None = None, source_id: str | None = None,
+                        confidence: float = 0.8, importance: float = 0.5,
+                        tags: list[str] | None = None, stale_after: str | None = None) -> dict:
+    db = await get_db()
+    try:
+        mid = new_id()
+        ts = now_iso()
+        tags_json = json.dumps(tags) if tags else None
+        await db.execute(
+            """INSERT INTO memories (id, employee_id, type, content, source, source_id,
+               confidence, importance, tags, created_at, last_accessed, stale_after, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (mid, employee_id, mem_type, content, source, source_id,
+             confidence, importance, tags_json, ts, ts, stale_after),
+        )
+        await db.commit()
+        return {"id": mid, "employee_id": employee_id, "type": mem_type, "content": content,
+                "source": source, "confidence": confidence, "importance": importance,
+                "tags": tags, "created_at": ts, "is_active": True}
+    finally:
+        await db.close()
+
+
+async def list_memories(employee_id: str, mem_type: str | None = None,
+                        search: str | None = None, limit: int = 50) -> list[dict]:
+    db = await get_db()
+    try:
+        sql = "SELECT * FROM memories WHERE employee_id = ? AND is_active = 1"
+        params: list = [employee_id]
+        if mem_type:
+            sql += " AND type = ?"
+            params.append(mem_type)
+        if search:
+            sql += " AND (content LIKE ? OR tags LIKE ?)"
+            params.extend([f"%{search}%", f"%{search}%"])
+        sql += " ORDER BY importance DESC, created_at DESC LIMIT ?"
+        params.append(limit)
+        cursor = await db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("tags"), str):
+                try:
+                    r["tags"] = json.loads(r["tags"])
+                except Exception:
+                    pass
+        return rows
+    finally:
+        await db.close()
+
+
+async def update_memory(memory_id: str, updates: dict) -> dict | None:
+    db = await get_db()
+    try:
+        allowed = {"content", "confidence", "importance", "tags", "stale_after", "is_active", "superseded_by", "last_verified"}
+        parts, vals = [], []
+        for k, v in updates.items():
+            if k not in allowed:
+                continue
+            if k == "tags" and isinstance(v, list):
+                v = json.dumps(v)
+            parts.append(f"{k} = ?")
+            vals.append(v)
+        if not parts:
+            return None
+        vals.append(memory_id)
+        await db.execute(f"UPDATE memories SET {', '.join(parts)} WHERE id = ?", tuple(vals))
+        await db.commit()
+        cursor = await db.execute("SELECT * FROM memories WHERE id = ?", (memory_id,))
+        row = await cursor.fetchone()
+        if row and isinstance(row.get("tags"), str):
+            try:
+                row["tags"] = json.loads(row["tags"])
+            except Exception:
+                pass
+        return row
+    finally:
+        await db.close()
+
+
+async def deactivate_memory(memory_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "UPDATE memories SET is_active = 0 WHERE id = ?", (memory_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def retrieve_memories_for_context(employee_id: str, query: str | None = None, limit: int = 15) -> list[dict]:
+    db = await get_db()
+    try:
+        now = now_iso()
+        sql = "SELECT * FROM memories WHERE employee_id = ? AND is_active = 1 AND (stale_after IS NULL OR stale_after > ?)"
+        params: list = [employee_id, now]
+        if query:
+            sql += " AND (content LIKE ? OR tags LIKE ?)"
+            params.extend([f"%{query}%", f"%{query}%"])
+        sql += " ORDER BY importance DESC, confidence DESC, created_at DESC LIMIT ?"
+        params.append(limit)
+        cursor = await db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("tags"), str):
+                try:
+                    r["tags"] = json.loads(r["tags"])
+                except Exception:
+                    pass
+        if rows:
+            mem_ids = [r["id"] for r in rows]
+            for mid in mem_ids:
+                await db.execute("UPDATE memories SET last_accessed = ? WHERE id = ?", (now, mid))
+            await db.commit()
+        return rows
+    finally:
+        await db.close()
+
+
+# --- TOOL PERMISSION FUNCTIONS ---
+
+DEFAULT_PERMISSIONS = [
+    ("github", "read", "allow"), ("github", "write", "ask"), ("github", "delete", "deny"),
+    ("e2b", "read", "allow"), ("e2b", "write", "allow"), ("e2b", "execute", "allow"),
+    ("terminal", "read", "allow"), ("terminal", "execute", "ask"),
+    ("files", "read", "allow"), ("files", "write", "allow"), ("files", "delete", "ask"),
+    ("database", "read", "allow"), ("database", "write", "ask"), ("database", "delete", "deny"),
+    ("deploy", "read", "allow"), ("deploy", "execute", "deny"),
+    ("web_search", "read", "allow"),
+    ("notification", "execute", "ask"),
+]
+
+
+async def init_employee_permissions(employee_id: str, granted_by: str) -> None:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        for tool, action, perm in DEFAULT_PERMISSIONS:
+            pid = new_id()
+            await db.execute(
+                """INSERT OR IGNORE INTO tool_permissions (id, employee_id, tool, action, permission, granted_by, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (pid, employee_id, tool, action, perm, granted_by, ts),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_employee_permissions(employee_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM tool_permissions WHERE employee_id = ? ORDER BY tool, action",
+            (employee_id,),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def update_employee_permission(employee_id: str, tool: str, action: str, permission: str, granted_by: str) -> dict | None:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        cursor = await db.execute(
+            "UPDATE tool_permissions SET permission = ?, granted_by = ?, updated_at = ? WHERE employee_id = ? AND tool = ? AND action = ?",
+            (permission, granted_by, ts, employee_id, tool, action),
+        )
+        await db.commit()
+        if cursor.rowcount == 0:
+            pid = new_id()
+            await db.execute(
+                """INSERT INTO tool_permissions (id, employee_id, tool, action, permission, granted_by, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (pid, employee_id, tool, action, permission, granted_by, ts),
+            )
+            await db.commit()
+        cursor = await db.execute(
+            "SELECT * FROM tool_permissions WHERE employee_id = ? AND tool = ? AND action = ?",
+            (employee_id, tool, action),
+        )
+        return await cursor.fetchone()
+    finally:
+        await db.close()
+
+
+async def check_permission(employee_id: str, tool: str, action: str) -> str:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT permission FROM tool_permissions WHERE employee_id = ? AND tool = ? AND action = ?",
+            (employee_id, tool, action),
+        )
+        row = await cursor.fetchone()
+        return row["permission"] if row else "ask"
     finally:
         await db.close()
 

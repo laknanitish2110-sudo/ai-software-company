@@ -71,6 +71,27 @@ from app.core.database import (
     set_user_verified,
     set_verification_code,
     get_user_verification,
+    create_employee,
+    list_employees,
+    get_employee,
+    update_employee,
+    archive_employee,
+    init_employee_permissions,
+    create_employee_session,
+    list_employee_sessions,
+    get_session,
+    update_session,
+    get_or_create_active_session,
+    add_session_message,
+    get_session_messages,
+    create_memory,
+    list_memories,
+    update_memory,
+    deactivate_memory,
+    retrieve_memories_for_context,
+    get_employee_permissions,
+    update_employee_permission,
+    check_permission,
 )
 
 router = APIRouter()
@@ -95,6 +116,52 @@ class VerifyEmailRequest(BaseModel):
 
 class ResendCodeRequest(BaseModel):
     email: str
+
+
+class CreateEmployeeRequest(BaseModel):
+    name: str
+    role: str
+    persona: str | None = None
+    avatar_url: str | None = None
+    config: dict | None = None
+
+
+class UpdateEmployeeRequest(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    persona: str | None = None
+    avatar_url: str | None = None
+    status: str | None = None
+    config: dict | None = None
+
+
+class SendMessageRequest(BaseModel):
+    content: str
+    project_id: str | None = None
+
+
+class CreateMemoryRequest(BaseModel):
+    type: str
+    content: str
+    source: str | None = None
+    confidence: float = 0.8
+    importance: float = 0.5
+    tags: list[str] | None = None
+    stale_after: str | None = None
+
+
+class UpdateMemoryRequest(BaseModel):
+    content: str | None = None
+    confidence: float | None = None
+    importance: float | None = None
+    tags: list[str] | None = None
+    is_active: int | None = None
+
+
+class UpdatePermissionRequest(BaseModel):
+    tool: str
+    action: str
+    permission: str
 
 
 async def _send_verification_email(email: str, code: str):
@@ -1412,3 +1479,231 @@ async def websocket_endpoint(websocket: WebSocket, project_id: str, token: str |
             active_connections[project_id].remove(websocket)
             if not active_connections[project_id]:
                 del active_connections[project_id]
+
+
+# --- EMPLOYEE ENDPOINTS ---
+
+@router.post("/employees")
+async def api_create_employee(req: CreateEmployeeRequest, user=Depends(get_current_user)):
+    emp = await create_employee(
+        user_id=user["id"], name=req.name, role=req.role,
+        persona=req.persona, avatar_url=req.avatar_url, config=req.config,
+    )
+    await init_employee_permissions(emp["id"], user["id"])
+    return emp
+
+
+@router.get("/employees")
+async def api_list_employees(user=Depends(get_current_user)):
+    return await list_employees(user["id"])
+
+
+@router.get("/employees/{employee_id}")
+async def api_get_employee(employee_id: str, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    return emp
+
+
+@router.patch("/employees/{employee_id}")
+async def api_update_employee(employee_id: str, req: UpdateEmployeeRequest, user=Depends(get_current_user)):
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    emp = await update_employee(employee_id, user["id"], updates)
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    return emp
+
+
+@router.delete("/employees/{employee_id}")
+async def api_archive_employee(employee_id: str, user=Depends(get_current_user)):
+    ok = await archive_employee(employee_id, user["id"])
+    if not ok:
+        raise HTTPException(404, "Employee not found")
+    return {"status": "archived"}
+
+
+# --- EMPLOYEE SESSION ENDPOINTS ---
+
+@router.post("/employees/{employee_id}/sessions")
+async def api_create_session(employee_id: str, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    session = await get_or_create_active_session(employee_id)
+    return session
+
+
+@router.get("/employees/{employee_id}/sessions")
+async def api_list_sessions(employee_id: str, limit: int = 20, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    return await list_employee_sessions(employee_id, limit=limit)
+
+
+@router.get("/sessions/{session_id}")
+async def api_get_session(session_id: str, user=Depends(get_current_user)):
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    emp = await get_employee(session["employee_id"], user["id"])
+    if not emp:
+        raise HTTPException(403, "Not your employee")
+    messages = await get_session_messages(session_id)
+    return {**session, "messages": messages}
+
+
+@router.post("/sessions/{session_id}/messages")
+async def api_send_message(session_id: str, req: SendMessageRequest, user=Depends(get_current_user)):
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    emp = await get_employee(session["employee_id"], user["id"])
+    if not emp:
+        raise HTTPException(403, "Not your employee")
+    if session["status"] != "active":
+        raise HTTPException(400, "Session is not active")
+
+    user_msg = await add_session_message(session_id, "user", req.content)
+
+    memories = await retrieve_memories_for_context(emp["id"], query=req.content, limit=10)
+    memory_context = ""
+    if memories:
+        memory_lines = [f"- [{m['type']}] {m['content']}" for m in memories]
+        memory_context = "\n\nYour memories:\n" + "\n".join(memory_lines)
+
+    history = await get_session_messages(session_id, limit=50)
+    chat_messages = []
+    system_prompt = f"You are {emp['name']}, a {emp['role']}."
+    if emp.get("persona"):
+        system_prompt += f"\n\n{emp['persona']}"
+    if memory_context:
+        system_prompt += memory_context
+
+    chat_messages.append({"role": "system", "content": system_prompt})
+    for msg in history:
+        if msg["role"] in ("user", "employee"):
+            chat_messages.append({"role": "user" if msg["role"] == "user" else "assistant", "content": msg["content"]})
+
+    from app.agents.engine import call_llm_with_fallback
+    response_text = await call_llm_with_fallback(
+        messages=chat_messages,
+        role="CEO",
+        temperature=0.7,
+    )
+
+    employee_msg = await add_session_message(session_id, "employee", response_text)
+
+    _handle_memory_commands(emp["id"], req.content, response_text)
+
+    return {"user_message": user_msg, "employee_message": employee_msg}
+
+
+def _handle_memory_commands(employee_id: str, user_text: str, response_text: str):
+    lower = user_text.lower().strip()
+    if lower.startswith("remember ") or lower.startswith("remember:"):
+        content = user_text[len("remember"):].strip().lstrip(":").strip()
+        if content:
+            asyncio.create_task(_save_memory_async(employee_id, content))
+    elif lower.startswith("forget ") or lower.startswith("forget:"):
+        content = user_text[len("forget"):].strip().lstrip(":").strip()
+        if content:
+            asyncio.create_task(_forget_memory_async(employee_id, content))
+
+
+async def _save_memory_async(employee_id: str, content: str):
+    try:
+        await create_memory(employee_id, "semantic", content, source="user_command", confidence=1.0, importance=0.7)
+    except Exception as e:
+        logger.warning(f"Failed to save memory: {e}")
+
+
+async def _forget_memory_async(employee_id: str, content: str):
+    try:
+        memories = await list_memories(employee_id, search=content, limit=5)
+        for m in memories:
+            if content.lower() in m["content"].lower():
+                await deactivate_memory(m["id"])
+                break
+    except Exception as e:
+        logger.warning(f"Failed to forget memory: {e}")
+
+
+@router.post("/sessions/{session_id}/end")
+async def api_end_session(session_id: str, user=Depends(get_current_user)):
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    emp = await get_employee(session["employee_id"], user["id"])
+    if not emp:
+        raise HTTPException(403, "Not your employee")
+    await update_session(session_id, {"status": "completed", "ended_at": now_iso()})
+    await update_employee(emp["id"], user["id"], {"status": "idle"})
+    return {"status": "ended"}
+
+
+# --- EMPLOYEE MEMORY ENDPOINTS ---
+
+@router.get("/employees/{employee_id}/memories")
+async def api_list_memories(employee_id: str, type: str | None = None, search: str | None = None,
+                            limit: int = 50, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    return await list_memories(employee_id, mem_type=type, search=search, limit=limit)
+
+
+@router.post("/employees/{employee_id}/memories")
+async def api_create_memory(employee_id: str, req: CreateMemoryRequest, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if req.type not in ("working", "episodic", "semantic", "preference", "procedural"):
+        raise HTTPException(400, "Invalid memory type")
+    return await create_memory(
+        employee_id, req.type, req.content, source=req.source,
+        confidence=req.confidence, importance=req.importance,
+        tags=req.tags, stale_after=req.stale_after,
+    )
+
+
+@router.patch("/memories/{memory_id}")
+async def api_update_memory(memory_id: str, req: UpdateMemoryRequest, user=Depends(get_current_user)):
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    mem = await update_memory(memory_id, updates)
+    if not mem:
+        raise HTTPException(404, "Memory not found")
+    return mem
+
+
+@router.delete("/memories/{memory_id}")
+async def api_deactivate_memory(memory_id: str, user=Depends(get_current_user)):
+    ok = await deactivate_memory(memory_id)
+    if not ok:
+        raise HTTPException(404, "Memory not found")
+    return {"status": "deactivated"}
+
+
+# --- EMPLOYEE PERMISSION ENDPOINTS ---
+
+@router.get("/employees/{employee_id}/permissions")
+async def api_get_permissions(employee_id: str, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    return await get_employee_permissions(employee_id)
+
+
+@router.patch("/employees/{employee_id}/permissions")
+async def api_update_permission(employee_id: str, req: UpdatePermissionRequest, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if req.permission not in ("allow", "ask", "deny"):
+        raise HTTPException(400, "Permission must be allow, ask, or deny")
+    return await update_employee_permission(employee_id, req.tool, req.action, req.permission, user["id"])
