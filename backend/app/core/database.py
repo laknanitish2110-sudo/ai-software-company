@@ -289,9 +289,25 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_exec_events_proj_seq ON execution_events(project_id, seq);
 
+                CREATE TABLE IF NOT EXISTS employee_templates (
+                    id TEXT PRIMARY KEY,
+                    slug TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    description TEXT,
+                    system_prompt TEXT NOT NULL,
+                    default_tools TEXT,
+                    default_permissions TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS employees (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
+                    template_id TEXT,
                     name TEXT NOT NULL,
                     role TEXT NOT NULL,
                     persona TEXT,
@@ -300,7 +316,8 @@ async def init_db():
                     config TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    FOREIGN KEY (template_id) REFERENCES employee_templates(id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_employees_user ON employees(user_id);
 
@@ -497,9 +514,25 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_exec_events_proj_seq ON execution_events(project_id, seq);
 
+                CREATE TABLE IF NOT EXISTS employee_templates (
+                    id VARCHAR(255) PRIMARY KEY,
+                    slug VARCHAR(255) NOT NULL UNIQUE,
+                    name VARCHAR(255) NOT NULL,
+                    role VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    system_prompt TEXT NOT NULL,
+                    default_tools TEXT,
+                    default_permissions TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS employees (
                     id VARCHAR(255) PRIMARY KEY,
                     user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    template_id VARCHAR(255) REFERENCES employee_templates(id) ON DELETE SET NULL,
                     name VARCHAR(255) NOT NULL,
                     role VARCHAR(255) NOT NULL,
                     persona TEXT,
@@ -661,6 +694,29 @@ async def init_db():
             """)
             await db.commit()
 
+        # Migrate: add template_id to employees table
+        if db.backend_type == "sqlite":
+            emp_cols = [r["name"] for r in await (await db.execute("PRAGMA table_info(employees)")).fetchall()]
+            if "template_id" not in emp_cols:
+                await db.execute("ALTER TABLE employees ADD COLUMN template_id TEXT")
+                await db.commit()
+                logger.info("Migration: added template_id column to employees table")
+        else:
+            await db.execute("""
+                DO $$ BEGIN
+                    ALTER TABLE employees ADD COLUMN template_id VARCHAR(255);
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$;
+            """)
+            await db.commit()
+
+        # Unique index on (user_id, template_id) — must run after migration ensures column exists
+        if db.backend_type == "sqlite":
+            await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_user_template ON employees(user_id, template_id) WHERE template_id IS NOT NULL")
+        else:
+            await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_user_template ON employees(user_id, template_id) WHERE template_id IS NOT NULL")
+        await db.commit()
+
         # Performance indexes on frequently queried columns
         index_stmts = [
             "CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)",
@@ -683,6 +739,13 @@ async def init_db():
         await recover_orphaned_executions(stale_threshold_seconds=30)
     except Exception as rec_err:
         logger.warning(f"Startup crash recovery notice: {rec_err}")
+
+    try:
+        from app.core.default_team import seed_default_templates
+        count = await seed_default_templates()
+        logger.info(f"Employee template seeding complete: {count} templates")
+    except Exception as seed_err:
+        logger.warning(f"Employee template seeding notice: {seed_err}")
 
 
 def now_iso() -> str:
@@ -1415,20 +1478,23 @@ async def claim_and_recover_stale_executions(stale_running_seconds: int = 30, st
 
 # --- EMPLOYEE DATABASE FUNCTIONS ---
 
-async def create_employee(user_id: str, name: str, role: str, persona: str | None = None, avatar_url: str | None = None, config: dict | None = None) -> dict:
+async def create_employee(user_id: str, name: str, role: str, persona: str | None = None,
+                          avatar_url: str | None = None, config: dict | None = None,
+                          template_id: str | None = None) -> dict:
     db = await get_db()
     try:
         eid = new_id()
         ts = now_iso()
         config_json = json.dumps(config) if config else None
         await db.execute(
-            """INSERT INTO employees (id, user_id, name, role, persona, avatar_url, status, config, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)""",
-            (eid, user_id, name, role, persona, avatar_url, config_json, ts, ts),
+            """INSERT INTO employees (id, user_id, template_id, name, role, persona, avatar_url, status, config, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)""",
+            (eid, user_id, template_id, name, role, persona, avatar_url, config_json, ts, ts),
         )
         await db.commit()
-        return {"id": eid, "user_id": user_id, "name": name, "role": role, "persona": persona,
-                "avatar_url": avatar_url, "status": "idle", "config": config, "created_at": ts, "updated_at": ts}
+        return {"id": eid, "user_id": user_id, "template_id": template_id, "name": name, "role": role,
+                "persona": persona, "avatar_url": avatar_url, "status": "idle", "config": config,
+                "created_at": ts, "updated_at": ts}
     finally:
         await db.close()
 
@@ -1826,4 +1892,110 @@ async def check_permission(employee_id: str, tool: str, action: str) -> str:
         return row["permission"] if row else "ask"
     finally:
         await db.close()
+
+
+# --- EMPLOYEE TEMPLATES ---
+
+async def upsert_template(slug: str, name: str, role: str, description: str,
+                           system_prompt: str, default_tools: list[str],
+                           default_permissions: list[tuple[str, str, str]],
+                           version: int = 1) -> dict:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        tools_json = json.dumps(default_tools)
+        perms_json = json.dumps(default_permissions)
+        cursor = await db.execute("SELECT id, version FROM employee_templates WHERE slug = ?", (slug,))
+        existing = await cursor.fetchone()
+        if existing:
+            if existing["version"] < version:
+                await db.execute(
+                    """UPDATE employee_templates SET name=?, role=?, description=?, system_prompt=?,
+                       default_tools=?, default_permissions=?, version=?, updated_at=? WHERE slug=?""",
+                    (name, role, description, system_prompt, tools_json, perms_json, version, ts, slug),
+                )
+                await db.commit()
+            return {"id": existing["id"], "slug": slug, "version": version}
+        tid = new_id()
+        await db.execute(
+            """INSERT INTO employee_templates (id, slug, name, role, description, system_prompt,
+               default_tools, default_permissions, version, is_active, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            (tid, slug, name, role, description, system_prompt, tools_json, perms_json, version, ts, ts),
+        )
+        await db.commit()
+        return {"id": tid, "slug": slug, "version": version}
+    finally:
+        await db.close()
+
+
+async def list_templates(active_only: bool = True) -> list[dict]:
+    db = await get_db()
+    try:
+        q = "SELECT * FROM employee_templates"
+        if active_only:
+            q += " WHERE is_active = 1"
+        q += " ORDER BY slug"
+        cursor = await db.execute(q)
+        rows = await cursor.fetchall()
+        for row in rows:
+            if row.get("default_tools") and isinstance(row["default_tools"], str):
+                row["default_tools"] = json.loads(row["default_tools"])
+            if row.get("default_permissions") and isinstance(row["default_permissions"], str):
+                row["default_permissions"] = json.loads(row["default_permissions"])
+        return rows
+    finally:
+        await db.close()
+
+
+async def provision_default_team(user_id: str) -> list[dict]:
+    """Idempotent: creates employees from active templates the user doesn't already have."""
+    templates = await list_templates(active_only=True)
+    if not templates:
+        return []
+
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT template_id FROM employees WHERE user_id = ? AND template_id IS NOT NULL",
+            (user_id,),
+        )
+        existing = {r["template_id"] for r in await cursor.fetchall()}
+    finally:
+        await db.close()
+
+    created = []
+    for tmpl in templates:
+        if tmpl["id"] in existing:
+            continue
+        try:
+            emp = await create_employee(
+                user_id=user_id,
+                name=tmpl["name"],
+                role=tmpl["role"],
+                persona=tmpl["system_prompt"],
+                template_id=tmpl["id"],
+            )
+            perms = tmpl.get("default_permissions") or []
+            if isinstance(perms, str):
+                perms = json.loads(perms)
+            if perms:
+                perm_db = await get_db()
+                try:
+                    ts = now_iso()
+                    for tool, action, perm in perms:
+                        pid = new_id()
+                        await perm_db.execute(
+                            """INSERT OR IGNORE INTO tool_permissions (id, employee_id, tool, action, permission, granted_by, updated_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                            (pid, emp["id"], tool, action, perm, user_id, ts),
+                        )
+                    await perm_db.commit()
+                finally:
+                    await perm_db.close()
+            created.append(emp)
+            logger.info(f"Provisioned employee '{tmpl['name']}' ({tmpl['role']}) for user {user_id}")
+        except Exception as e:
+            logger.warning(f"Failed to provision {tmpl['slug']} for {user_id}: {e}")
+    return created
 

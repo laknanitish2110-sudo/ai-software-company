@@ -92,6 +92,7 @@ from app.core.database import (
     get_employee_permissions,
     update_employee_permission,
     check_permission,
+    provision_default_team,
 )
 
 router = APIRouter()
@@ -208,6 +209,10 @@ async def register(req: RegisterRequest):
     user = await create_user(req.email, pw_hash, verification_code=code, verification_expires=expires)
     token = create_access_token({"sub": user["id"], "email": user["email"]})
     await _send_verification_email(req.email, code)
+    try:
+        await provision_default_team(user["id"])
+    except Exception as prov_err:
+        logger.warning(f"Team provisioning failed for {user['id']}: {prov_err}")
     return {"user": user, "access_token": token, "token_type": "bearer", "requires_verification": True}
 
 
@@ -282,6 +287,10 @@ async def login(req: LoginRequest):
         raise HTTPException(401, "Invalid email or password")
     email_verified = bool(user.get("email_verified"))
     token = create_access_token({"sub": user["id"], "email": user["email"]})
+    try:
+        await provision_default_team(user["id"])
+    except Exception as prov_err:
+        logger.warning(f"Team provisioning on login failed for {user['id']}: {prov_err}")
     return {
         "user": {
             "id": user["id"], "email": user["email"], "created_at": user["created_at"],
