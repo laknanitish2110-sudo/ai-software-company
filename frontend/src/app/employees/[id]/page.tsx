@@ -9,8 +9,26 @@ import {
   sendEmployeeMessage, endEmployeeSession, listMemories, type Employee,
   type EmployeeSession, type SessionMessage, type Memory,
 } from "@/lib/api";
+import { ThinkingOrb, type OrbState } from "thinking-orbs";
 
 type Tab = "chat" | "memories" | "sessions";
+
+const ROLE_META: Record<string, { icon: string; color: string }> = {
+  "Business Analyst": { icon: "📋", color: "#0bbf8c" },
+  "Researcher":       { icon: "🔍", color: "#3b82f6" },
+  "Architect":        { icon: "🏗️", color: "#8b5cf6" },
+  "Software Engineer":{ icon: "⚡", color: "#f59e0b" },
+  "QA Engineer":      { icon: "🛡️", color: "#ef4444" },
+  "Technical Writer": { icon: "✍️", color: "#06b6d4" },
+};
+
+const STATUS_ORB: Record<string, { orbState: OrbState; label: string }> = {
+  idle:           { orbState: "breathing", label: "Ready" },
+  thinking:       { orbState: "solving",   label: "Thinking..." },
+  tool_execution: { orbState: "working",   label: "Executing..." },
+  working:        { orbState: "working",   label: "Working..." },
+  blocked:        { orbState: "listening", label: "Needs input" },
+};
 
 export default function EmployeeChatPage() {
   const { user, loading: authLoading } = useAuth();
@@ -61,6 +79,15 @@ export default function EmployeeChatPage() {
   useEffect(scrollToBottom, [messages, scrollToBottom]);
 
   useEffect(() => {
+    if (!sending || !employeeId) return;
+    let active = true;
+    const poll = setInterval(() => {
+      getEmployee(employeeId).then((emp) => { if (active) setEmployee(emp); }).catch(() => {});
+    }, 1500);
+    return () => { active = false; clearInterval(poll); };
+  }, [sending, employeeId]);
+
+  useEffect(() => {
     if (sideTab !== "memories" || !employeeId) return;
     listMemories(employeeId, undefined, memoryFilter || undefined)
       .then(setMemories)
@@ -108,6 +135,7 @@ export default function EmployeeChatPage() {
       setError(e instanceof Error ? e.message : "Failed to send message");
     } finally {
       setSending(false);
+      setEmployee((prev) => prev ? { ...prev, status: "idle" } : prev);
       inputRef.current?.focus();
     }
   }
@@ -135,7 +163,7 @@ export default function EmployeeChatPage() {
   if (authLoading || loading) {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg-base)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: 32, height: 32, border: "3px solid rgba(99,91,255,0.2)", borderTopColor: "#635bff", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
+        <ThinkingOrb state="connecting" size={64} theme="auto" />
       </div>
     );
   }
@@ -167,18 +195,31 @@ export default function EmployeeChatPage() {
           <Link href="/employees" style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "none" }}>
             &larr; Team
           </Link>
-          <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: "var(--accent-bg)", border: "1px solid var(--accent-border)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 16, fontWeight: 600, color: "var(--accent)",
-            }}>
-              {employee.name.charAt(0).toUpperCase()}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+            <div style={{ flexShrink: 0 }}>
+              {sending || employee.status === "thinking" || employee.status === "tool_execution" ? (
+                <ThinkingOrb state={(STATUS_ORB[employee.status] || STATUS_ORB.idle).orbState} size={32} theme="auto" />
+              ) : (
+                <div style={{
+                  width: 32, height: 32, borderRadius: "50%",
+                  background: `${(ROLE_META[employee.role] || { color: "#635bff" }).color}12`,
+                  border: `1.5px solid ${(ROLE_META[employee.role] || { color: "#635bff" }).color}30`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 15,
+                }}>
+                  {(ROLE_META[employee.role] || { icon: "🤖" }).icon}
+                </div>
+              )}
             </div>
             <div>
               <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>{employee.name}</div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{employee.role}</div>
+              <div style={{
+                fontSize: 12,
+                color: (ROLE_META[employee.role] || { color: "var(--text-muted)" }).color,
+                fontWeight: 500,
+              }}>
+                {employee.role}
+              </div>
             </div>
           </div>
         </div>
@@ -334,12 +375,22 @@ export default function EmployeeChatPage() {
           background: "var(--bg-card)",
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
-          <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {(sending || employee.status === "thinking" || employee.status === "tool_execution") && (
+              <ThinkingOrb state={(STATUS_ORB[employee.status] || STATUS_ORB.thinking).orbState} size={20} theme="auto" />
+            )}
             <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>
               {employee.name}
             </span>
-            <span style={{ fontSize: 13, color: "var(--text-muted)", marginLeft: 8 }}>
-              {employee.role}
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+              background: employee.status !== "idle" && sending
+                ? "rgba(99,91,255,0.1)" : "rgba(11,191,140,0.1)",
+              color: employee.status !== "idle" && sending
+                ? "#635bff" : "#0bbf8c",
+              textTransform: "uppercase", letterSpacing: "0.05em",
+            }}>
+              {(STATUS_ORB[employee.status] || STATUS_ORB.idle).label}
             </span>
           </div>
           {error && (
@@ -467,17 +518,14 @@ export default function EmployeeChatPage() {
           {sending && (
             <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
               <div style={{
-                padding: "12px 20px", borderRadius: 14,
+                padding: "10px 20px", borderRadius: 14,
                 background: "var(--bg-card)", border: "1px solid var(--border)",
+                display: "flex", alignItems: "center", gap: 10,
               }}>
-                <div className="flex items-center gap-1">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} style={{
-                      width: 6, height: 6, borderRadius: "50%", background: "var(--text-muted)",
-                      animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
-                    }} />
-                  ))}
-                </div>
+                <ThinkingOrb state={(STATUS_ORB[employee.status] || STATUS_ORB.thinking).orbState} size={20} theme="auto" />
+                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                  {(STATUS_ORB[employee.status] || STATUS_ORB.thinking).label}
+                </span>
               </div>
             </div>
           )}

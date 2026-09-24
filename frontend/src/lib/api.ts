@@ -574,6 +574,9 @@ export interface Employee {
   config: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+  session_count?: number;
+  memory_count?: number;
+  last_active?: string | null;
 }
 
 export interface EmployeeSession {

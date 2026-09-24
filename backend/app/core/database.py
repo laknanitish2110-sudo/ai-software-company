@@ -1518,6 +1518,36 @@ async def list_employees(user_id: str) -> list[dict]:
         await db.close()
 
 
+async def get_employee_stats(user_id: str) -> dict[str, dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT employee_id, COUNT(*) as session_count, MAX(started_at) as last_active "
+            "FROM employee_sessions WHERE employee_id IN "
+            "(SELECT id FROM employees WHERE user_id = ?) GROUP BY employee_id",
+            (user_id,),
+        )
+        session_rows = await cursor.fetchall()
+        cursor = await db.execute(
+            "SELECT employee_id, COUNT(*) as memory_count "
+            "FROM employee_memories WHERE employee_id IN "
+            "(SELECT id FROM employees WHERE user_id = ?) AND active = 1 GROUP BY employee_id",
+            (user_id,),
+        )
+        memory_rows = await cursor.fetchall()
+
+        stats: dict[str, dict] = {}
+        for r in session_rows:
+            stats[r["employee_id"]] = {"session_count": r["session_count"], "last_active": r["last_active"]}
+        for r in memory_rows:
+            if r["employee_id"] not in stats:
+                stats[r["employee_id"]] = {}
+            stats[r["employee_id"]]["memory_count"] = r["memory_count"]
+        return stats
+    finally:
+        await db.close()
+
+
 async def get_employee(employee_id: str, user_id: str | None = None) -> dict | None:
     db = await get_db()
     try:

@@ -120,18 +120,17 @@ function EmployeeCard({ emp }: { emp: Employee }) {
             </p>
           )}
 
-          {/* Footer */}
+          {/* Stats + Footer */}
           <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
+            display: "flex", alignItems: "center", gap: 12,
             marginTop: 14, paddingTop: 12,
             borderTop: "1px solid var(--border)",
             fontSize: 12, color: "var(--text-muted)",
           }}>
-            <span>Since {new Date(emp.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              color: "var(--accent)", fontWeight: 500,
-            }}>
+            <span title="Sessions">{emp.session_count ?? 0} sessions</span>
+            <span style={{ color: "var(--border)" }}>|</span>
+            <span title="Memories">{emp.memory_count ?? 0} memories</span>
+            <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, color: "var(--accent)", fontWeight: 500 }}>
               Chat →
             </span>
           </div>
@@ -151,10 +150,17 @@ export default function EmployeesPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push("/login"); return; }
-    listEmployees()
-      .then(setEmployees)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+
+    let active = true;
+    const fetchEmployees = () =>
+      listEmployees()
+        .then((data) => { if (active) setEmployees(data); })
+        .catch((e) => { if (active) setError(e.message); })
+        .finally(() => { if (active) setLoading(false); });
+
+    fetchEmployees();
+    const interval = setInterval(fetchEmployees, 3000);
+    return () => { active = false; clearInterval(interval); };
   }, [user, authLoading, router]);
 
   if (authLoading || !user) {

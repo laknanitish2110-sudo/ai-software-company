@@ -1504,7 +1504,15 @@ async def api_create_employee(req: CreateEmployeeRequest, user=Depends(get_curre
 
 @router.get("/employees")
 async def api_list_employees(user=Depends(get_current_user)):
-    return await list_employees(user["id"])
+    from app.core.database import get_employee_stats
+    employees = await list_employees(user["id"])
+    stats = await get_employee_stats(user["id"])
+    for emp in employees:
+        s = stats.get(emp["id"], {})
+        emp["session_count"] = s.get("session_count", 0)
+        emp["memory_count"] = s.get("memory_count", 0)
+        emp["last_active"] = s.get("last_active")
+    return employees
 
 
 @router.get("/employees/{employee_id}")
