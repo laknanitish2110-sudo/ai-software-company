@@ -1566,8 +1566,8 @@ async def get_employee_stats(user_id: str) -> dict[str, dict]:
         session_rows = await cursor.fetchall()
         cursor = await db.execute(
             "SELECT employee_id, COUNT(*) as memory_count "
-            "FROM employee_memories WHERE employee_id IN "
-            "(SELECT id FROM employees WHERE user_id = ?) AND active = 1 GROUP BY employee_id",
+            "FROM memories WHERE employee_id IN "
+            "(SELECT id FROM employees WHERE user_id = ?) AND is_active = 1 GROUP BY employee_id",
             (user_id,),
         )
         memory_rows = await cursor.fetchall()
