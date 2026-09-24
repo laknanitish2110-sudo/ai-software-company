@@ -13,7 +13,10 @@ import logging
 import asyncio
 from typing import Optional
 
-from app.core.database import create_memory, get_session_messages, update_session
+from app.core.database import (
+    create_memory, get_session_messages, update_session,
+    create_skill, list_skills, retrieve_skills_for_context, record_skill_usage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +207,12 @@ def schedule_memory_extraction(
     asyncio.create_task(
         extract_memories_from_turn(employee_id, user_message, employee_response, session_id)
     )
+
+
+def schedule_skill_extraction(employee_id: str, messages: list[dict]):
+    """Fire-and-forget: schedule skill extraction as a background task."""
+    if len(messages) >= 6:
+        asyncio.create_task(extract_skills_from_conversation(employee_id, messages))
 
 
 def schedule_session_summary(
@@ -462,3 +471,109 @@ def stop_consolidation_worker():
     if _consolidation_task and not _consolidation_task.done():
         _consolidation_task.cancel()
         _consolidation_task = None
+
+
+# --- Skill Learning ---
+
+SKILL_EXTRACTION_PROMPT = """Analyze this conversation between a user and an AI employee. Identify any repeatable procedures the employee executed successfully that should be saved as a learned skill.
+
+A skill is worth saving when:
+- The employee performed a multi-step procedure that produced a good result
+- The user confirmed or accepted the result (no corrections needed)
+- The procedure could be reused for similar future requests
+
+For each skill found, return a JSON object with:
+- "name": short name for the skill (2-5 words)
+- "description": one-line summary of what it does
+- "trigger_pattern": what kind of user request would trigger this skill (a regex-like description)
+- "procedure": step-by-step instructions the employee followed
+- "examples": array of 1-2 example user prompts that would trigger this
+
+If no skill is worth saving, return an empty array: []
+
+Only extract clear, repeatable procedures. Do NOT extract:
+- General knowledge or facts (those belong in memory)
+- One-off creative responses
+- Simple Q&A answers
+
+Conversation:
+{conversation}
+
+Return ONLY a JSON array, no other text."""
+
+
+async def extract_skills_from_conversation(
+    employee_id: str,
+    messages: list[dict],
+    llm_caller=None,
+) -> list[dict]:
+    if not messages or len(messages) < 4:
+        return []
+
+    conversation_text = "\n".join(
+        f"{m.get('role', 'unknown').upper()}: {m.get('content', '')}"
+        for m in messages[-20:]
+    )
+
+    prompt = SKILL_EXTRACTION_PROMPT.format(conversation=conversation_text)
+
+    if llm_caller is None:
+        from app.services.llm_engine import call_llm_with_fallback
+        llm_caller = call_llm_with_fallback
+
+    try:
+        response = await llm_caller(
+            messages=[{"role": "user", "content": prompt}],
+            role="researcher",
+        )
+
+        raw = response.get("content", "").strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+
+        skills_data = json.loads(raw)
+        if not isinstance(skills_data, list):
+            return []
+
+        existing = await list_skills(employee_id, active_only=True)
+        existing_names = {s["name"].lower() for s in existing}
+
+        saved = []
+        for s in skills_data:
+            name = s.get("name", "").strip()
+            if not name or name.lower() in existing_names:
+                continue
+            skill = await create_skill(
+                employee_id=employee_id,
+                name=name,
+                description=s.get("description", ""),
+                procedure=s.get("procedure", ""),
+                trigger_pattern=s.get("trigger_pattern"),
+                examples=s.get("examples"),
+            )
+            saved.append(skill)
+            existing_names.add(name.lower())
+
+        if saved:
+            logger.info(f"Extracted {len(saved)} skills for employee {employee_id}")
+        return saved
+
+    except Exception as e:
+        logger.warning(f"Skill extraction failed for {employee_id}: {e}")
+        return []
+
+
+async def get_relevant_skills(employee_id: str, user_message: str) -> str:
+    skills = await retrieve_skills_for_context(employee_id, query=user_message, limit=3)
+    if not skills:
+        return ""
+
+    lines = ["\n## Learned Skills (use these procedures when relevant)"]
+    for s in skills:
+        lines.append(f"\n### {s['name']}")
+        lines.append(f"Trigger: {s.get('trigger_pattern', 'N/A')}")
+        lines.append(f"Procedure: {s['procedure']}")
+        if s.get("examples"):
+            examples = s["examples"] if isinstance(s["examples"], list) else [s["examples"]]
+            lines.append(f"Examples: {', '.join(examples)}")
+    return "\n".join(lines)

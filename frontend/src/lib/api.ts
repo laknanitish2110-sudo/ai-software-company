@@ -812,3 +812,45 @@ export async function readWorkspaceFile(employeeId: string, path: string): Promi
   const data = await checkedJson<{ path: string; content: string }>(res, "Failed to read file");
   return data.content;
 }
+
+// --- Skills ---
+
+export interface EmployeeSkill {
+  id: string;
+  employee_id: string;
+  name: string;
+  description: string;
+  trigger_pattern: string | null;
+  procedure: string;
+  examples: string[] | null;
+  times_used: number;
+  success_rate: number;
+  created_at: string;
+  last_used: string | null;
+  is_active: boolean;
+}
+
+export async function listSkills(employeeId: string): Promise<EmployeeSkill[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/skills`, {
+    headers: authHeaders(),
+  });
+  const data = await checkedJson<{ skills: EmployeeSkill[] }>(res, "Failed to list skills");
+  return data.skills;
+}
+
+export async function extractSkills(employeeId: string, sessionId?: string): Promise<{ extracted: number; skills: EmployeeSkill[] }> {
+  const params = sessionId ? `?session_id=${sessionId}` : "";
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/skills/extract${params}`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to extract skills");
+}
+
+export async function deactivateSkill(employeeId: string, skillId: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/skills/${skillId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  await checkedJson(res, "Failed to deactivate skill");
+}

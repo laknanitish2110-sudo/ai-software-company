@@ -1601,6 +1601,12 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
         system_prompt += f"\n\n{emp['persona']}"
     if memory_context:
         system_prompt += memory_context
+
+    from app.services.memory_engine import get_relevant_skills
+    skill_context = await get_relevant_skills(emp["id"], req.content)
+    if skill_context:
+        system_prompt += skill_context
+
     emp_tools = emp.get("config", {}) or {}
     allowed_tool_names = emp_tools.get("default_tools") if isinstance(emp_tools, dict) else None
     if not allowed_tool_names and emp.get("template_id"):
@@ -1699,8 +1705,11 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
 
     _handle_memory_commands(emp["id"], req.content, response_text)
 
-    from app.services.memory_engine import schedule_memory_extraction
+    from app.services.memory_engine import schedule_memory_extraction, schedule_skill_extraction
     schedule_memory_extraction(emp["id"], req.content, response_text, session_id)
+
+    messages_for_skills = await get_session_messages(session_id, limit=20)
+    schedule_skill_extraction(emp["id"], messages_for_skills)
 
     return {
         "user_message": user_msg,
@@ -1889,3 +1898,43 @@ async def api_read_workspace_file(employee_id: str, path: str, user=Depends(get_
         return {"path": path, "content": content.decode("utf-8", errors="replace")}
     except FileNotFoundError:
         raise HTTPException(404, f"File not found: {path}")
+
+
+@router.get("/employees/{employee_id}/skills")
+async def api_list_skills(employee_id: str, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    from app.core.database import list_skills
+    skills = await list_skills(employee_id)
+    return {"skills": skills}
+
+
+@router.post("/employees/{employee_id}/skills/extract")
+async def api_extract_skills(employee_id: str, session_id: str = None, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if session_id:
+        messages = await get_session_messages(session_id, limit=50)
+    else:
+        sessions = await list_employee_sessions(employee_id)
+        messages = []
+        for s in sessions[:3]:
+            msgs = await get_session_messages(s["id"], limit=20)
+            messages.extend(msgs)
+    from app.services.memory_engine import extract_skills_from_conversation
+    skills = await extract_skills_from_conversation(employee_id, messages)
+    return {"extracted": len(skills), "skills": skills}
+
+
+@router.delete("/employees/{employee_id}/skills/{skill_id}")
+async def api_deactivate_skill(employee_id: str, skill_id: str, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    from app.core.database import deactivate_skill
+    ok = await deactivate_skill(skill_id)
+    if not ok:
+        raise HTTPException(404, "Skill not found")
+    return {"deactivated": True}

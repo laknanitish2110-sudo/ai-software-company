@@ -344,6 +344,24 @@ async def init_db():
                 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(employee_id, type);
                 CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(employee_id, is_active);
 
+                CREATE TABLE IF NOT EXISTS employee_skills (
+                    id TEXT PRIMARY KEY,
+                    employee_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    trigger_pattern TEXT,
+                    procedure TEXT NOT NULL,
+                    examples TEXT,
+                    times_used INTEGER NOT NULL DEFAULT 0,
+                    success_rate REAL NOT NULL DEFAULT 1.0,
+                    created_at TEXT NOT NULL,
+                    last_used TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_skills_employee ON employee_skills(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_skills_active ON employee_skills(employee_id, is_active);
+
                 CREATE TABLE IF NOT EXISTS employee_sessions (
                     id TEXT PRIMARY KEY,
                     employee_id TEXT NOT NULL,
@@ -584,6 +602,23 @@ async def init_db():
                 CREATE INDEX IF NOT EXISTS idx_memories_employee ON memories(employee_id);
                 CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(employee_id, type);
                 CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(employee_id, is_active);
+
+                CREATE TABLE IF NOT EXISTS employee_skills (
+                    id VARCHAR(255) PRIMARY KEY,
+                    employee_id VARCHAR(255) NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT NOT NULL,
+                    trigger_pattern TEXT,
+                    procedure TEXT NOT NULL,
+                    examples TEXT,
+                    times_used INTEGER NOT NULL DEFAULT 0,
+                    success_rate REAL NOT NULL DEFAULT 1.0,
+                    created_at TEXT NOT NULL,
+                    last_used TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1
+                );
+                CREATE INDEX IF NOT EXISTS idx_skills_employee ON employee_skills(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_skills_active ON employee_skills(employee_id, is_active);
 
                 CREATE TABLE IF NOT EXISTS employee_sessions (
                     id VARCHAR(255) PRIMARY KEY,
@@ -1873,6 +1908,124 @@ async def retrieve_memories_for_context(employee_id: str, query: str | None = No
             mem_ids = [r["id"] for r in rows]
             for mid in mem_ids:
                 await db.execute("UPDATE memories SET last_accessed = ? WHERE id = ?", (now, mid))
+            await db.commit()
+        return rows
+    finally:
+        await db.close()
+
+
+# --- SKILL FUNCTIONS ---
+
+async def create_skill(employee_id: str, name: str, description: str,
+                       procedure: str, trigger_pattern: str | None = None,
+                       examples: list[str] | None = None) -> dict:
+    db = await get_db()
+    try:
+        sid = new_id()
+        ts = now_iso()
+        examples_json = json.dumps(examples) if examples else None
+        await db.execute(
+            """INSERT INTO employee_skills (id, employee_id, name, description, trigger_pattern,
+               procedure, examples, created_at, is_active)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (sid, employee_id, name, description, trigger_pattern, procedure, examples_json, ts),
+        )
+        await db.commit()
+        return {"id": sid, "employee_id": employee_id, "name": name,
+                "description": description, "procedure": procedure,
+                "trigger_pattern": trigger_pattern, "examples": examples,
+                "times_used": 0, "success_rate": 1.0, "created_at": ts, "is_active": True}
+    finally:
+        await db.close()
+
+
+async def list_skills(employee_id: str, active_only: bool = True) -> list[dict]:
+    db = await get_db()
+    try:
+        sql = "SELECT * FROM employee_skills WHERE employee_id = ?"
+        params: list = [employee_id]
+        if active_only:
+            sql += " AND is_active = 1"
+        sql += " ORDER BY times_used DESC, success_rate DESC"
+        cursor = await db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("examples"), str):
+                try:
+                    r["examples"] = json.loads(r["examples"])
+                except Exception:
+                    pass
+        return rows
+    finally:
+        await db.close()
+
+
+async def get_skill(skill_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM employee_skills WHERE id = ?", (skill_id,))
+        row = await cursor.fetchone()
+        if row and isinstance(row.get("examples"), str):
+            try:
+                row["examples"] = json.loads(row["examples"])
+            except Exception:
+                pass
+        return row
+    finally:
+        await db.close()
+
+
+async def record_skill_usage(skill_id: str, success: bool = True):
+    db = await get_db()
+    try:
+        skill = await get_skill(skill_id)
+        if not skill:
+            return
+        new_used = skill["times_used"] + 1
+        old_rate = skill["success_rate"]
+        new_rate = round(((old_rate * skill["times_used"]) + (1.0 if success else 0.0)) / new_used, 3)
+        await db.execute(
+            "UPDATE employee_skills SET times_used = ?, success_rate = ?, last_used = ? WHERE id = ?",
+            (new_used, new_rate, now_iso(), skill_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def deactivate_skill(skill_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "UPDATE employee_skills SET is_active = 0 WHERE id = ?", (skill_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def retrieve_skills_for_context(employee_id: str, query: str | None = None, limit: int = 5) -> list[dict]:
+    db = await get_db()
+    try:
+        sql = "SELECT * FROM employee_skills WHERE employee_id = ? AND is_active = 1"
+        params: list = [employee_id]
+        if query:
+            sql += " AND (name LIKE ? OR description LIKE ? OR trigger_pattern LIKE ?)"
+            params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+        sql += " ORDER BY times_used DESC, success_rate DESC LIMIT ?"
+        params.append(limit)
+        cursor = await db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("examples"), str):
+                try:
+                    r["examples"] = json.loads(r["examples"])
+                except Exception:
+                    pass
+        if rows:
+            ts = now_iso()
+            for r in rows:
+                await db.execute("UPDATE employee_skills SET last_used = ? WHERE id = ?", (ts, r["id"]))
             await db.commit()
         return rows
     finally:
