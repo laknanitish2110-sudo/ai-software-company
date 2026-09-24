@@ -216,3 +216,249 @@ def schedule_session_summary(
     asyncio.create_task(
         summarize_session(session_id, employee_id, employee_name, employee_role)
     )
+
+
+# ---------------------------------------------------------------------------
+# Memory consolidation: dedup, conflict resolution, freshness decay
+# ---------------------------------------------------------------------------
+
+CONSOLIDATION_PROMPT = """You are a memory consolidation system. Given a group of similar memories belonging to one AI employee, decide how to consolidate them.
+
+For each group, choose one action:
+- "merge": combine into a single better memory (provide merged content)
+- "keep_newest": the newest memory supersedes older ones
+- "keep_highest": the highest-confidence memory is correct, deactivate others
+- "conflict": they contradict each other — keep the most recent one, note the conflict
+
+Return a JSON array of actions. Each action:
+{
+  "action": "merge" | "keep_newest" | "keep_highest" | "conflict",
+  "keep_id": "id of the memory to keep (or best candidate for merge base)",
+  "deactivate_ids": ["ids to deactivate"],
+  "merged_content": "new merged text (only for merge action)",
+  "reason": "short explanation"
+}
+
+Memories to consolidate:
+{memory_groups}
+
+Return ONLY the JSON array."""
+
+
+async def apply_freshness_decay(employee_id: str) -> int:
+    """Decay confidence of old, unaccessed memories. Returns count of decayed memories."""
+    from app.core.database import get_db, now_iso
+    from datetime import datetime, timezone, timedelta
+
+    db = await get_db()
+    try:
+        now = datetime.now(timezone.utc)
+        decay_threshold = (now - timedelta(days=14)).isoformat()
+
+        cursor = await db.execute(
+            """SELECT id, confidence, last_accessed, created_at, importance
+               FROM memories
+               WHERE employee_id = ? AND is_active = 1
+               AND (last_accessed < ? OR (last_accessed IS NULL AND created_at < ?))""",
+            (employee_id, decay_threshold, decay_threshold),
+        )
+        rows = await cursor.fetchall()
+
+        decayed = 0
+        now_str = now_iso()
+        for r in rows:
+            last = r.get("last_accessed") or r["created_at"]
+            try:
+                last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                continue
+
+            days_stale = (now - last_dt).days
+            if days_stale < 14:
+                continue
+
+            decay_factor = max(0.95 ** (days_stale // 7), 0.3)
+            new_confidence = round(r["confidence"] * decay_factor, 3)
+
+            if new_confidence < 0.2 and r["importance"] < 0.5:
+                await db.execute(
+                    "UPDATE memories SET is_active = 0, confidence = ? WHERE id = ?",
+                    (new_confidence, r["id"]),
+                )
+            elif new_confidence != r["confidence"]:
+                await db.execute(
+                    "UPDATE memories SET confidence = ? WHERE id = ?",
+                    (new_confidence, r["id"]),
+                )
+            decayed += 1
+
+        if decayed:
+            await db.commit()
+        logger.info(f"Freshness decay: {decayed} memories processed for employee {employee_id}")
+        return decayed
+    finally:
+        await db.close()
+
+
+def _text_similarity(a: str, b: str) -> float:
+    """Quick word-overlap similarity (Jaccard) for grouping candidates."""
+    wa = set(a.lower().split())
+    wb = set(b.lower().split())
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / len(wa | wb)
+
+
+async def find_duplicate_groups(employee_id: str, threshold: float = 0.45) -> list[list[dict]]:
+    """Find groups of memories that are likely duplicates based on text similarity."""
+    from app.core.database import list_memories
+
+    all_memories = await list_memories(employee_id, limit=200)
+    if len(all_memories) < 2:
+        return []
+
+    used = set()
+    groups = []
+    for i, a in enumerate(all_memories):
+        if a["id"] in used:
+            continue
+        group = [a]
+        for j in range(i + 1, len(all_memories)):
+            b = all_memories[j]
+            if b["id"] in used:
+                continue
+            if a["type"] != b["type"]:
+                continue
+            sim = _text_similarity(a["content"], b["content"])
+            if sim >= threshold:
+                group.append(b)
+                used.add(b["id"])
+        if len(group) > 1:
+            groups.append(group)
+            used.add(a["id"])
+
+    return groups
+
+
+async def consolidate_memories(employee_id: str) -> dict:
+    """Run full memory consolidation: dedup, conflict resolution, freshness decay."""
+    from app.core.database import update_memory, deactivate_memory
+
+    result = {"decayed": 0, "merged": 0, "deactivated": 0, "groups_processed": 0}
+
+    result["decayed"] = await apply_freshness_decay(employee_id)
+
+    groups = await find_duplicate_groups(employee_id)
+    if not groups:
+        logger.info(f"Consolidation for {employee_id}: no duplicate groups found")
+        return result
+
+    memory_groups_text = ""
+    for i, group in enumerate(groups[:5]):
+        memory_groups_text += f"\nGroup {i+1}:\n"
+        for m in group:
+            memory_groups_text += (
+                f"  - id={m['id']}, type={m['type']}, confidence={m.get('confidence', 0.8)}, "
+                f"importance={m.get('importance', 0.5)}, created={m.get('created_at', '?')}\n"
+                f"    content: {m['content']}\n"
+            )
+
+    try:
+        from app.agents.engine import call_llm_with_fallback
+
+        prompt = CONSOLIDATION_PROMPT.format(memory_groups=memory_groups_text)
+        llm_result = await call_llm_with_fallback(
+            messages=[{"role": "user", "content": prompt}],
+            role="fixer",
+            temperature=0.1,
+            max_tokens=1024,
+        )
+        text = llm_result if isinstance(llm_result, str) else llm_result[0]
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+        actions = json.loads(text)
+        if not isinstance(actions, list):
+            actions = []
+
+        for action in actions:
+            act_type = action.get("action")
+            keep_id = action.get("keep_id")
+            deact_ids = action.get("deactivate_ids", [])
+
+            for did in deact_ids:
+                if did != keep_id:
+                    await deactivate_memory(did)
+                    result["deactivated"] += 1
+
+            if act_type == "merge" and keep_id and action.get("merged_content"):
+                await update_memory(keep_id, {
+                    "content": action["merged_content"],
+                    "confidence": min(1.0, 0.85),
+                })
+                result["merged"] += 1
+
+            elif act_type == "conflict" and keep_id:
+                await update_memory(keep_id, {"confidence": 0.9})
+                result["merged"] += 1
+
+            result["groups_processed"] += 1
+
+    except json.JSONDecodeError:
+        logger.debug(f"Consolidation LLM returned non-JSON for {employee_id}")
+    except Exception as e:
+        logger.warning(f"Consolidation LLM failed for {employee_id}: {e}")
+
+    logger.info(
+        f"Consolidation for {employee_id}: "
+        f"{result['groups_processed']} groups, {result['merged']} merged, "
+        f"{result['deactivated']} deactivated, {result['decayed']} decayed"
+    )
+    return result
+
+
+_consolidation_task: Optional[asyncio.Task] = None
+
+
+async def _consolidation_loop():
+    """Background loop that periodically consolidates memories for all employees."""
+    logger.info("Memory consolidation worker started")
+    while True:
+        try:
+            from app.core.database import get_db
+            db = await get_db()
+            try:
+                cursor = await db.execute("SELECT DISTINCT id FROM employees WHERE status != 'archived'")
+                emp_rows = await cursor.fetchall()
+            finally:
+                await db.close()
+
+            for row in emp_rows:
+                try:
+                    await consolidate_memories(row["id"])
+                except Exception as e:
+                    logger.warning(f"Consolidation failed for {row['id']}: {e}")
+                await asyncio.sleep(1)
+
+        except Exception as e:
+            logger.warning(f"Consolidation loop error: {e}")
+
+        await asyncio.sleep(3600)
+
+
+def start_consolidation_worker():
+    """Start the background memory consolidation worker. Runs every hour."""
+    global _consolidation_task
+    if _consolidation_task and not _consolidation_task.done():
+        return
+    _consolidation_task = asyncio.create_task(_consolidation_loop())
+    logger.info("Memory consolidation worker task created")
+
+
+def stop_consolidation_worker():
+    """Stop the background memory consolidation worker."""
+    global _consolidation_task
+    if _consolidation_task and not _consolidation_task.done():
+        _consolidation_task.cancel()
+        _consolidation_task = None

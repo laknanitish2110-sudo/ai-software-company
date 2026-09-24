@@ -1850,3 +1850,13 @@ async def api_get_delegation(task_id: str, user=Depends(get_current_user)):
     if task["user_id"] != user["id"]:
         raise HTTPException(403, "Not your delegation task")
     return task
+
+
+@router.post("/employees/{employee_id}/consolidate")
+async def api_consolidate_memories(employee_id: str, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    from app.services.memory_engine import consolidate_memories
+    result = await consolidate_memories(employee_id)
+    return {"status": "ok", **result}

@@ -736,6 +736,22 @@ export async function deactivateMemory(id: string): Promise<{ status: string }> 
   return checkedJson(res, "Failed to deactivate memory");
 }
 
+export interface ConsolidationResult {
+  status: string;
+  decayed: number;
+  merged: number;
+  deactivated: number;
+  groups_processed: number;
+}
+
+export async function consolidateMemories(employeeId: string): Promise<ConsolidationResult> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/consolidate`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to consolidate memories");
+}
+
 export async function getEmployeePermissions(employeeId: string): Promise<ToolPermission[]> {
   const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/permissions`, { headers: authHeaders() });
   return checkedJson(res, "Failed to load permissions");
