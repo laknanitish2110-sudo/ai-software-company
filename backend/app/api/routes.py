@@ -1591,7 +1591,20 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
         system_prompt += f"\n\n{emp['persona']}"
     if memory_context:
         system_prompt += memory_context
-    system_prompt += "\n\nYou have access to tools for code execution, file operations, GitHub, and web search. Use them when the task requires it."
+    emp_tools = emp.get("config", {}) or {}
+    allowed_tool_names = emp_tools.get("default_tools") if isinstance(emp_tools, dict) else None
+    if not allowed_tool_names and emp.get("template_id"):
+        from app.core.database import list_templates
+        templates = await list_templates(active_only=True)
+        tmpl = next((t for t in templates if t["id"] == emp["template_id"]), None)
+        if tmpl:
+            allowed_tool_names = tmpl.get("default_tools")
+
+    from app.services.tool_executor import get_tools_for_employee, EMPLOYEE_ROLE_TO_ENGINE_ROLE
+    employee_tools = get_tools_for_employee(allowed_tool_names)
+    tool_names = [t["function"]["name"] for t in employee_tools]
+    tool_desc = ", ".join(tool_names) if tool_names else "none"
+    system_prompt += f"\n\nYou have access to the following tools: {tool_desc}. Use them when the task requires it."
 
     chat_messages.append({"role": "system", "content": system_prompt})
     for msg in history:
@@ -1611,7 +1624,9 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
                 pass
 
     from app.agents.engine import call_llm_with_fallback
-    from app.services.tool_executor import TOOL_SCHEMAS, execute_tool
+    from app.services.tool_executor import execute_tool
+
+    engine_role = EMPLOYEE_ROLE_TO_ENGINE_ROLE.get(emp["role"].lower(), "ceo")
 
     github_token = await _get_user_github_token(user["id"])
     project_id = req.project_id or session.get("project_id")
@@ -1624,9 +1639,9 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
     for iteration in range(max_iterations):
         text, tool_calls = await call_llm_with_fallback(
             messages=chat_messages,
-            role="CEO",
+            role=engine_role,
             temperature=0.7,
-            tools=TOOL_SCHEMAS,
+            tools=employee_tools if employee_tools else None,
         )
 
         if not tool_calls:

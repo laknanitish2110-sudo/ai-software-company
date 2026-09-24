@@ -14,6 +14,23 @@ from app.core.artifact_store import LocalArtifactStore
 
 logger = logging.getLogger(__name__)
 
+EMPLOYEE_ROLE_TO_ENGINE_ROLE = {
+    "business analyst": "business_analyst",
+    "researcher": "researcher",
+    "architect": "architect",
+    "software engineer": "engineer",
+    "qa engineer": "engineer",
+    "technical writer": "business_analyst",
+}
+
+
+def get_tools_for_employee(allowed_tool_names: list[str] | None) -> list[dict]:
+    """Filter TOOL_SCHEMAS to only the tools this employee is allowed to see."""
+    if not allowed_tool_names:
+        return TOOL_SCHEMAS
+    return [s for s in TOOL_SCHEMAS if s["function"]["name"] in allowed_tool_names]
+
+
 TOOL_SCHEMAS = [
     {
         "type": "function",
