@@ -639,6 +639,13 @@ export async function provisionTeam(): Promise<{ provisioned: number; employees:
   return checkedJson(res, "Failed to provision team");
 }
 
+export async function seedDefaultSkills(): Promise<{ seeded: number }> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/seed-skills`, {
+    method: "POST", headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to seed skills");
+}
+
 export async function createEmployee(data: {
   name: string; role: string; persona?: string; avatar_url?: string; config?: Record<string, unknown>;
 }): Promise<Employee> {

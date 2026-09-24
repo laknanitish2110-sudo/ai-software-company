@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { listEmployees, provisionTeam, type Employee } from "@/lib/api";
+import { listEmployees, provisionTeam, seedDefaultSkills, type Employee } from "@/lib/api";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 
 const ROLE_META: Record<string, { icon: string; color: string; accent: string }> = {
@@ -148,6 +148,7 @@ export default function EmployeesPage() {
   const [provisioning, setProvisioning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const provisionAttempted = useRef(false);
+  const skillSeedAttempted = useRef(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -174,6 +175,10 @@ export default function EmployeesPage() {
             }
           } else {
             setEmployees(data);
+            if (!skillSeedAttempted.current && data.length > 0) {
+              skillSeedAttempted.current = true;
+              seedDefaultSkills().catch(() => {});
+            }
           }
         })
         .catch((e) => { if (active) setError(e.message); })

@@ -126,14 +126,16 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
               <p className="text-xs mb-3" style={{ color: "var(--text-muted)", lineHeight: 1.5 }}>
                 Describe an idea &mdash; 6 agents build it end-to-end in one shot. From analysis to working code to pitch deck.
               </p>
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-0">
                 {PIPELINE_AGENTS.map((a, i) => (
-                  <div key={a.label} className="flex flex-col items-center" style={{ minWidth: 44 }}>
-                    <span style={{ fontSize: 16 }}>{a.icon}</span>
+                  <div key={a.label} className="flex items-center">
+                    <div className="flex flex-col items-center" style={{ minWidth: 44 }}>
+                      <span style={{ fontSize: 16 }}>{a.icon}</span>
+                      <span className="text-[9px] font-semibold" style={{ color: a.color }}>{a.label}</span>
+                    </div>
                     {i < PIPELINE_AGENTS.length - 1 && (
-                      <span className="text-[8px] mt-0.5" style={{ color: "var(--text-muted)" }}>&rarr;</span>
+                      <span className="text-xs font-bold" style={{ color: "var(--accent)", opacity: 0.6, margin: "0 2px" }}>&rarr;</span>
                     )}
-                    <span className="text-[9px] font-semibold" style={{ color: a.color }}>{a.label}</span>
                   </div>
                 ))}
               </div>

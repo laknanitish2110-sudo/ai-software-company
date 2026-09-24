@@ -93,6 +93,8 @@ from app.core.database import (
     update_employee_permission,
     check_permission,
     provision_default_team,
+    list_skills,
+    create_skill,
 )
 
 router = APIRouter()
@@ -1506,6 +1508,44 @@ async def api_create_employee(req: CreateEmployeeRequest, user=Depends(get_curre
 async def api_provision_team(user=Depends(get_current_user)):
     created = await provision_default_team(user["id"])
     return {"provisioned": len(created), "employees": created}
+
+
+@router.post("/employees/seed-skills")
+async def api_seed_default_skills(user=Depends(get_current_user)):
+    """Seed default skills for employees that have none. Idempotent."""
+    from app.core.default_team import TEMPLATES as SKILL_TEMPLATES
+    employees = await list_employees(user["id"])
+    seeded_count = 0
+    for emp in employees:
+        existing_skills = await list_skills(emp["id"], active_only=False)
+        if existing_skills:
+            continue
+        slug = None
+        if emp.get("template_id"):
+            from app.core.database import get_db
+            db = await get_db()
+            try:
+                cursor = await db.execute("SELECT slug FROM employee_templates WHERE id = ?", (emp["template_id"],))
+                row = await cursor.fetchone()
+                if row:
+                    slug = row["slug"]
+            finally:
+                await db.close()
+        if not slug:
+            role_to_slug = {"Business Analyst": "ba", "Researcher": "researcher", "Architect": "architect",
+                            "Software Engineer": "engineer", "QA Engineer": "qa", "Technical Writer": "writer"}
+            slug = role_to_slug.get(emp["role"])
+        if not slug:
+            continue
+        skill_defs = next((t.get("default_skills", []) for t in SKILL_TEMPLATES if t["slug"] == slug), [])
+        for skill in skill_defs:
+            await create_skill(
+                employee_id=emp["id"], name=skill["name"], description=skill["description"],
+                procedure=skill["procedure"], trigger_pattern=skill.get("trigger_pattern"),
+                examples=skill.get("examples"),
+            )
+            seeded_count += 1
+    return {"seeded": seeded_count}
 
 
 @router.get("/employees")

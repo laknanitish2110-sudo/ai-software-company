@@ -17,6 +17,29 @@ TEMPLATES = [
         "name": "Sage",
         "role": "Business Analyst",
         "description": "Translates ideas into structured requirements, user stories, and acceptance criteria.",
+        "default_skills": [
+            {
+                "name": "Requirements Analysis",
+                "description": "Break down a product idea into structured user stories with acceptance criteria",
+                "trigger_pattern": "analyze requirements|user stories|break down|scope",
+                "procedure": "1. Identify the core user personas\n2. List user goals and pain points\n3. Write user stories in 'As a [user], I want [goal], so that [benefit]' format\n4. Add acceptance criteria to each story\n5. Flag ambiguities and ask clarifying questions\n6. Prioritize by user impact (MoSCoW method)",
+                "examples": ["Analyze the requirements for a task management app", "Write user stories for a payment system"],
+            },
+            {
+                "name": "Competitive Analysis",
+                "description": "Compare competing products to identify opportunities and differentiators",
+                "trigger_pattern": "competitive analysis|compare products|market analysis",
+                "procedure": "1. Identify top 3-5 competitors in the space\n2. Map feature matrices across products\n3. Identify gaps and unmet user needs\n4. Analyze pricing models\n5. Summarize opportunities for differentiation",
+                "examples": ["Compare our product against competitors", "What features do we need to stand out?"],
+            },
+            {
+                "name": "Scope Definition",
+                "description": "Define MVP scope with clear boundaries, in-scope and out-of-scope items",
+                "trigger_pattern": "define scope|MVP|minimum viable|what to build first",
+                "procedure": "1. List all requested features\n2. Categorize as Must-have, Should-have, Could-have, Won't-have\n3. Define MVP boundary with rationale\n4. Estimate complexity for each item\n5. Create phased delivery plan",
+                "examples": ["What should be in the MVP?", "Define the scope for this project"],
+            },
+        ],
         "system_prompt": (
             "You are Sage, a Business Analyst on this software team.\n\n"
             "Your job is to take raw ideas and turn them into structured, actionable specifications. "
@@ -48,6 +71,29 @@ TEMPLATES = [
         "name": "Scout",
         "role": "Researcher",
         "description": "Investigates technologies, markets, competitors, and best practices.",
+        "default_skills": [
+            {
+                "name": "Technology Research",
+                "description": "Evaluate technologies, libraries, and frameworks for a specific use case",
+                "trigger_pattern": "research tech|evaluate library|compare frameworks|which technology",
+                "procedure": "1. Understand the use case and constraints\n2. Search for top candidates (3-5 options)\n3. Compare on: maturity, community, performance, learning curve, license\n4. Check GitHub stars, recent commits, issue resolution time\n5. Test basic examples if possible\n6. Recommend with clear rationale",
+                "examples": ["Which database should we use?", "Research authentication libraries for Node.js"],
+            },
+            {
+                "name": "Market Research",
+                "description": "Investigate market size, trends, and target audience for a product idea",
+                "trigger_pattern": "market research|market size|target audience|industry trends",
+                "procedure": "1. Define the market segment\n2. Search for market size data and growth rates\n3. Identify target user demographics\n4. Analyze adoption trends and barriers\n5. Summarize TAM/SAM/SOM estimates\n6. Flag risks and uncertainties",
+                "examples": ["What's the market size for AI dev tools?", "Research the edtech market"],
+            },
+            {
+                "name": "Best Practices Report",
+                "description": "Research and summarize industry best practices for a specific area",
+                "trigger_pattern": "best practices|how should we|industry standard|recommended approach",
+                "procedure": "1. Search official documentation and authoritative sources\n2. Find case studies from similar companies\n3. Identify common patterns and anti-patterns\n4. Cite sources with links\n5. Provide actionable recommendations ranked by impact",
+                "examples": ["What are API security best practices?", "How should we handle error logging?"],
+            },
+        ],
         "system_prompt": (
             "You are Scout, a Researcher on this software team.\n\n"
             "You investigate technologies, libraries, APIs, market trends, and competitive landscapes. "
@@ -79,6 +125,29 @@ TEMPLATES = [
         "name": "Arc",
         "role": "Architect",
         "description": "Designs system architecture, selects tech stacks, and defines project structure.",
+        "default_skills": [
+            {
+                "name": "System Design",
+                "description": "Design a complete system architecture from requirements",
+                "trigger_pattern": "design system|architecture|system design|how to structure",
+                "procedure": "1. Gather functional and non-functional requirements\n2. Identify core components and their responsibilities\n3. Define data flow and communication patterns\n4. Choose tech stack with rationale\n5. Design API contracts and data models\n6. Create file/folder structure\n7. Address scaling, security, and deployment",
+                "examples": ["Design the architecture for a real-time chat app", "How should we structure this microservice?"],
+            },
+            {
+                "name": "Database Schema Design",
+                "description": "Design normalized database schemas with relationships and indexes",
+                "trigger_pattern": "database schema|data model|design tables|entity relationship",
+                "procedure": "1. Identify entities from requirements\n2. Define attributes and data types\n3. Establish relationships (1:1, 1:N, M:N)\n4. Normalize to 3NF, denormalize where performance requires\n5. Add indexes for query patterns\n6. Define constraints and validation rules",
+                "examples": ["Design the database for a project management tool", "What tables do we need?"],
+            },
+            {
+                "name": "API Design",
+                "description": "Design RESTful APIs with consistent patterns, error handling, and documentation",
+                "trigger_pattern": "design API|REST endpoints|API structure|endpoint design",
+                "procedure": "1. List all resources and their operations\n2. Define URL patterns following REST conventions\n3. Specify request/response schemas with types\n4. Design error response format\n5. Plan authentication and authorization\n6. Document rate limits and pagination",
+                "examples": ["Design the API for our user service", "What endpoints do we need?"],
+            },
+        ],
         "system_prompt": (
             "You are Arc, the Architect on this software team.\n\n"
             "You design systems that are simple, scalable, and maintainable. "
@@ -112,6 +181,29 @@ TEMPLATES = [
         "name": "Atlas",
         "role": "Software Engineer",
         "description": "Writes production-quality code, runs it, debugs issues, and pushes to GitHub.",
+        "default_skills": [
+            {
+                "name": "Full-Stack Implementation",
+                "description": "Build complete features with frontend, backend, and database layers",
+                "trigger_pattern": "build feature|implement|create component|full stack",
+                "procedure": "1. Read existing code to understand patterns and conventions\n2. Design the data model changes needed\n3. Implement backend API endpoints\n4. Build frontend components\n5. Connect frontend to backend\n6. Add error handling and loading states\n7. Write unit and integration tests\n8. Run and verify everything works",
+                "examples": ["Build a user profile page", "Implement the search feature"],
+            },
+            {
+                "name": "Bug Diagnosis & Fix",
+                "description": "Systematically diagnose and fix bugs with root cause analysis",
+                "trigger_pattern": "fix bug|debug|not working|error|broken|crash",
+                "procedure": "1. Reproduce the bug with exact steps\n2. Read error messages and stack traces\n3. Trace the code path from entry point\n4. Identify the root cause (not just symptoms)\n5. Write a failing test that captures the bug\n6. Implement the fix\n7. Verify the test passes\n8. Check for similar bugs elsewhere",
+                "examples": ["The login page shows a blank screen", "API returns 500 on large payloads"],
+            },
+            {
+                "name": "Code Review & Refactor",
+                "description": "Review code for quality, performance, and security issues and refactor",
+                "trigger_pattern": "review code|refactor|clean up|improve code|optimize",
+                "procedure": "1. Read the code thoroughly\n2. Check for: correctness, readability, performance, security\n3. Identify code smells and anti-patterns\n4. Suggest specific improvements with examples\n5. Refactor while preserving behavior\n6. Run tests to verify nothing broke",
+                "examples": ["Review the auth module", "Refactor this into cleaner code"],
+            },
+        ],
         "system_prompt": (
             "You are Atlas, the Software Engineer on this software team.\n\n"
             "You write clean, working code. You don't just generate snippets — you build complete, "
@@ -148,6 +240,29 @@ TEMPLATES = [
         "name": "Sentinel",
         "role": "QA Engineer",
         "description": "Tests code, finds bugs, writes test suites, and verifies requirements are met.",
+        "default_skills": [
+            {
+                "name": "Test Suite Creation",
+                "description": "Write comprehensive test suites covering happy path, edge cases, and error scenarios",
+                "trigger_pattern": "write tests|test suite|test cases|testing strategy",
+                "procedure": "1. Read the requirements and acceptance criteria\n2. Identify test categories: unit, integration, E2E\n3. Write happy-path tests first\n4. Add edge case tests (empty input, max values, unicode, etc.)\n5. Add error scenario tests (network failure, invalid data, etc.)\n6. Run all tests and verify coverage\n7. Document any untestable areas",
+                "examples": ["Write tests for the payment module", "Create a test suite for the API"],
+            },
+            {
+                "name": "Security Audit",
+                "description": "Check code for common security vulnerabilities (OWASP Top 10)",
+                "trigger_pattern": "security audit|check vulnerabilities|security review|penetration",
+                "procedure": "1. Check for injection vulnerabilities (SQL, XSS, command)\n2. Verify authentication and session management\n3. Check authorization on all endpoints\n4. Look for sensitive data exposure\n5. Verify CSRF protection\n6. Check dependency versions for known CVEs\n7. Report findings with severity and remediation",
+                "examples": ["Audit the auth system for vulnerabilities", "Is this API endpoint secure?"],
+            },
+            {
+                "name": "Performance Testing",
+                "description": "Test application performance under load and identify bottlenecks",
+                "trigger_pattern": "performance test|load test|stress test|benchmark|slow",
+                "procedure": "1. Identify critical user flows to test\n2. Define performance baselines and targets\n3. Write load test scripts\n4. Run tests with increasing concurrency\n5. Monitor response times, throughput, error rates\n6. Identify bottlenecks (DB queries, memory, CPU)\n7. Recommend optimizations",
+                "examples": ["How does the API perform under load?", "Find the performance bottleneck"],
+            },
+        ],
         "system_prompt": (
             "You are Sentinel, the QA Engineer on this software team.\n\n"
             "You break things so users don't have to. You write tests, find edge cases, "
@@ -182,6 +297,29 @@ TEMPLATES = [
         "name": "Scribe",
         "role": "Technical Writer",
         "description": "Creates documentation, README files, API docs, and project reports.",
+        "default_skills": [
+            {
+                "name": "README Generation",
+                "description": "Create comprehensive README files with setup instructions, usage examples, and contribution guidelines",
+                "trigger_pattern": "write readme|create readme|document project|project documentation",
+                "procedure": "1. Read the codebase to understand what it does\n2. Write a clear project title and one-line description\n3. Add a features/highlights section\n4. Write step-by-step setup instructions\n5. Add usage examples with code snippets\n6. Document environment variables and configuration\n7. Add contribution guidelines and license info",
+                "examples": ["Write a README for this project", "Document how to set up the dev environment"],
+            },
+            {
+                "name": "API Documentation",
+                "description": "Document REST APIs with endpoints, parameters, request/response examples, and error codes",
+                "trigger_pattern": "API docs|document API|endpoint documentation|API reference",
+                "procedure": "1. List all API endpoints from the codebase\n2. Document each endpoint: method, path, description\n3. Specify request parameters with types and validation\n4. Add example request/response bodies\n5. Document error codes and their meanings\n6. Add authentication requirements\n7. Include rate limit information",
+                "examples": ["Document the REST API", "Write API docs for the user endpoints"],
+            },
+            {
+                "name": "Technical Report",
+                "description": "Create structured reports summarizing technical decisions, progress, or analysis results",
+                "trigger_pattern": "write report|technical report|summary report|project status",
+                "procedure": "1. Define the audience and purpose\n2. Write an executive summary (2-3 sentences)\n3. Organize findings into logical sections\n4. Include data, metrics, and evidence\n5. Add recommendations with clear next steps\n6. Keep language clear for the target audience\n7. Add appendix for detailed data if needed",
+                "examples": ["Write a progress report for the sprint", "Summarize the architecture decisions"],
+            },
+        ],
         "system_prompt": (
             "You are Scribe, the Technical Writer on this software team.\n\n"
             "You make complex systems understandable. You write documentation that developers "

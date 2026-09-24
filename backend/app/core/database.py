@@ -2212,6 +2212,27 @@ async def provision_default_team(user_id: str) -> list[dict]:
                     await perm_db.commit()
                 finally:
                     await perm_db.close()
+            # Seed default skills from template definitions
+            try:
+                from app.core.default_team import TEMPLATES as SKILL_TEMPLATES
+                skill_defs = next(
+                    (t.get("default_skills", []) for t in SKILL_TEMPLATES if t["slug"] == tmpl.get("slug")),
+                    [],
+                )
+                for skill in skill_defs:
+                    await create_skill(
+                        employee_id=emp["id"],
+                        name=skill["name"],
+                        description=skill["description"],
+                        procedure=skill["procedure"],
+                        trigger_pattern=skill.get("trigger_pattern"),
+                        examples=skill.get("examples"),
+                    )
+                if skill_defs:
+                    logger.info(f"  Seeded {len(skill_defs)} default skills for {tmpl['name']}")
+            except Exception as skill_err:
+                logger.warning(f"Failed to seed skills for {tmpl['name']}: {skill_err}")
+
             created.append(emp)
             logger.info(f"Provisioned employee '{tmpl['name']}' ({tmpl['role']}) for user {user_id}")
         except Exception as e:
