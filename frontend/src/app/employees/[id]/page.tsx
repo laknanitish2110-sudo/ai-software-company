@@ -192,41 +192,51 @@ export default function EmployeeChatPage() {
   const MEMORY_TYPES = ["working", "episodic", "semantic", "preference", "procedural"];
 
   return (
-    <div style={{ display: "flex", height: "calc(100vh - 41px)", background: "var(--bg-base)" }}>
+    <div style={{ display: "flex", height: "calc(100vh - 53px)", background: "var(--bg-base)" }}>
       {/* Sidebar */}
       <div style={{
-        width: 260, borderRight: "1px solid var(--border)", background: "var(--bg-card)",
+        width: 280, borderRight: "1px solid var(--border)", background: "var(--bg-card)",
         display: "flex", flexDirection: "column", flexShrink: 0,
       }}>
         {/* Employee header */}
-        <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid var(--border)" }}>
-          <Link href="/employees" style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "none" }}>
-            &larr; Team
-          </Link>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-            <div style={{ flexShrink: 0 }}>
-              {sending || employee.status === "thinking" || employee.status === "tool_execution" ? (
-                <ThinkingOrb state={(STATUS_ORB[employee.status] || STATUS_ORB.idle).orbState} size={32} theme="auto" />
-              ) : (
+        <div style={{ overflow: "hidden" }}>
+          <div style={{
+            height: 3,
+            background: `linear-gradient(90deg, ${(ROLE_META[employee.role] || { color: "#635bff" }).color}, ${(ROLE_META[employee.role] || { color: "#635bff" }).color}44)`,
+          }} />
+          <div style={{ padding: "14px 16px 14px", borderBottom: "1px solid var(--border)" }}>
+            <Link href="/employees" style={{
+              fontSize: 12, color: "var(--text-muted)", textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 4,
+            }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M7.5 9L4.5 6L7.5 3"/></svg>
+              Team
+            </Link>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+              <div style={{ flexShrink: 0 }}>
+                {sending || employee.status === "thinking" || employee.status === "tool_execution" ? (
+                  <ThinkingOrb state={(STATUS_ORB[employee.status] || STATUS_ORB.idle).orbState} size={32} theme="auto" />
+                ) : (
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 10,
+                    background: `${(ROLE_META[employee.role] || { color: "#635bff" }).color}12`,
+                    border: `1.5px solid ${(ROLE_META[employee.role] || { color: "#635bff" }).color}30`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 15,
+                  }}>
+                    {(ROLE_META[employee.role] || { icon: "🤖" }).icon}
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>{employee.name}</div>
                 <div style={{
-                  width: 32, height: 32, borderRadius: "50%",
-                  background: `${(ROLE_META[employee.role] || { color: "#635bff" }).color}12`,
-                  border: `1.5px solid ${(ROLE_META[employee.role] || { color: "#635bff" }).color}30`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 15,
+                  fontSize: 12,
+                  color: (ROLE_META[employee.role] || { color: "var(--text-muted)" }).color,
+                  fontWeight: 500,
                 }}>
-                  {(ROLE_META[employee.role] || { icon: "🤖" }).icon}
+                  {employee.role}
                 </div>
-              )}
-            </div>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>{employee.name}</div>
-              <div style={{
-                fontSize: 12,
-                color: (ROLE_META[employee.role] || { color: "var(--text-muted)" }).color,
-                fontWeight: 500,
-              }}>
-                {employee.role}
               </div>
             </div>
           </div>
@@ -256,33 +266,49 @@ export default function EmployeeChatPage() {
           {sideTab === "chat" && (
             <div>
               {activeSession ? (
-                <div style={{ fontSize: 13 }}>
-                  <div style={{ color: "var(--text-secondary)", marginBottom: 8 }}>
-                    Active session
+                <div>
+                  <div style={{
+                    padding: "10px 14px", borderRadius: 10,
+                    background: "rgba(11,191,140,0.06)", border: "1px solid rgba(11,191,140,0.15)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#0bbf8c" }} />
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#0bbf8c" }}>Active Session</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      Started {new Date(activeSession.started_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </div>
                   </div>
-                  <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--success-bg)", border: "1px solid var(--success-border)", fontSize: 12, color: "var(--success)", marginBottom: 12 }}>
-                    Started {new Date(activeSession.started_at).toLocaleTimeString()}
+                  <div style={{ marginTop: 12, padding: "0 2px" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                      Quick Info
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+                      {messages.length} messages this session
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+                      {employee.memory_count ?? 0} total memories
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+                      {employee.session_count ?? 0} total sessions
+                    </div>
                   </div>
-                  <button
-                    onClick={handleEndSession}
-                    style={{
-                      width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid var(--border)",
-                      background: "var(--bg-base)", color: "var(--text-secondary)", fontSize: 12,
-                      cursor: "pointer",
-                    }}
-                  >
-                    End Session
-                  </button>
                 </div>
               ) : (
-                <div style={{ textAlign: "center", padding: "24px 8px" }}>
-                  <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>No active session</p>
+                <div style={{ textAlign: "center", padding: "32px 12px" }}>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>💬</div>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 4 }}>
+                    No active session
+                  </p>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.5 }}>
+                    Start a session to chat with {employee.name}
+                  </p>
                   <button
                     onClick={handleStartSession}
                     style={{
-                      padding: "8px 16px", borderRadius: 8, border: "none",
+                      padding: "8px 20px", borderRadius: 8, border: "none",
                       background: "var(--accent)", color: "#fff", fontSize: 13, fontWeight: 600,
-                      cursor: "pointer",
+                      cursor: "pointer", boxShadow: "0 2px 8px rgba(99,91,255,0.25)",
                     }}
                   >
                     Start Session
@@ -295,34 +321,47 @@ export default function EmployeeChatPage() {
           {sideTab === "sessions" && (
             <div>
               {sessions.length === 0 && (
-                <p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: 16 }}>No sessions yet</p>
+                <div style={{ textAlign: "center", padding: "32px 12px" }}>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>📂</div>
+                  <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No sessions yet</p>
+                </div>
               )}
-              {sessions.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => handleLoadSession(s.id)}
-                  style={{
-                    display: "block", width: "100%", textAlign: "left",
-                    padding: "10px 12px", borderRadius: 8, marginBottom: 4,
-                    border: activeSession?.id === s.id ? "1px solid var(--accent-border)" : "1px solid transparent",
-                    background: activeSession?.id === s.id ? "var(--accent-bg)" : "transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
-                    {new Date(s.started_at).toLocaleDateString()}
-                  </div>
-                  <div className="flex items-center gap-2" style={{ marginTop: 2 }}>
-                    <span style={{
-                      width: 6, height: 6, borderRadius: "50%",
-                      background: s.status === "active" ? "var(--success)" : "var(--text-muted)",
-                    }} />
-                    <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "capitalize" }}>
-                      {s.status}
-                    </span>
-                  </div>
-                </button>
-              ))}
+              {sessions.map((s) => {
+                const isActive = activeSession?.id === s.id;
+                const isLive = s.status === "active";
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => handleLoadSession(s.id)}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left",
+                      padding: "10px 12px", borderRadius: 10, marginBottom: 4,
+                      border: isActive ? "1px solid var(--accent-border)" : "1px solid transparent",
+                      background: isActive ? "var(--accent-bg)" : "transparent",
+                      cursor: "pointer", transition: "background 0.15s",
+                    }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-base)"; }}
+                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                        {new Date(s.started_at).toLocaleDateString([], { month: "short", day: "numeric" })}
+                      </span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 4,
+                        background: isLive ? "rgba(11,191,140,0.1)" : "var(--bg-base)",
+                        color: isLive ? "#0bbf8c" : "var(--text-muted)",
+                        textTransform: "uppercase",
+                      }}>
+                        {s.status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                      {new Date(s.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -468,7 +507,7 @@ export default function EmployeeChatPage() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Chat header */}
         <div style={{
-          padding: "12px 20px", borderBottom: "1px solid var(--border)",
+          padding: "14px 24px", borderBottom: "1px solid var(--border)",
           background: "var(--bg-card)",
           display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
@@ -476,11 +515,11 @@ export default function EmployeeChatPage() {
             {(sending || employee.status === "thinking" || employee.status === "tool_execution") && (
               <ThinkingOrb state={(STATUS_ORB[employee.status] || STATUS_ORB.thinking).orbState} size={20} theme="auto" />
             )}
-            <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>
-              {employee.name}
+            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
+              Chat with {employee.name}
             </span>
             <span style={{
-              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+              fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20,
               background: employee.status !== "idle" && sending
                 ? "rgba(99,91,255,0.1)" : "rgba(11,191,140,0.1)",
               color: employee.status !== "idle" && sending
@@ -490,6 +529,20 @@ export default function EmployeeChatPage() {
               {(STATUS_ORB[employee.status] || STATUS_ORB.idle).label}
             </span>
           </div>
+          {activeSession && activeSession.status === "active" && (
+            <button
+              onClick={handleEndSession}
+              style={{
+                padding: "5px 12px", borderRadius: 8, border: "1px solid var(--border)",
+                background: "transparent", fontSize: 12, fontWeight: 500,
+                color: "var(--text-muted)", cursor: "pointer", transition: "all 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--danger)"; e.currentTarget.style.color = "var(--danger)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+            >
+              End Session
+            </button>
+          )}
           {error && (
             <span style={{ fontSize: 12, color: "#ed5f74" }}>{error}</span>
           )}
@@ -498,21 +551,32 @@ export default function EmployeeChatPage() {
         {/* Messages */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
           {!activeSession && messages.length === 0 && (
-            <div style={{ textAlign: "center", padding: "80px 24px" }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>{employee.avatar_url ? "" : "\u{1f4ac}"}</div>
-              <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
+            <div style={{ textAlign: "center", padding: "100px 24px", maxWidth: 420, margin: "0 auto" }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: 20, margin: "0 auto 20px",
+                background: `${(ROLE_META[employee.role] || { color: "#635bff" }).color}10`,
+                border: `1.5px solid ${(ROLE_META[employee.role] || { color: "#635bff" }).color}25`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 28,
+              }}>
+                {(ROLE_META[employee.role] || { icon: "🤖" }).icon}
+              </div>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8, letterSpacing: "-0.02em" }}>
                 Chat with {employee.name}
               </h2>
-              <p style={{ fontSize: 14, color: "var(--text-secondary)", maxWidth: 400, margin: "0 auto 24px" }}>
-                Start a session to begin a conversation. {employee.name} remembers context across sessions.
+              <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 24 }}>
+                Start a session to begin a conversation. {employee.name} remembers everything across sessions and learns new skills over time.
               </p>
               <button
                 onClick={handleStartSession}
                 style={{
-                  padding: "10px 24px", borderRadius: 10, border: "none",
+                  padding: "10px 28px", borderRadius: 10, border: "none",
                   background: "var(--accent)", color: "#fff", fontSize: 14, fontWeight: 600,
-                  cursor: "pointer",
+                  cursor: "pointer", boxShadow: "0 2px 12px rgba(99,91,255,0.3)",
+                  transition: "all 0.15s",
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-1px)"}
+                onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
               >
                 Start Session
               </button>
@@ -632,46 +696,64 @@ export default function EmployeeChatPage() {
 
         {/* Input */}
         {activeSession && activeSession.status === "active" && (
-          <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}>
-            <div className="flex items-end gap-2">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={`Message ${employee.name}...`}
-                rows={1}
-                style={{
-                  flex: 1, padding: "10px 14px", borderRadius: 12,
-                  border: "1px solid var(--border)", background: "var(--bg-base)",
-                  color: "var(--text-primary)", fontSize: 14, outline: "none",
-                  resize: "none", fontFamily: "inherit", lineHeight: 1.5,
-                  maxHeight: 120, overflowY: "auto",
-                }}
-                onInput={(e) => {
-                  const t = e.currentTarget;
-                  t.style.height = "auto";
-                  t.style.height = Math.min(t.scrollHeight, 120) + "px";
-                }}
-                onFocus={(e) => e.target.style.borderColor = "var(--accent)"}
-                onBlur={(e) => e.target.style.borderColor = "var(--border)"}
-              />
+          <div style={{ padding: "14px 24px 12px", borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+              <div style={{
+                flex: 1, position: "relative", borderRadius: 14,
+                border: "1px solid var(--border)", background: "var(--bg-base)",
+                transition: "border-color 0.15s, box-shadow 0.15s",
+              }}
+                className="chat-input-wrap"
+              >
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`Message ${employee.name}...`}
+                  rows={1}
+                  style={{
+                    width: "100%", padding: "12px 16px", borderRadius: 14,
+                    border: "none", background: "transparent",
+                    color: "var(--text-primary)", fontSize: 14, outline: "none",
+                    resize: "none", fontFamily: "inherit", lineHeight: 1.5,
+                    maxHeight: 120, overflowY: "auto",
+                  }}
+                  onInput={(e) => {
+                    const t = e.currentTarget;
+                    t.style.height = "auto";
+                    t.style.height = Math.min(t.scrollHeight, 120) + "px";
+                  }}
+                  onFocus={(e) => {
+                    const wrap = e.target.closest(".chat-input-wrap") as HTMLElement;
+                    if (wrap) { wrap.style.borderColor = "var(--accent)"; wrap.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }
+                  }}
+                  onBlur={(e) => {
+                    const wrap = e.target.closest(".chat-input-wrap") as HTMLElement;
+                    if (wrap) { wrap.style.borderColor = "var(--border)"; wrap.style.boxShadow = "none"; }
+                  }}
+                />
+              </div>
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || sending}
                 style={{
-                  padding: "10px 18px", borderRadius: 12, border: "none",
-                  background: "var(--accent)", color: "#fff", fontSize: 14, fontWeight: 600,
+                  width: 42, height: 42, borderRadius: 12, border: "none",
+                  background: "var(--accent)", color: "#fff",
                   cursor: !input.trim() || sending ? "default" : "pointer",
-                  opacity: !input.trim() || sending ? 0.5 : 1,
-                  transition: "opacity 0.15s", flexShrink: 0,
+                  opacity: !input.trim() || sending ? 0.4 : 1,
+                  transition: "all 0.15s", flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: !input.trim() || sending ? "none" : "0 2px 8px rgba(99,91,255,0.3)",
                 }}
               >
-                Send
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
               </button>
             </div>
-            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
-              Press Enter to send, Shift+Enter for new line
+            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, paddingLeft: 2 }}>
+              Enter to send · Shift+Enter for new line
             </p>
           </div>
         )}

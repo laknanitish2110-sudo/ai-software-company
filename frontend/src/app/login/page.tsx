@@ -19,12 +19,12 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 };
 
 const TEAM = [
-  { icon: "👨‍💼", label: "CEO" },
-  { icon: "📋", label: "Analyst" },
-  { icon: "🔍", label: "Research" },
-  { icon: "🏗️", label: "Architect" },
-  { icon: "💻", label: "Engineer" },
-  { icon: "📊", label: "Presenter" },
+  { icon: "🏗️", label: "Architect", name: "Arc" },
+  { icon: "📋", label: "Business Analyst", name: "Sage" },
+  { icon: "🔍", label: "Researcher", name: "Scout" },
+  { icon: "⚡", label: "Engineer", name: "Atlas" },
+  { icon: "🛡️", label: "QA", name: "Sentinel" },
+  { icon: "✍️", label: "Writer", name: "Scribe" },
 ];
 
 function EyeIcon({ open }: { open: boolean }) {
@@ -61,21 +61,9 @@ function LoginForm() {
     }
   }, [searchParams, toast]);
 
-  useEffect(() => {
-    if (user) {
-      router.push("/");
-    }
-  }, [user, router]);
-
-  useEffect(() => {
-    if (pendingVerificationEmail) {
-      router.push("/verify-email");
-    }
-  }, [pendingVerificationEmail, router]);
-
-  if (user) {
-    return null;
-  }
+  useEffect(() => { if (user) router.push("/"); }, [user, router]);
+  useEffect(() => { if (pendingVerificationEmail) router.push("/verify-email"); }, [pendingVerificationEmail, router]);
+  if (user) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,10 +73,7 @@ function LoginForm() {
       router.push("/");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Invalid credentials";
-      if (msg === "EMAIL_NOT_VERIFIED") {
-        router.push("/verify-email");
-        return;
-      }
+      if (msg === "EMAIL_NOT_VERIFIED") { router.push("/verify-email"); return; }
       toast("error", "Login failed", msg);
     } finally {
       setLoading(false);
@@ -96,109 +81,153 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-10"
-         style={{ background: "linear-gradient(145deg, var(--bg-base), var(--bg-elevated))" }}>
-      {/* Hero branding */}
-      <div className="text-center mb-8 max-w-md animate-fade-in">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-medium mb-5"
-             style={{ background: "var(--accent-bg)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
-          6 AI agents ready
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2" style={{ color: "var(--text-primary)" }}>
-          AI Software Company
-        </h1>
-        <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          Your AI team builds working software from a single idea.
-        </p>
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+      {/* Left branding panel */}
+      <div className="auth-left-panel" style={{
+        flex: "0 0 440px", background: "linear-gradient(160deg, #060918, #0f1130, #1a1350)",
+        display: "flex", flexDirection: "column", justifyContent: "center",
+        padding: "60px 48px", position: "relative", overflow: "hidden",
+      }}>
+        <div style={{
+          position: "absolute", top: -80, right: -80, width: 300, height: 300,
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(99,91,255,0.15), transparent 70%)",
+        }} />
+        <div style={{
+          position: "absolute", bottom: -60, left: -60, width: 200, height: 200,
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,0.1), transparent 70%)",
+        }} />
 
-        {/* Team roster */}
-        <div className="flex items-center justify-center gap-1 mt-5">
-          {TEAM.map((t) => (
-            <div key={t.label}
-                 className="flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg"
-                 style={{ minWidth: 52 }}>
-              <span className="text-lg">{t.icon}</span>
-              <span className="text-[9px] font-medium" style={{ color: "var(--text-muted)" }}>{t.label}</span>
-            </div>
-          ))}
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 40 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: "linear-gradient(135deg, #635bff, #7c3aed)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#fff", fontSize: 14, fontWeight: 800,
+            }}>FA</div>
+            <span style={{ fontSize: 20, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>ForgeAI</span>
+          </div>
+
+          <h1 style={{
+            fontSize: 32, fontWeight: 800, color: "#fff",
+            lineHeight: 1.2, letterSpacing: "-0.03em", marginBottom: 16,
+          }}>
+            Your AI team,<br />
+            <span style={{ color: "#635bff" }}>always ready.</span>
+          </h1>
+
+          <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, marginBottom: 40, maxWidth: 340 }}>
+            Six persistent AI employees that learn, remember, and grow. From architecture to deployment.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            {TEAM.map((t) => (
+              <div key={t.name} style={{
+                padding: "10px 12px", borderRadius: 10,
+                background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)",
+                display: "flex", alignItems: "center", gap: 8,
+              }}>
+                <span style={{ fontSize: 16 }}>{t.icon}</span>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)" }}>{t.name}</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>{t.label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Login card */}
-      <div className="w-full max-w-sm animate-fade-in" style={{ animationDelay: "0.1s" }}>
-        <form onSubmit={handleSubmit}
-              className="rounded-xl p-6 space-y-4"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border)", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
-          <div>
-            <label htmlFor="email" className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Email</label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg text-sm focus:outline-none transition-colors"
-              style={{ background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-              onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
-              onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
-              placeholder="you@example.com"
-            />
+      {/* Right form panel */}
+      <div style={{
+        flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        padding: "40px 32px", background: "var(--bg-base)",
+      }}>
+        <div style={{ width: "100%", maxWidth: 380 }}>
+          <div style={{ marginBottom: 32 }}>
+            <h2 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em", marginBottom: 6 }}>
+              Welcome back
+            </h2>
+            <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
+              Sign in to your workspace
+            </p>
           </div>
-          <div>
-            <label htmlFor="password" className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Password</label>
-            <div style={{ position: "relative" }}>
+
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div>
+              <label htmlFor="email" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>Email</label>
               <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 pr-10 rounded-lg text-sm focus:outline-none transition-colors"
-                style={{ background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+                id="email" type="email" required value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{
+                  width: "100%", padding: "10px 14px", borderRadius: 10,
+                  border: "1px solid var(--border)", background: "var(--bg-card)",
+                  fontSize: 14, color: "var(--text-primary)", outline: "none",
+                  transition: "border-color 0.15s, box-shadow 0.15s",
+                }}
                 onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
                 onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
-                placeholder="Enter your password"
+                placeholder="you@example.com"
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="cursor-pointer"
-                style={{
-                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                  background: "none", border: "none", color: "var(--text-muted)", padding: 4,
-                }}
-                tabIndex={-1}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                <EyeIcon open={showPassword} />
-              </button>
             </div>
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 rounded-lg text-white text-sm font-medium disabled:opacity-50 transition-all cursor-pointer"
-            style={{ background: "var(--accent)", boxShadow: "0 2px 8px rgba(99, 91, 255, 0.25)" }}
-            onMouseOver={(e) => (e.currentTarget.style.background = "var(--accent-light)")}
-            onMouseOut={(e) => (e.currentTarget.style.background = "var(--accent)")}
-          >
-            {loading ? "Signing in..." : "Sign In"}
-          </button>
-          <SocialLoginButtons />
-        </form>
-        <p className="text-center text-sm mt-4" style={{ color: "var(--text-muted)" }}>
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="font-medium hover:underline" style={{ color: "var(--accent)" }}>Create one</Link>
-        </p>
+            <div>
+              <label htmlFor="password" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>Password</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  id="password" type={showPassword ? "text" : "password"} required
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  style={{
+                    width: "100%", padding: "10px 14px", paddingRight: 40, borderRadius: 10,
+                    border: "1px solid var(--border)", background: "var(--bg-card)",
+                    fontSize: 14, color: "var(--text-primary)", outline: "none",
+                    transition: "border-color 0.15s, box-shadow 0.15s",
+                  }}
+                  onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
+                  placeholder="Enter your password"
+                />
+                <button
+                  type="button" onClick={() => setShowPassword(!showPassword)} tabIndex={-1}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  style={{
+                    position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", color: "var(--text-muted)", padding: 4, cursor: "pointer",
+                  }}
+                >
+                  <EyeIcon open={showPassword} />
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit" disabled={loading}
+              style={{
+                width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
+                background: "var(--accent)", color: "#fff", fontSize: 14, fontWeight: 600,
+                cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+                transition: "all 0.15s", boxShadow: "0 2px 8px rgba(99,91,255,0.25)",
+              }}
+              onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = "var(--accent-light)"; }}
+              onMouseLeave={(e) => e.currentTarget.style.background = "var(--accent)"}
+            >
+              {loading ? "Signing in..." : "Sign In"}
+            </button>
+
+            <SocialLoginButtons />
+          </form>
+
+          <p style={{ textAlign: "center", fontSize: 13, color: "var(--text-muted)", marginTop: 24 }}>
+            Don&apos;t have an account?{" "}
+            <Link href="/register" style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}>Create one</Link>
+          </p>
+        </div>
       </div>
 
-      {/* Footer tagline */}
-      <div className="mt-10 text-center animate-fade-in" style={{ animationDelay: "0.2s" }}>
-        <p className="text-[11px]" style={{ color: "var(--text-muted)", opacity: 0.6 }}>
-          Problem statement in, working software out.
-        </p>
-      </div>
+      <style>{`
+        @media (max-width: 768px) {
+          .auth-left-panel { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }

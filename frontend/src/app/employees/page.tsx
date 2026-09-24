@@ -173,26 +173,27 @@ export default function EmployeesPage() {
 
   const teamCount = employees.length;
   const activeCount = employees.filter(e => e.status === "thinking" || e.status === "working" || e.status === "tool_execution").length;
+  const totalSessions = employees.reduce((sum, e) => sum + (e.session_count ?? 0), 0);
+  const totalMemories = employees.reduce((sum, e) => sum + (e.memory_count ?? 0), 0);
+
+  const STATS = [
+    { label: "Employees", value: teamCount, color: "var(--accent)" },
+    { label: "Active Now", value: activeCount, color: "#0bbf8c" },
+    { label: "Sessions", value: totalSessions, color: "#3b82f6" },
+    { label: "Memories", value: totalMemories, color: "#8b5cf6" },
+  ];
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 36 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <Link href="/" style={{ color: "var(--text-muted)", fontSize: 13, textDecoration: "none" }}>
-                Home
-              </Link>
-              <span style={{ color: "var(--text-muted)", fontSize: 13 }}>/</span>
-              <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>
-                Your Team
-              </h1>
-            </div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>
+              Your Team
+            </h1>
             <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: 0 }}>
-              {teamCount > 0
-                ? `${teamCount} AI employees${activeCount > 0 ? ` · ${activeCount} active now` : ""}`
-                : "Your persistent AI employees"}
+              Persistent AI employees that learn and grow
             </p>
           </div>
           <Link
@@ -208,6 +209,28 @@ export default function EmployeesPage() {
             + Hire Employee
           </Link>
         </div>
+
+        {/* Stats bar */}
+        {teamCount > 0 && (
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12,
+            marginBottom: 28,
+          }}>
+            {STATS.map((s) => (
+              <div key={s.label} style={{
+                padding: "14px 16px", borderRadius: 12,
+                background: "var(--bg-card)", border: "1px solid var(--border)",
+              }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: s.color, letterSpacing: "-0.02em" }}>
+                  {s.value}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500, marginTop: 2 }}>
+                  {s.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {loading && (
           <div style={{ textAlign: "center", padding: 80 }}>

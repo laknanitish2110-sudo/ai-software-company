@@ -41,6 +41,13 @@ function EyeIcon({ open }: { open: boolean }) {
   );
 }
 
+const HIGHLIGHTS = [
+  { text: "Persistent memory across sessions" },
+  { text: "Learn skills from conversations" },
+  { text: "Delegate tasks between employees" },
+  { text: "Push code to GitHub with PR review" },
+];
+
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -56,26 +63,14 @@ export default function RegisterPage() {
   const ruleResults = useMemo(() => PASSWORD_RULES.map(r => ({ ...r, passed: r.test(password) })), [password]);
   const allPassed = ruleResults.every(r => r.passed);
 
-  useEffect(() => {
-    if (user) router.push("/");
-  }, [user, router]);
-
-  useEffect(() => {
-    if (pendingVerificationEmail) router.push("/verify-email");
-  }, [pendingVerificationEmail, router]);
-
+  useEffect(() => { if (user) router.push("/"); }, [user, router]);
+  useEffect(() => { if (pendingVerificationEmail) router.push("/verify-email"); }, [pendingVerificationEmail, router]);
   if (user) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!allPassed) {
-      toast("error", "Password too weak", "Please meet all password requirements.");
-      return;
-    }
-    if (password !== confirm) {
-      toast("error", "Passwords don't match", "Please re-enter your password.");
-      return;
-    }
+    if (!allPassed) { toast("error", "Password too weak", "Please meet all password requirements."); return; }
+    if (password !== confirm) { toast("error", "Passwords don't match", "Please re-enter your password."); return; }
     setLoading(true);
     try {
       await register(email, password);
@@ -86,162 +81,180 @@ export default function RegisterPage() {
     }
   }
 
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-10"
-         style={{ background: "linear-gradient(145deg, var(--bg-base), var(--bg-elevated))" }}>
-      <div className="text-center mb-8 max-w-md animate-fade-in">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-medium mb-5"
-             style={{ background: "var(--success-bg)", color: "var(--success)", border: "1px solid var(--success-border)" }}>
-          Start building in seconds
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2" style={{ color: "var(--text-primary)" }}>
-          AI Software Company
-        </h1>
-        <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-          Create your account and start your AI software team.
-        </p>
-      </div>
+  const inputStyle = {
+    width: "100%", padding: "10px 14px", borderRadius: 10,
+    border: "1px solid var(--border)", background: "var(--bg-card)",
+    fontSize: 14, color: "var(--text-primary)", outline: "none",
+    transition: "border-color 0.15s, box-shadow 0.15s",
+  };
 
-      <div className="w-full max-w-sm animate-fade-in" style={{ animationDelay: "0.1s" }}>
-        <form onSubmit={handleSubmit}
-              className="rounded-xl p-6 space-y-4"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--border)", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
-          <div>
-            <label htmlFor="email" className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Email</label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg text-sm focus:outline-none transition-colors"
-              style={{ background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-              onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
-              onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
-              placeholder="you@example.com"
-            />
+  return (
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+      {/* Left branding panel */}
+      <div className="auth-left-panel" style={{
+        flex: "0 0 440px", background: "linear-gradient(160deg, #060918, #0f1130, #1a1350)",
+        display: "flex", flexDirection: "column", justifyContent: "center",
+        padding: "60px 48px", position: "relative", overflow: "hidden",
+      }}>
+        <div style={{
+          position: "absolute", top: -80, right: -80, width: 300, height: 300,
+          borderRadius: "50%", background: "radial-gradient(circle, rgba(11,191,140,0.12), transparent 70%)",
+        }} />
+
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 40 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: "linear-gradient(135deg, #635bff, #7c3aed)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#fff", fontSize: 14, fontWeight: 800,
+            }}>FA</div>
+            <span style={{ fontSize: 20, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>ForgeAI</span>
           </div>
 
-          {/* Password with show/hide */}
-          <div>
-            <label htmlFor="password" className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Password</label>
-            <div style={{ position: "relative" }}>
-              <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 pr-10 rounded-lg text-sm focus:outline-none transition-colors"
-                style={{ background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+          <h1 style={{
+            fontSize: 32, fontWeight: 800, color: "#fff",
+            lineHeight: 1.2, letterSpacing: "-0.03em", marginBottom: 16,
+          }}>
+            Build your AI<br />
+            <span style={{ color: "#0bbf8c" }}>software team.</span>
+          </h1>
+
+          <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, marginBottom: 36, maxWidth: 340 }}>
+            Six employees that persist, learn, and collaborate. No setup needed.
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {HIGHLIGHTS.map((h) => (
+              <div key={h.text} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{
+                  width: 20, height: 20, borderRadius: 6,
+                  background: "rgba(11,191,140,0.15)", border: "1px solid rgba(11,191,140,0.25)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, color: "#0bbf8c", flexShrink: 0,
+                }}>&#10003;</div>
+                <span style={{ fontSize: 13, color: "rgba(255,255,255,0.7)" }}>{h.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Right form panel */}
+      <div style={{
+        flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        padding: "40px 32px", background: "var(--bg-base)", overflowY: "auto",
+      }}>
+        <div style={{ width: "100%", maxWidth: 380 }}>
+          <div style={{ marginBottom: 28 }}>
+            <h2 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em", marginBottom: 6 }}>
+              Create your account
+            </h2>
+            <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
+              Get started with your AI team in seconds
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <label htmlFor="email" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>Email</label>
+              <input id="email" type="email" required value={email}
+                onChange={(e) => setEmail(e.target.value)} style={inputStyle}
                 onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
                 onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
-                placeholder="Create a strong password"
+                placeholder="you@example.com"
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="cursor-pointer"
-                style={{
-                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                  background: "none", border: "none", color: "var(--text-muted)", padding: 4,
-                }}
-                tabIndex={-1}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                <EyeIcon open={showPassword} />
-              </button>
             </div>
 
-            {/* Strength bar */}
-            {password && (
-              <div style={{ marginTop: 6 }}>
-                <div style={{ display: "flex", gap: 3, marginBottom: 4 }}>
-                  {[1, 2, 3, 4].map(level => (
-                    <div key={level} style={{
-                      flex: 1, height: 3, borderRadius: 2,
-                      background: strength.score >= level ? strength.color : "var(--bg-secondary)",
-                      transition: "background 0.2s",
-                    }} />
-                  ))}
-                </div>
-                <span style={{ fontSize: 10, color: strength.color, fontWeight: 600 }}>{strength.label}</span>
+            <div>
+              <label htmlFor="password" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>Password</label>
+              <div style={{ position: "relative" }}>
+                <input id="password" type={showPassword ? "text" : "password"} required
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  style={{ ...inputStyle, paddingRight: 40 }}
+                  onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
+                  placeholder="Create a strong password"
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} tabIndex={-1}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", padding: 4, cursor: "pointer" }}>
+                  <EyeIcon open={showPassword} />
+                </button>
               </div>
-            )}
-
-            {/* Requirements checklist */}
-            {password && (
-              <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
-                {ruleResults.map(r => (
-                  <span key={r.label} style={{
-                    fontSize: 10,
-                    color: r.passed ? "var(--success)" : "var(--text-muted)",
-                    display: "flex", alignItems: "center", gap: 3,
-                  }}>
-                    <span style={{ fontSize: 11 }}>{r.passed ? "✓" : "✗"}</span>
-                    {r.label}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Confirm password with show/hide */}
-          <div>
-            <label htmlFor="confirm" className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Confirm Password</label>
-            <div style={{ position: "relative" }}>
-              <input
-                id="confirm"
-                type={showConfirm ? "text" : "password"}
-                required
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                className="w-full px-3 py-2.5 pr-10 rounded-lg text-sm focus:outline-none transition-colors"
-                style={{
-                  background: "var(--bg-base)",
-                  border: `1px solid ${confirm && confirm !== password ? "var(--danger)" : "var(--border)"}`,
-                  color: "var(--text-primary)",
-                }}
-                onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
-                onBlur={(e) => { e.target.style.borderColor = confirm && confirm !== password ? "var(--danger)" : "var(--border)"; e.target.style.boxShadow = "none"; }}
-                placeholder="Re-enter your password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirm(!showConfirm)}
-                className="cursor-pointer"
-                style={{
-                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                  background: "none", border: "none", color: "var(--text-muted)", padding: 4,
-                }}
-                tabIndex={-1}
-                aria-label={showConfirm ? "Hide password" : "Show password"}
-              >
-                <EyeIcon open={showConfirm} />
-              </button>
+              {password && (
+                <>
+                  <div style={{ display: "flex", gap: 3, marginTop: 6, marginBottom: 4 }}>
+                    {[1, 2, 3, 4].map(level => (
+                      <div key={level} style={{
+                        flex: 1, height: 3, borderRadius: 2,
+                        background: strength.score >= level ? strength.color : "var(--border)",
+                        transition: "background 0.2s",
+                      }} />
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+                    {ruleResults.map(r => (
+                      <span key={r.label} style={{ fontSize: 10, color: r.passed ? "var(--success)" : "var(--text-muted)", display: "flex", alignItems: "center", gap: 3 }}>
+                        <span style={{ fontSize: 11 }}>{r.passed ? "✓" : "✗"}</span> {r.label}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-            {confirm && confirm !== password && (
-              <span style={{ fontSize: 10, color: "var(--danger)", marginTop: 2, display: "block" }}>Passwords do not match</span>
-            )}
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading || !allPassed || password !== confirm}
-            className="w-full py-2.5 rounded-lg text-white text-sm font-medium disabled:opacity-50 transition-all cursor-pointer"
-            style={{ background: "var(--accent)", boxShadow: "0 2px 8px rgba(99, 91, 255, 0.25)" }}
-            onMouseOver={(e) => (e.currentTarget.style.background = "var(--accent-light)")}
-            onMouseOut={(e) => (e.currentTarget.style.background = "var(--accent)")}
-          >
-            {loading ? "Creating account..." : "Create Account"}
-          </button>
-          <SocialLoginButtons />
-        </form>
-        <p className="text-center text-sm mt-4" style={{ color: "var(--text-muted)" }}>
-          Already have an account?{" "}
-          <Link href="/login" className="font-medium hover:underline" style={{ color: "var(--accent)" }}>Sign in</Link>
-        </p>
+            <div>
+              <label htmlFor="confirm" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>Confirm Password</label>
+              <div style={{ position: "relative" }}>
+                <input id="confirm" type={showConfirm ? "text" : "password"} required
+                  value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                  style={{ ...inputStyle, paddingRight: 40, borderColor: confirm && confirm !== password ? "var(--danger)" : undefined }}
+                  onFocus={(e) => { e.target.style.borderColor = "var(--accent)"; e.target.style.boxShadow = "0 0 0 3px var(--accent-bg)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = confirm && confirm !== password ? "var(--danger)" : "var(--border)"; e.target.style.boxShadow = "none"; }}
+                  placeholder="Re-enter your password"
+                />
+                <button type="button" onClick={() => setShowConfirm(!showConfirm)} tabIndex={-1}
+                  aria-label={showConfirm ? "Hide password" : "Show password"}
+                  style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", padding: 4, cursor: "pointer" }}>
+                  <EyeIcon open={showConfirm} />
+                </button>
+              </div>
+              {confirm && confirm !== password && (
+                <span style={{ fontSize: 10, color: "var(--danger)", marginTop: 2, display: "block" }}>Passwords do not match</span>
+              )}
+            </div>
+
+            <button
+              type="submit" disabled={loading || !allPassed || password !== confirm}
+              style={{
+                width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
+                background: "var(--accent)", color: "#fff", fontSize: 14, fontWeight: 600,
+                cursor: loading || !allPassed ? "default" : "pointer",
+                opacity: loading || !allPassed || password !== confirm ? 0.5 : 1,
+                transition: "all 0.15s", boxShadow: "0 2px 8px rgba(99,91,255,0.25)",
+              }}
+              onMouseEnter={(e) => { if (!loading && allPassed) e.currentTarget.style.background = "var(--accent-light)"; }}
+              onMouseLeave={(e) => e.currentTarget.style.background = "var(--accent)"}
+            >
+              {loading ? "Creating account..." : "Create Account"}
+            </button>
+
+            <SocialLoginButtons />
+          </form>
+
+          <p style={{ textAlign: "center", fontSize: 13, color: "var(--text-muted)", marginTop: 24 }}>
+            Already have an account?{" "}
+            <Link href="/login" style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}>Sign in</Link>
+          </p>
+        </div>
       </div>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .auth-left-panel { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
