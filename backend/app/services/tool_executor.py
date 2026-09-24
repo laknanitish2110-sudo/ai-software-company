@@ -142,7 +142,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "github_push",
-            "description": "Push files to a GitHub repository. Creates the repo if it doesn't exist.",
+            "description": "Push files to a GitHub repository via a feature branch and pull request. Creates the repo if needed. Pushes to an auto-named branch and opens a PR for review by default.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -169,6 +169,18 @@ TOOL_SCHEMAS = [
                     "commit_message": {
                         "type": "string",
                         "description": "Git commit message",
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Branch name. Defaults to auto-generated feature branch. Set to 'main' to push directly (not recommended).",
+                    },
+                    "pr_title": {
+                        "type": "string",
+                        "description": "Pull request title. Defaults to commit message.",
+                    },
+                    "pr_body": {
+                        "type": "string",
+                        "description": "Pull request body/description.",
                     },
                 },
                 "required": ["owner", "repo", "files", "commit_message"],
@@ -471,16 +483,46 @@ async def _exec_github_push(args: dict, github_token: str | None) -> dict:
         return {"success": False, "error": "No GitHub token configured."}
 
     from app.services.github_service import GitHubService
+    import time
     svc = GitHubService(github_token)
 
     owner = args["owner"]
     repo = args["repo"]
     files = args["files"]
     commit_msg = args.get("commit_message", "Update from AI employee")
+    branch = args.get("branch")
+    pr_title = args.get("pr_title", commit_msg)
+    pr_body = args.get("pr_body", "")
 
     try:
-        commit_sha = await svc.push_files(owner, repo, files, commit_msg)
-        return {"success": True, "result": f"Pushed {len(files)} files. Commit: {commit_sha}"}
+        if branch and branch.lower() == "main":
+            commit_sha = await svc.push_files(owner, repo, files, commit_msg)
+            return {"success": True, "result": f"Pushed {len(files)} files directly to main. Commit: {commit_sha}"}
+
+        if not branch:
+            slug = commit_msg[:30].lower().replace(" ", "-").replace("/", "-")
+            slug = "".join(c for c in slug if c.isalnum() or c == "-").strip("-")
+            branch = f"ai/{slug}-{int(time.time()) % 100000}"
+
+        commit_sha = await svc.push_to_branch(owner, repo, files, commit_msg, branch)
+
+        pr = await svc.create_pull_request(
+            owner, repo,
+            title=pr_title,
+            head=branch,
+            base="main",
+            body=pr_body or f"Automated changes from AI employee.\n\n{commit_msg}",
+        )
+
+        return {
+            "success": True,
+            "result": f"Pushed {len(files)} files to branch '{branch}'. "
+                      f"PR #{pr['number']} created: {pr['url']}",
+            "branch": branch,
+            "commit": commit_sha,
+            "pr_number": pr["number"],
+            "pr_url": pr["url"],
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 

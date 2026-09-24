@@ -133,3 +133,93 @@ class GitHubService:
                 )
 
             return commit_sha
+
+    async def push_to_branch(self, owner: str, repo: str, files: List[dict],
+                             commit_message: str, branch: str, base_branch: str = "main") -> str:
+        """Push files to a feature branch. Creates the branch from base if it doesn't exist."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            base_ref = await client.get(
+                f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{base_branch}",
+                headers=self.headers,
+            )
+            if base_ref.status_code != 200:
+                raise GitHubPushError(f"Base branch '{base_branch}' not found: {base_ref.status_code}")
+            base_sha = base_ref.json()["object"]["sha"]
+
+            tree_items = []
+            for f in files:
+                blob_res = await client.post(
+                    f"{GITHUB_API}/repos/{owner}/{repo}/git/blobs",
+                    headers=self.headers,
+                    json={"content": f["content"], "encoding": "utf-8"},
+                )
+                if blob_res.status_code != 201:
+                    raise GitHubPushError(f"Failed to create blob for {f['path']}: {blob_res.status_code}")
+                tree_items.append({
+                    "path": f["path"], "mode": "100644",
+                    "type": "blob", "sha": blob_res.json()["sha"],
+                })
+
+            tree_res = await client.post(
+                f"{GITHUB_API}/repos/{owner}/{repo}/git/trees",
+                headers=self.headers,
+                json={"base_tree": base_sha, "tree": tree_items},
+            )
+            if tree_res.status_code != 201:
+                raise GitHubPushError(f"Failed to create tree: {tree_res.status_code}")
+
+            commit_res = await client.post(
+                f"{GITHUB_API}/repos/{owner}/{repo}/git/commits",
+                headers=self.headers,
+                json={"message": commit_message, "tree": tree_res.json()["sha"], "parents": [base_sha]},
+            )
+            if commit_res.status_code != 201:
+                raise GitHubPushError(f"Failed to create commit: {commit_res.status_code}")
+            commit_sha = commit_res.json()["sha"]
+
+            branch_ref = await client.get(
+                f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{branch}",
+                headers=self.headers,
+            )
+            if branch_ref.status_code == 200:
+                await client.patch(
+                    f"{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{branch}",
+                    headers=self.headers,
+                    json={"sha": commit_sha},
+                )
+            else:
+                create_res = await client.post(
+                    f"{GITHUB_API}/repos/{owner}/{repo}/git/refs",
+                    headers=self.headers,
+                    json={"ref": f"refs/heads/{branch}", "sha": commit_sha},
+                )
+                if create_res.status_code != 201:
+                    raise GitHubPushError(f"Failed to create branch: {create_res.status_code}")
+
+            return commit_sha
+
+    async def create_pull_request(self, owner: str, repo: str, title: str,
+                                  head: str, base: str = "main", body: str = "") -> dict:
+        """Create a pull request and return its URL and number."""
+        async with httpx.AsyncClient(timeout=30) as client:
+            res = await client.post(
+                f"{GITHUB_API}/repos/{owner}/{repo}/pulls",
+                headers=self.headers,
+                json={"title": title, "head": head, "base": base, "body": body},
+            )
+            if res.status_code == 201:
+                pr = res.json()
+                return {"number": pr["number"], "url": pr["html_url"], "state": pr["state"]}
+            elif res.status_code == 422:
+                data = res.json()
+                if "already exists" in str(data.get("errors", "")):
+                    prs = await client.get(
+                        f"{GITHUB_API}/repos/{owner}/{repo}/pulls?head={owner}:{head}&state=open",
+                        headers=self.headers,
+                    )
+                    if prs.status_code == 200 and prs.json():
+                        pr = prs.json()[0]
+                        return {"number": pr["number"], "url": pr["html_url"], "state": pr["state"]}
+                raise GitHubPushError(f"Failed to create PR: {data}")
+            else:
+                raise GitHubPushError(f"Failed to create PR: {res.status_code}")
