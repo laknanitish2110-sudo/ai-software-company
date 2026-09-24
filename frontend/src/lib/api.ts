@@ -795,3 +795,20 @@ export async function getDelegation(taskId: string): Promise<DelegationTask> {
   });
   return checkedJson(res, "Failed to get delegation");
 }
+
+export async function listWorkspaceFiles(employeeId: string, directory = ""): Promise<string[]> {
+  const params = directory ? `?directory=${encodeURIComponent(directory)}` : "";
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/workspace${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await checkedJson<{ files: string[] }>(res, "Failed to list workspace files");
+  return data.files;
+}
+
+export async function readWorkspaceFile(employeeId: string, path: string): Promise<string> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/workspace/file?path=${encodeURIComponent(path)}`, {
+    headers: authHeaders(),
+  });
+  const data = await checkedJson<{ path: string; content: string }>(res, "Failed to read file");
+  return data.content;
+}

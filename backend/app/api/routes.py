@@ -1860,3 +1860,32 @@ async def api_consolidate_memories(employee_id: str, user=Depends(get_current_us
     from app.services.memory_engine import consolidate_memories
     result = await consolidate_memories(employee_id)
     return {"status": "ok", **result}
+
+
+@router.get("/employees/{employee_id}/workspace")
+async def api_list_workspace_files(employee_id: str, directory: str = "", user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    from app.core.artifact_store import LocalArtifactStore
+    store = LocalArtifactStore()
+    ws_id = f"workspace_{employee_id}"
+    files = await store.list_files(ws_id)
+    if directory:
+        files = [f for f in files if f.startswith(directory)]
+    return {"files": files, "workspace_id": ws_id}
+
+
+@router.get("/employees/{employee_id}/workspace/file")
+async def api_read_workspace_file(employee_id: str, path: str, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    from app.core.artifact_store import LocalArtifactStore
+    store = LocalArtifactStore()
+    ws_id = f"workspace_{employee_id}"
+    try:
+        content = await store.read_file(ws_id, path)
+        return {"path": path, "content": content.decode("utf-8", errors="replace")}
+    except FileNotFoundError:
+        raise HTTPException(404, f"File not found: {path}")

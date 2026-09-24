@@ -318,11 +318,11 @@ async def execute_tool(
         if tool_name == "run_code":
             return await _exec_run_code(arguments, project_id)
         elif tool_name == "read_file":
-            return await _exec_read_file(arguments, project_id)
+            return await _exec_read_file(arguments, project_id, employee_id)
         elif tool_name == "write_file":
-            return await _exec_write_file(arguments, project_id)
+            return await _exec_write_file(arguments, project_id, employee_id)
         elif tool_name == "list_files":
-            return await _exec_list_files(arguments, project_id)
+            return await _exec_list_files(arguments, project_id, employee_id)
         elif tool_name == "github_read":
             return await _exec_github_read(arguments, github_token)
         elif tool_name == "github_push":
@@ -412,33 +412,45 @@ async def _exec_run_code(args: dict, project_id: str | None) -> dict:
         return {"success": False, "error": f"Sandbox error: {e}"}
 
 
-async def _exec_read_file(args: dict, project_id: str | None) -> dict:
-    if not project_id:
-        return {"success": False, "error": "No project context — cannot read files."}
+def _workspace_id(project_id: str | None, employee_id: str | None) -> str | None:
+    """Resolve the workspace namespace: project takes precedence, then employee workspace."""
+    if project_id:
+        return project_id
+    if employee_id:
+        return f"workspace_{employee_id}"
+    return None
+
+
+async def _exec_read_file(args: dict, project_id: str | None, employee_id: str | None = None) -> dict:
+    ws = _workspace_id(project_id, employee_id)
+    if not ws:
+        return {"success": False, "error": "No workspace context — cannot read files."}
     store = LocalArtifactStore()
     path = args["path"]
     try:
-        content = await store.read_file(project_id, path)
+        content = await store.read_file(ws, path)
         return {"success": True, "result": content.decode("utf-8", errors="replace")}
     except FileNotFoundError:
         return {"success": False, "error": f"File not found: {path}"}
 
 
-async def _exec_write_file(args: dict, project_id: str | None) -> dict:
-    if not project_id:
-        return {"success": False, "error": "No project context — cannot write files."}
+async def _exec_write_file(args: dict, project_id: str | None, employee_id: str | None = None) -> dict:
+    ws = _workspace_id(project_id, employee_id)
+    if not ws:
+        return {"success": False, "error": "No workspace context — cannot write files."}
     store = LocalArtifactStore()
     path = args["path"]
     content = args["content"]
-    await store.write_file(project_id, path, content)
+    await store.write_file(ws, path, content)
     return {"success": True, "result": f"File written: {path}"}
 
 
-async def _exec_list_files(args: dict, project_id: str | None) -> dict:
-    if not project_id:
-        return {"success": False, "error": "No project context."}
+async def _exec_list_files(args: dict, project_id: str | None, employee_id: str | None = None) -> dict:
+    ws = _workspace_id(project_id, employee_id)
+    if not ws:
+        return {"success": False, "error": "No workspace context."}
     store = LocalArtifactStore()
-    files = await store.list_files(project_id)
+    files = await store.list_files(ws)
     directory = args.get("directory", "")
     if directory:
         files = [f for f in files if f.startswith(directory)]
