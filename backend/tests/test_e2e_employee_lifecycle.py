@@ -308,6 +308,40 @@ class E2ETestRunner:
         else:
             self._record("Collaborate perms", False, f"HTTP {res.status_code}")
 
+    async def test_14_skills_endpoint(self):
+        """Test the skills API endpoint exists and returns data."""
+        if not self.employees:
+            self._record("Skills API", False, "No employees")
+            return
+        emp = self.employees[0]
+        res = await self.client.get(
+            f"{BASE_URL}/employees/{emp['id']}/skills",
+            headers=self._headers(),
+        )
+        if res.status_code == 200:
+            data = res.json()
+            skills = data.get("skills", [])
+            self._record("Skills API", True, f"{len(skills)} skills")
+        else:
+            self._record("Skills API", False, f"HTTP {res.status_code}: {res.text[:200]}")
+
+    async def test_15_workspace_endpoint(self):
+        """Test the workspace API endpoint exists."""
+        if not self.employees:
+            self._record("Workspace API", False, "No employees")
+            return
+        emp = self.employees[0]
+        res = await self.client.get(
+            f"{BASE_URL}/employees/{emp['id']}/workspace",
+            headers=self._headers(),
+        )
+        if res.status_code == 200:
+            data = res.json()
+            files = data.get("files", [])
+            self._record("Workspace API", True, f"{len(files)} files")
+        else:
+            self._record("Workspace API", False, f"HTTP {res.status_code}: {res.text[:200]}")
+
     async def run_all(self):
         print(f"\n{'='*60}")
         print(f"  E2E Employee Lifecycle Test")
@@ -329,6 +363,8 @@ class E2ETestRunner:
             self.test_11_permissions,
             self.test_12_delegations_endpoint,
             self.test_13_collaborate_permissions,
+            self.test_14_skills_endpoint,
+            self.test_15_workspace_endpoint,
         ]
 
         for test in tests:
