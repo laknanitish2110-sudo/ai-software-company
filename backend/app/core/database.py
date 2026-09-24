@@ -397,6 +397,25 @@ async def init_db():
                     FOREIGN KEY (employee_id) REFERENCES employees(id),
                     UNIQUE(employee_id, tool, action)
                 );
+
+                CREATE TABLE IF NOT EXISTS delegation_tasks (
+                    id TEXT PRIMARY KEY,
+                    from_employee_id TEXT NOT NULL,
+                    to_employee_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    task TEXT NOT NULL,
+                    context TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    result TEXT,
+                    project_id TEXT,
+                    session_id TEXT,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    FOREIGN KEY (from_employee_id) REFERENCES employees(id),
+                    FOREIGN KEY (to_employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_delegation_status ON delegation_tasks(status);
+                CREATE INDEX IF NOT EXISTS idx_delegation_from ON delegation_tasks(from_employee_id);
             """)
         else:
             # PostgreSQL DDL
@@ -614,6 +633,23 @@ async def init_db():
                     updated_at TEXT NOT NULL,
                     CONSTRAINT unq_tool_perm UNIQUE(employee_id, tool, action)
                 );
+
+                CREATE TABLE IF NOT EXISTS delegation_tasks (
+                    id VARCHAR(255) PRIMARY KEY,
+                    from_employee_id VARCHAR(255) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    to_employee_id VARCHAR(255) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    user_id VARCHAR(255) NOT NULL,
+                    task TEXT NOT NULL,
+                    context TEXT,
+                    status VARCHAR(64) NOT NULL DEFAULT 'pending',
+                    result TEXT,
+                    project_id VARCHAR(255),
+                    session_id VARCHAR(255),
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_delegation_status ON delegation_tasks(status);
+                CREATE INDEX IF NOT EXISTS idx_delegation_from ON delegation_tasks(from_employee_id);
             """)
         await db.commit()
 
@@ -2028,4 +2064,78 @@ async def provision_default_team(user_id: str) -> list[dict]:
         except Exception as e:
             logger.warning(f"Failed to provision {tmpl['slug']} for {user_id}: {e}")
     return created
+
+
+# ─── Delegation tasks ───────────────────────────────────────────
+
+async def create_delegation_task(
+    from_employee_id: str, to_employee_id: str, user_id: str,
+    task: str, context: str | None = None, project_id: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        task_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO delegation_tasks
+               (id, from_employee_id, to_employee_id, user_id, task, context, status, project_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            (task_id, from_employee_id, to_employee_id, user_id, task, context, project_id, ts),
+        )
+        await db.commit()
+        return {"id": task_id, "from_employee_id": from_employee_id, "to_employee_id": to_employee_id,
+                "user_id": user_id, "task": task, "context": context, "status": "pending",
+                "project_id": project_id, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def update_delegation_task(task_id: str, updates: dict) -> dict | None:
+    db = await get_db()
+    try:
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        vals = list(updates.values()) + [task_id]
+        await db.execute(f"UPDATE delegation_tasks SET {sets} WHERE id = ?", vals)
+        await db.commit()
+        cursor = await db.execute("SELECT * FROM delegation_tasks WHERE id = ?", (task_id,))
+        return await cursor.fetchone()
+    finally:
+        await db.close()
+
+
+async def get_delegation_task(task_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM delegation_tasks WHERE id = ?", (task_id,))
+        return await cursor.fetchone()
+    finally:
+        await db.close()
+
+
+async def list_delegation_tasks(employee_id: str, direction: str = "from", status: str | None = None) -> list[dict]:
+    db = await get_db()
+    try:
+        col = "from_employee_id" if direction == "from" else "to_employee_id"
+        query = f"SELECT * FROM delegation_tasks WHERE {col} = ?"
+        params: list = [employee_id]
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC LIMIT 50"
+        cursor = await db.execute(query, params)
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def get_pending_delegation_tasks(limit: int = 10) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM delegation_tasks WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?",
+            (limit,),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
 

@@ -19,7 +19,10 @@ async def lifespan(app: FastAPI):
     validate_jwt_config()
     await init_db()
     await stale_recovery_worker.start()
+    from app.services.delegation_worker import start_delegation_worker, stop_delegation_worker
+    start_delegation_worker()
     yield
+    stop_delegation_worker()
     await stale_recovery_worker.stop()
     try:
         pool = await get_pg_pool()

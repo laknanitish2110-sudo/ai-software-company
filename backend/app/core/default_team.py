@@ -30,7 +30,7 @@ TEMPLATES = [
             "You are thorough but concise. You push back on vague requirements. "
             "You think about the user, not just the system."
         ),
-        "default_tools": ["read_file", "write_file", "list_files", "web_search", "delegate"],
+        "default_tools": ["read_file", "write_file", "list_files", "web_search", "delegate", "check_delegation"],
         "default_permissions": [
             ("files", "read", "allow"),
             ("files", "write", "allow"),
@@ -40,6 +40,7 @@ TEMPLATES = [
             ("github", "write", "deny"),
             ("e2b", "execute", "deny"),
             ("collaborate", "execute", "allow"),
+            ("collaborate", "read", "allow"),
         ],
     },
     {
@@ -60,7 +61,7 @@ TEMPLATES = [
             "You are objective and evidence-driven. You don't guess — you verify. "
             "When you're uncertain, you say so and explain what would resolve the uncertainty."
         ),
-        "default_tools": ["web_search", "read_file", "write_file", "list_files", "delegate"],
+        "default_tools": ["web_search", "read_file", "write_file", "list_files", "delegate", "check_delegation"],
         "default_permissions": [
             ("web_search", "read", "allow"),
             ("files", "read", "allow"),
@@ -70,6 +71,7 @@ TEMPLATES = [
             ("github", "write", "deny"),
             ("e2b", "execute", "deny"),
             ("collaborate", "execute", "allow"),
+            ("collaborate", "read", "allow"),
         ],
     },
     {
@@ -91,7 +93,7 @@ TEMPLATES = [
             "You prefer boring, proven technologies over novel ones unless there's a clear advantage. "
             "You think about the system as a whole — performance, security, developer experience, and operational cost."
         ),
-        "default_tools": ["read_file", "write_file", "list_files", "web_search", "run_pipeline", "delegate"],
+        "default_tools": ["read_file", "write_file", "list_files", "web_search", "run_pipeline", "delegate", "check_delegation"],
         "default_permissions": [
             ("files", "read", "allow"),
             ("files", "write", "allow"),
@@ -102,6 +104,7 @@ TEMPLATES = [
             ("e2b", "execute", "deny"),
             ("deploy", "execute", "ask"),
             ("collaborate", "execute", "allow"),
+            ("collaborate", "read", "allow"),
         ],
     },
     {
@@ -124,7 +127,7 @@ TEMPLATES = [
             "and GitHub. Use them. Don't just describe what code should do — write it and run it.\n\n"
             "You explain your technical decisions briefly. You prefer working code over long explanations."
         ),
-        "default_tools": ["run_code", "read_file", "write_file", "list_files", "github_read", "github_push", "run_pipeline", "delegate"],
+        "default_tools": ["run_code", "read_file", "write_file", "list_files", "github_read", "github_push", "run_pipeline", "delegate", "check_delegation"],
         "default_permissions": [
             ("e2b", "read", "allow"),
             ("e2b", "write", "allow"),
@@ -137,6 +140,7 @@ TEMPLATES = [
             ("web_search", "read", "allow"),
             ("deploy", "execute", "ask"),
             ("collaborate", "execute", "allow"),
+            ("collaborate", "read", "allow"),
         ],
     },
     {
@@ -158,7 +162,7 @@ TEMPLATES = [
             "Don't just theorize about bugs — reproduce them.\n\n"
             "You are methodical and skeptical. You don't trust 'it should work' — you verify."
         ),
-        "default_tools": ["run_code", "read_file", "write_file", "list_files", "github_read", "delegate"],
+        "default_tools": ["run_code", "read_file", "write_file", "list_files", "github_read", "delegate", "check_delegation"],
         "default_permissions": [
             ("e2b", "read", "allow"),
             ("e2b", "write", "allow"),
@@ -170,6 +174,7 @@ TEMPLATES = [
             ("github", "write", "deny"),
             ("web_search", "read", "allow"),
             ("collaborate", "execute", "allow"),
+            ("collaborate", "read", "allow"),
         ],
     },
     {
@@ -192,7 +197,7 @@ TEMPLATES = [
             "You adapt your writing to the audience — a quick-start guide for new devs, "
             "an API reference for integration partners, a summary for stakeholders."
         ),
-        "default_tools": ["read_file", "write_file", "list_files", "delegate"],
+        "default_tools": ["read_file", "write_file", "list_files", "delegate", "check_delegation"],
         "default_permissions": [
             ("files", "read", "allow"),
             ("files", "write", "allow"),
@@ -202,6 +207,7 @@ TEMPLATES = [
             ("e2b", "execute", "deny"),
             ("web_search", "read", "allow"),
             ("collaborate", "execute", "allow"),
+            ("collaborate", "read", "allow"),
         ],
     },
 ]
@@ -219,7 +225,7 @@ async def seed_default_templates() -> int:
             system_prompt=tmpl["system_prompt"],
             default_tools=tmpl["default_tools"],
             default_permissions=tmpl["default_permissions"],
-            version=3,
+            version=4,
         )
         count += 1
     logger.info(f"Seeded {count} employee templates")

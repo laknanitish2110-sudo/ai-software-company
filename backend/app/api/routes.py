@@ -1832,3 +1832,21 @@ async def api_update_permission(employee_id: str, req: UpdatePermissionRequest, 
     if req.permission not in ("allow", "ask", "deny"):
         raise HTTPException(400, "Permission must be allow, ask, or deny")
     return await update_employee_permission(employee_id, req.tool, req.action, req.permission, user["id"])
+
+
+@router.get("/delegations")
+async def api_list_delegations(employee_id: str = None, user=Depends(get_current_user)):
+    from app.core.database import list_delegation_tasks
+    tasks = await list_delegation_tasks(employee_id, direction="from") if employee_id else []
+    return {"delegations": tasks}
+
+
+@router.get("/delegations/{task_id}")
+async def api_get_delegation(task_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_delegation_task
+    task = await get_delegation_task(task_id)
+    if not task:
+        raise HTTPException(404, "Delegation task not found")
+    if task["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your delegation task")
+    return task

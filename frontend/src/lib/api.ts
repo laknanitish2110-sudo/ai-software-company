@@ -749,3 +749,33 @@ export async function updateEmployeePermission(employeeId: string, tool: string,
   });
   return checkedJson(res, "Failed to update permission");
 }
+
+export interface DelegationTask {
+  id: string;
+  from_employee_id: string;
+  to_employee_id: string;
+  user_id: string;
+  task: string;
+  context: string | null;
+  status: "pending" | "running" | "completed" | "failed";
+  result: string | null;
+  project_id: string | null;
+  session_id: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export async function listDelegations(employeeId: string): Promise<DelegationTask[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/delegations?employee_id=${employeeId}`, {
+    headers: authHeaders(),
+  });
+  const data = await checkedJson<{ delegations: DelegationTask[] }>(res, "Failed to list delegations");
+  return data.delegations;
+}
+
+export async function getDelegation(taskId: string): Promise<DelegationTask> {
+  const res = await fetchWithTimeout(`${API_BASE}/delegations/${taskId}`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to get delegation");
+}
