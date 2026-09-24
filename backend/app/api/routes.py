@@ -1502,6 +1502,12 @@ async def api_create_employee(req: CreateEmployeeRequest, user=Depends(get_curre
     return emp
 
 
+@router.post("/employees/provision")
+async def api_provision_team(user=Depends(get_current_user)):
+    created = await provision_default_team(user["id"])
+    return {"provisioned": len(created), "employees": created}
+
+
 @router.get("/employees")
 async def api_list_employees(user=Depends(get_current_user)):
     from app.core.database import get_employee_stats

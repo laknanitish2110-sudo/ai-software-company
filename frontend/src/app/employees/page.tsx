@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { listEmployees, type Employee } from "@/lib/api";
+import { listEmployees, provisionTeam, type Employee } from "@/lib/api";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 
 const ROLE_META: Record<string, { icon: string; color: string; accent: string }> = {
@@ -145,7 +145,9 @@ export default function EmployeesPage() {
   const router = useRouter();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [provisioning, setProvisioning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const provisionAttempted = useRef(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -154,14 +156,53 @@ export default function EmployeesPage() {
     let active = true;
     const fetchEmployees = () =>
       listEmployees()
-        .then((data) => { if (active) setEmployees(data); })
+        .then(async (data) => {
+          if (!active) return;
+          if (data.length === 0 && !provisionAttempted.current) {
+            provisionAttempted.current = true;
+            setProvisioning(true);
+            try {
+              const result = await provisionTeam();
+              if (result.provisioned > 0) {
+                const refreshed = await listEmployees();
+                if (active) setEmployees(refreshed);
+              }
+            } catch {
+              // provisioning failed — show empty state
+            } finally {
+              if (active) setProvisioning(false);
+            }
+          } else {
+            setEmployees(data);
+          }
+        })
         .catch((e) => { if (active) setError(e.message); })
         .finally(() => { if (active) setLoading(false); });
 
     fetchEmployees();
-    const interval = setInterval(fetchEmployees, 3000);
+    const interval = setInterval(() => {
+      if (!provisionAttempted.current || employees.length > 0) {
+        listEmployees()
+          .then((data) => { if (active) setEmployees(data); })
+          .catch(() => {});
+      }
+    }, 3000);
     return () => { active = false; clearInterval(interval); };
   }, [user, authLoading, router]);
+
+  async function handleProvision() {
+    setProvisioning(true);
+    setError(null);
+    try {
+      await provisionTeam();
+      const data = await listEmployees();
+      setEmployees(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to provision team");
+    } finally {
+      setProvisioning(false);
+    }
+  }
 
   if (authLoading || !user) {
     return (
@@ -187,27 +228,15 @@ export default function EmployeesPage() {
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
-          <div>
-            <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>
-              Your Team
-            </h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: 0 }}>
-              Persistent AI employees that learn and grow
-            </p>
-          </div>
-          <Link
-            href="/employees/new"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "10px 20px", borderRadius: 10,
-              background: "var(--accent)", color: "#fff",
-              fontSize: 14, fontWeight: 600, textDecoration: "none",
-              transition: "opacity 0.15s",
-            }}
-          >
-            + Hire Employee
-          </Link>
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>
+            Your Team
+          </h1>
+          <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: 0 }}>
+            {teamCount > 0
+              ? `${teamCount} AI employees that learn, remember, and grow`
+              : "Your persistent AI employees"}
+          </p>
         </div>
 
         {/* Stats bar */}
@@ -232,47 +261,61 @@ export default function EmployeesPage() {
           </div>
         )}
 
-        {loading && (
+        {(loading || provisioning) && (
           <div style={{ textAlign: "center", padding: 80 }}>
-            <ThinkingOrb state="searching" size={64} theme="auto" />
-            <p style={{ color: "var(--text-muted)", fontSize: 14, marginTop: 16 }}>Loading your team...</p>
+            <ThinkingOrb state={provisioning ? "working" : "searching"} size={64} theme="auto" />
+            <p style={{ color: "var(--text-muted)", fontSize: 14, marginTop: 16 }}>
+              {provisioning ? "Setting up your AI team..." : "Loading your team..."}
+            </p>
           </div>
         )}
 
         {error && (
-          <div style={{ padding: "16px 20px", borderRadius: 10, background: "rgba(237,95,116,0.08)", border: "1px solid rgba(237,95,116,0.2)", color: "#ed5f74", fontSize: 14 }}>
+          <div style={{ padding: "16px 20px", borderRadius: 10, background: "rgba(237,95,116,0.08)", border: "1px solid rgba(237,95,116,0.2)", color: "#ed5f74", fontSize: 14, marginBottom: 16 }}>
             {error}
           </div>
         )}
 
-        {!loading && !error && employees.length === 0 && (
+        {!loading && !provisioning && !error && employees.length === 0 && (
           <div style={{
             textAlign: "center", padding: "80px 24px",
-            borderRadius: 16, border: "2px dashed var(--border)",
+            borderRadius: 16, border: "1px solid var(--border)",
             background: "var(--bg-card)",
           }}>
-            <ThinkingOrb state="listening" size={64} theme="auto" />
-            <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", marginTop: 20, marginBottom: 8 }}>
-              No employees yet
+            <div style={{
+              width: 64, height: 64, borderRadius: 20, margin: "0 auto 20px",
+              background: "var(--accent-bg)", border: "1px solid var(--accent-border)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 28,
+            }}>
+              🤖
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>
+              Your team isn&apos;t set up yet
             </h2>
-            <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 24, maxWidth: 400, margin: "0 auto 24px" }}>
-              Hire your first AI employee. They persist across sessions, learn from conversations, and build up skills over time.
+            <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 24, maxWidth: 420, margin: "0 auto 24px", lineHeight: 1.6 }}>
+              Provision your 6 AI employees — an Architect, Business Analyst, Researcher, Engineer, QA Engineer, and Technical Writer. They persist across sessions and learn from every conversation.
             </p>
-            <Link
-              href="/employees/new"
+            <button
+              onClick={handleProvision}
+              disabled={provisioning}
               style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "10px 20px", borderRadius: 10,
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "12px 28px", borderRadius: 10, border: "none",
                 background: "var(--accent)", color: "#fff",
-                fontSize: 14, fontWeight: 600, textDecoration: "none",
+                fontSize: 15, fontWeight: 600, cursor: "pointer",
+                boxShadow: "0 2px 12px rgba(99,91,255,0.3)",
+                transition: "all 0.15s",
               }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-1px)"}
+              onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
             >
-              + Hire Your First Employee
-            </Link>
+              Set Up Your AI Team
+            </button>
           </div>
         )}
 
-        {!loading && employees.length > 0 && (
+        {!loading && !provisioning && employees.length > 0 && (
           <div style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))",

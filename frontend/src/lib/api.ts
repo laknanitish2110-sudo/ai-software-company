@@ -632,6 +632,13 @@ export async function listEmployees(): Promise<Employee[]> {
   return checkedJson(res, "Failed to load employees");
 }
 
+export async function provisionTeam(): Promise<{ provisioned: number; employees: Employee[] }> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/provision`, {
+    method: "POST", headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to provision team");
+}
+
 export async function createEmployee(data: {
   name: string; role: string; persona?: string; avatar_url?: string; config?: Record<string, unknown>;
 }): Promise<Employee> {
