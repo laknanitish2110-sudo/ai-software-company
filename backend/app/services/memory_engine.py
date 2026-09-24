@@ -190,6 +190,10 @@ async def summarize_session(
         )
 
         logger.info(f"Summarized session {session_id} for employee {employee_id}")
+
+        if len(messages) >= 6:
+            asyncio.create_task(extract_skills_from_conversation(employee_id, messages))
+
         return summary
 
     except Exception as e:

@@ -1705,11 +1705,8 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
 
     _handle_memory_commands(emp["id"], req.content, response_text)
 
-    from app.services.memory_engine import schedule_memory_extraction, schedule_skill_extraction
+    from app.services.memory_engine import schedule_memory_extraction
     schedule_memory_extraction(emp["id"], req.content, response_text, session_id)
-
-    messages_for_skills = await get_session_messages(session_id, limit=20)
-    schedule_skill_extraction(emp["id"], messages_for_skills)
 
     return {
         "user_message": user_msg,

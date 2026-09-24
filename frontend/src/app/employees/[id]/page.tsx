@@ -6,12 +6,13 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   getEmployee, listEmployeeSessions, createEmployeeSession, getSessionWithMessages,
-  sendEmployeeMessage, endEmployeeSession, listMemories, type Employee,
-  type EmployeeSession, type SessionMessage, type Memory,
+  sendEmployeeMessage, endEmployeeSession, listMemories, listSkills, extractSkills,
+  deactivateSkill, type Employee, type EmployeeSession, type SessionMessage,
+  type Memory, type EmployeeSkill,
 } from "@/lib/api";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 
-type Tab = "chat" | "memories" | "sessions";
+type Tab = "chat" | "memories" | "sessions" | "skills";
 
 const ROLE_META: Record<string, { icon: string; color: string }> = {
   "Business Analyst": { icon: "📋", color: "#0bbf8c" },
@@ -47,6 +48,8 @@ export default function EmployeeChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [sideTab, setSideTab] = useState<Tab>("chat");
   const [memoryFilter, setMemoryFilter] = useState<string>("");
+  const [skills, setSkills] = useState<EmployeeSkill[]>([]);
+  const [extracting, setExtracting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -93,6 +96,11 @@ export default function EmployeeChatPage() {
       .then(setMemories)
       .catch(() => {});
   }, [sideTab, employeeId, memoryFilter]);
+
+  useEffect(() => {
+    if (sideTab !== "skills" || !employeeId) return;
+    listSkills(employeeId).then(setSkills).catch(() => {});
+  }, [sideTab, employeeId]);
 
   async function handleStartSession() {
     try {
@@ -226,7 +234,7 @@ export default function EmployeeChatPage() {
 
         {/* Tabs */}
         <div className="flex" style={{ borderBottom: "1px solid var(--border)" }}>
-          {(["chat", "sessions", "memories"] as Tab[]).map((tab) => (
+          {(["chat", "sessions", "memories", "skills"] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setSideTab(tab)}
@@ -360,6 +368,95 @@ export default function EmployeeChatPage() {
                   <p style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.4, margin: 0 }}>
                     {m.content}
                   </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {sideTab === "skills" && (
+            <div>
+              <button
+                onClick={async () => {
+                  setExtracting(true);
+                  try {
+                    const result = await extractSkills(employeeId, activeSession?.id);
+                    if (result.extracted > 0) {
+                      setSkills((prev) => [...result.skills, ...prev]);
+                    }
+                  } catch { /* ignore */ }
+                  setExtracting(false);
+                }}
+                disabled={extracting}
+                style={{
+                  width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid var(--accent-border)",
+                  background: "var(--accent-bg)", color: "var(--accent)", fontSize: 12, fontWeight: 600,
+                  cursor: extracting ? "default" : "pointer", opacity: extracting ? 0.6 : 1,
+                  marginBottom: 10,
+                }}
+              >
+                {extracting ? "Extracting..." : "Extract Skills from Conversations"}
+              </button>
+              {skills.length === 0 && (
+                <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 16 }}>
+                  No skills yet. {employee.name} learns skills from successful conversations.
+                </p>
+              )}
+              {skills.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    padding: "10px 12px", borderRadius: 8, marginBottom: 6,
+                    background: "var(--bg-base)", border: "1px solid var(--border)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                      {s.name}
+                    </span>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await deactivateSkill(employeeId, s.id);
+                          setSkills((prev) => prev.filter((sk) => sk.id !== s.id));
+                        } catch { /* ignore */ }
+                      }}
+                      title="Remove skill"
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        fontSize: 14, color: "var(--text-muted)", padding: "0 2px",
+                        lineHeight: 1,
+                      }}
+                    >
+                      x
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 11, color: "var(--text-secondary)", margin: "0 0 6px", lineHeight: 1.4 }}>
+                    {s.description}
+                  </p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{
+                      fontSize: 10, padding: "1px 6px", borderRadius: 4,
+                      background: "var(--accent-bg)", color: "var(--accent)", fontWeight: 600,
+                    }}>
+                      Used {s.times_used}x
+                    </span>
+                    <span style={{
+                      fontSize: 10, padding: "1px 6px", borderRadius: 4,
+                      background: s.success_rate >= 0.8 ? "var(--success-bg)" : "rgba(245,158,11,0.1)",
+                      color: s.success_rate >= 0.8 ? "var(--success)" : "#f59e0b",
+                      fontWeight: 600,
+                    }}>
+                      {(s.success_rate * 100).toFixed(0)}% success
+                    </span>
+                  </div>
+                  {s.trigger_pattern && (
+                    <div style={{ marginTop: 6 }}>
+                      <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Trigger: </span>
+                      <span style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                        {s.trigger_pattern}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
