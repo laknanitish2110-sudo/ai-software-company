@@ -186,6 +186,32 @@ async def process_delegation_task(task: dict) -> dict:
         return {"success": False, "error": str(e)}
 
 
+async def _try_claim_task(task_id: str) -> bool:
+    """Atomically claim a task using Redis SETNX. Returns True if this worker won the claim."""
+    from app.services.redis_coordinator import redis_coordinator
+    try:
+        client = await redis_coordinator._get_client()
+        if client is None:
+            return True
+        claimed = await client.set(
+            f"delegation:claim:{task_id}", "1", nx=True, ex=300
+        )
+        return bool(claimed)
+    except Exception:
+        return True
+
+
+async def _release_claim(task_id: str):
+    """Release a task claim after completion or failure."""
+    from app.services.redis_coordinator import redis_coordinator
+    try:
+        client = await redis_coordinator._get_client()
+        if client:
+            await client.delete(f"delegation:claim:{task_id}")
+    except Exception:
+        pass
+
+
 async def _worker_loop():
     """Background loop that polls for pending delegation tasks and processes them."""
     logger.info("Delegation worker started")
@@ -194,10 +220,14 @@ async def _worker_loop():
             from app.core.database import get_pending_delegation_tasks
             tasks = await get_pending_delegation_tasks(limit=5)
             for task in tasks:
+                if not await _try_claim_task(task["id"]):
+                    continue
                 try:
                     await process_delegation_task(task)
                 except Exception as e:
                     logger.error(f"Worker error on task {task['id']}: {e}")
+                finally:
+                    await _release_claim(task["id"])
         except Exception as e:
             logger.warning(f"Delegation worker poll error: {e}")
 

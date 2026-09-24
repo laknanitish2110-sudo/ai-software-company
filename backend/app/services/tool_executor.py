@@ -25,9 +25,10 @@ EMPLOYEE_ROLE_TO_ENGINE_ROLE = {
 
 
 def get_tools_for_employee(allowed_tool_names: list[str] | None) -> list[dict]:
-    """Filter TOOL_SCHEMAS to only the tools this employee is allowed to see."""
+    """Filter TOOL_SCHEMAS to only the tools this employee is allowed to see.
+    Returns empty list when no tools are configured — fail-closed for security."""
     if not allowed_tool_names:
-        return TOOL_SCHEMAS
+        return []
     return [s for s in TOOL_SCHEMAS if s["function"]["name"] in allowed_tool_names]
 
 
