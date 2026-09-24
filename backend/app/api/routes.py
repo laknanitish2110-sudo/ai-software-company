@@ -1578,6 +1578,8 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
 
     user_msg = await add_session_message(session_id, "user", req.content)
 
+    await update_employee(emp["id"], user["id"], {"status": "thinking"})
+
     memories = await retrieve_memories_for_context(emp["id"], query=req.content, limit=10)
     memory_context = ""
     if memories:
@@ -1653,6 +1655,7 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
         all_tool_calls.extend(tool_calls)
 
         await add_session_message(session_id, "tool_calls", json.dumps(tool_calls))
+        await update_employee(emp["id"], user["id"], {"status": "tool_execution"})
 
         for tc in tool_calls:
             func_name = tc["function"]["name"]
@@ -1679,9 +1682,11 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
 
             chat_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
             await add_session_message(session_id, "tool_result", json.dumps(tool_result_record))
+        await update_employee(emp["id"], user["id"], {"status": "thinking"})
     else:
         response_text = text or "I've completed the tool operations. Let me know if you need anything else."
 
+    await update_employee(emp["id"], user["id"], {"status": "idle"})
     employee_msg = await add_session_message(session_id, "employee", response_text)
 
     _handle_memory_commands(emp["id"], req.content, response_text)

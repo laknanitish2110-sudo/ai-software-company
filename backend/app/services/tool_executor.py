@@ -214,6 +214,31 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "delegate",
+            "description": "Delegate a task to another AI employee on your team. The target employee will process your request and return their response. Use this for cross-functional collaboration — e.g., ask the Researcher to investigate something, or ask the Engineer to build what you've designed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Name of the employee to delegate to (e.g. 'Scout', 'Atlas', 'Arc', 'Sage', 'Sentinel', 'Scribe')",
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "Clear description of what you need the other employee to do",
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Optional background context to help the other employee understand the request",
+                    },
+                },
+                "required": ["to", "task"],
+            },
+        },
+    },
 ]
 
 TOOL_PERMISSION_MAP = {
@@ -225,6 +250,7 @@ TOOL_PERMISSION_MAP = {
     "github_push": ("github", "write"),
     "web_search": ("web_search", "read"),
     "run_pipeline": ("deploy", "execute"),
+    "delegate": ("collaborate", "execute"),
 }
 
 
@@ -275,6 +301,8 @@ async def execute_tool(
             return await _exec_web_search(arguments)
         elif tool_name == "run_pipeline":
             return await _exec_run_pipeline(arguments, user_id, project_id)
+        elif tool_name == "delegate":
+            return await _exec_delegate(arguments, employee_id, user_id, project_id)
         else:
             return {"success": False, "error": f"Unknown tool: {tool_name}"}
     except Exception as e:
@@ -475,3 +503,139 @@ async def _exec_run_pipeline(args: dict, user_id: str, project_id: str | None) -
         return {"success": False, "error": str(e)}
     except Exception as e:
         return {"success": False, "error": f"Pipeline start failed: {e}"}
+
+
+async def _exec_delegate(args: dict, from_employee_id: str, user_id: str, project_id: str | None) -> dict:
+    target_name = args.get("to", "").strip()
+    task = args.get("task", "").strip()
+    context = args.get("context", "")
+
+    if not target_name or not task:
+        return {"success": False, "error": "Both 'to' (employee name) and 'task' are required."}
+
+    from app.core.database import (
+        list_employees, get_employee, get_or_create_active_session,
+        add_session_message, get_session_messages, update_employee,
+        retrieve_memories_for_context, list_templates,
+    )
+
+    employees = await list_employees(user_id)
+    target = next(
+        (e for e in employees if e["name"].lower() == target_name.lower()),
+        None,
+    )
+    if not target:
+        available = ", ".join(e["name"] for e in employees)
+        return {"success": False, "error": f"No employee named '{target_name}'. Available: {available}"}
+
+    if target["id"] == from_employee_id:
+        return {"success": False, "error": "Cannot delegate to yourself."}
+
+    if target["status"] in ("archived", "paused"):
+        return {"success": False, "error": f"{target['name']} is {target['status']} and cannot accept tasks."}
+
+    from_emp = await get_employee(from_employee_id, user_id)
+    from_name = from_emp["name"] if from_emp else "a teammate"
+
+    session = await get_or_create_active_session(target["id"], project_id)
+
+    delegation_msg = f"[Delegated from {from_name}]\n\n{task}"
+    if context:
+        delegation_msg += f"\n\nContext: {context}"
+
+    await add_session_message(session["id"], "user", delegation_msg)
+    await update_employee(target["id"], user_id, {"status": "thinking"})
+
+    memories = await retrieve_memories_for_context(target["id"], query=task, limit=5)
+    memory_context = ""
+    if memories:
+        memory_lines = [f"- [{m['type']}] {m['content']}" for m in memories]
+        memory_context = "\n\nYour memories:\n" + "\n".join(memory_lines)
+
+    system_prompt = f"You are {target['name']}, a {target['role']}."
+    if target.get("persona"):
+        system_prompt += f"\n\n{target['persona']}"
+    if memory_context:
+        system_prompt += memory_context
+    system_prompt += f"\n\nA teammate ({from_name}) has delegated a task to you. Complete it thoroughly."
+
+    history = await get_session_messages(session["id"], limit=10)
+    chat_messages = [{"role": "system", "content": system_prompt}]
+    for msg in history:
+        if msg["role"] == "user":
+            chat_messages.append({"role": "user", "content": msg["content"]})
+        elif msg["role"] == "employee":
+            chat_messages.append({"role": "assistant", "content": msg["content"]})
+
+    target_tools_names = None
+    tgt_config = target.get("config") or {}
+    target_tools_names = tgt_config.get("default_tools") if isinstance(tgt_config, dict) else None
+    if not target_tools_names and target.get("template_id"):
+        templates = await list_templates(active_only=True)
+        tmpl = next((t for t in templates if t["id"] == target["template_id"]), None)
+        if tmpl:
+            target_tools_names = tmpl.get("default_tools")
+
+    target_tools = get_tools_for_employee(target_tools_names)
+    delegate_not_in_delegate = [t for t in target_tools if t["function"]["name"] != "delegate"]
+
+    engine_role = EMPLOYEE_ROLE_TO_ENGINE_ROLE.get(target["role"].lower(), "ceo")
+
+    from app.agents.engine import call_llm_with_fallback
+
+    try:
+        text, tool_calls = await call_llm_with_fallback(
+            messages=chat_messages,
+            role=engine_role,
+            temperature=0.7,
+            tools=delegate_not_in_delegate if delegate_not_in_delegate else None,
+        )
+
+        if tool_calls:
+            for tc in tool_calls:
+                func_name = tc["function"]["name"]
+                try:
+                    func_args = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, TypeError):
+                    func_args = {}
+
+                await update_employee(target["id"], user_id, {"status": "tool_execution"})
+                result = await execute_tool(
+                    tool_name=func_name,
+                    arguments=func_args,
+                    employee_id=target["id"],
+                    user_id=user_id,
+                    project_id=project_id,
+                )
+                result_str = json.dumps(result)
+                if len(result_str) > 4000:
+                    result_str = result_str[:4000] + "...(truncated)"
+                chat_messages.append({"role": "assistant", "content": None, "tool_calls": [tc]})
+                chat_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
+                await add_session_message(session["id"], "tool_calls", json.dumps([tc]))
+                await add_session_message(session["id"], "tool_result", json.dumps({"tool_call_id": tc["id"], "tool": func_name, "result": result_str}))
+
+            await update_employee(target["id"], user_id, {"status": "thinking"})
+            text, _ = await call_llm_with_fallback(
+                messages=chat_messages,
+                role=engine_role,
+                temperature=0.7,
+            )
+
+        response = text or "Task completed but no summary was generated."
+        await add_session_message(session["id"], "employee", response)
+        await update_employee(target["id"], user_id, {"status": "idle"})
+
+        from app.services.memory_engine import schedule_memory_extraction
+        schedule_memory_extraction(target["id"], delegation_msg, response, session["id"])
+
+        return {
+            "success": True,
+            "result": f"[{target['name']} ({target['role']})]: {response}",
+            "delegated_to": target["name"],
+            "session_id": session["id"],
+        }
+    except Exception as e:
+        await update_employee(target["id"], user_id, {"status": "idle"})
+        logger.error(f"Delegation to {target['name']} failed: {e}")
+        return {"success": False, "error": f"Delegation failed: {e}"}
