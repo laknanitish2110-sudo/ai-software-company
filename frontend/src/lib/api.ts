@@ -560,3 +560,189 @@ export async function stopPreview(projectId: string): Promise<{ status: string }
   });
   return checkedJson(res, "Failed to stop preview");
 }
+
+// ─── Persistent Employee Platform ──────────────────────────────────
+
+export interface Employee {
+  id: string;
+  user_id: string;
+  name: string;
+  role: string;
+  persona: string | null;
+  avatar_url: string | null;
+  status: string;
+  config: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeeSession {
+  id: string;
+  employee_id: string;
+  project_id: string | null;
+  status: string;
+  summary: string | null;
+  started_at: string;
+  ended_at: string | null;
+  last_activity: string;
+}
+
+export interface SessionMessage {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  tool_calls: string | null;
+  tool_results: string | null;
+  created_at: string;
+}
+
+export interface Memory {
+  id: string;
+  employee_id: string;
+  type: string;
+  content: string;
+  source: string | null;
+  source_id: string | null;
+  confidence: number;
+  importance: number;
+  tags: string[] | null;
+  created_at: string;
+  last_accessed: string | null;
+  last_verified: string | null;
+  stale_after: string | null;
+  is_active: number;
+}
+
+export interface ToolPermission {
+  id: string;
+  employee_id: string;
+  tool: string;
+  action: string;
+  permission: string;
+  granted_by: string | null;
+  updated_at: string;
+}
+
+export async function listEmployees(): Promise<Employee[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load employees");
+}
+
+export async function createEmployee(data: {
+  name: string; role: string; persona?: string; avatar_url?: string; config?: Record<string, unknown>;
+}): Promise<Employee> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(data),
+  });
+  return checkedJson(res, "Failed to create employee");
+}
+
+export async function getEmployee(id: string): Promise<Employee> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${id}`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load employee");
+}
+
+export async function updateEmployee(id: string, data: Partial<Pick<Employee, "name" | "role" | "persona" | "avatar_url" | "config">>): Promise<Employee> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${id}`, {
+    method: "PATCH",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(data),
+  });
+  return checkedJson(res, "Failed to update employee");
+}
+
+export async function archiveEmployee(id: string): Promise<{ status: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to archive employee");
+}
+
+export async function createEmployeeSession(employeeId: string): Promise<EmployeeSession> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/sessions`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to create session");
+}
+
+export async function listEmployeeSessions(employeeId: string, limit = 20): Promise<EmployeeSession[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/sessions?limit=${limit}`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load sessions");
+}
+
+export async function getSessionWithMessages(sessionId: string): Promise<EmployeeSession & { messages: SessionMessage[] }> {
+  const res = await fetchWithTimeout(`${API_BASE}/sessions/${sessionId}`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load session");
+}
+
+export async function sendEmployeeMessage(sessionId: string, content: string): Promise<{ user_message: SessionMessage; employee_message: SessionMessage }> {
+  const res = await fetchWithTimeout(`${API_BASE}/sessions/${sessionId}/messages`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ content }),
+  });
+  return checkedJson(res, "Failed to send message");
+}
+
+export async function endEmployeeSession(sessionId: string): Promise<{ status: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/sessions/${sessionId}/end`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to end session");
+}
+
+export async function listMemories(employeeId: string, type?: string, search?: string, limit = 50): Promise<Memory[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (type) params.set("type", type);
+  if (search) params.set("search", search);
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/memories?${params}`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load memories");
+}
+
+export async function createMemory(employeeId: string, data: {
+  type: string; content: string; source?: string; confidence?: number; importance?: number; tags?: string[]; stale_after?: string;
+}): Promise<Memory> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/memories`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(data),
+  });
+  return checkedJson(res, "Failed to create memory");
+}
+
+export async function updateMemory(id: string, data: Partial<Pick<Memory, "content" | "confidence" | "importance" | "tags" | "is_active">>): Promise<Memory> {
+  const res = await fetchWithTimeout(`${API_BASE}/memories/${id}`, {
+    method: "PATCH",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(data),
+  });
+  return checkedJson(res, "Failed to update memory");
+}
+
+export async function deactivateMemory(id: string): Promise<{ status: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/memories/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to deactivate memory");
+}
+
+export async function getEmployeePermissions(employeeId: string): Promise<ToolPermission[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/permissions`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load permissions");
+}
+
+export async function updateEmployeePermission(employeeId: string, tool: string, action: string, permission: string): Promise<ToolPermission> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/permissions`, {
+    method: "PATCH",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ tool, action, permission }),
+  });
+  return checkedJson(res, "Failed to update permission");
+}

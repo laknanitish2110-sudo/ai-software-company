@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function UserMenu() {
@@ -9,6 +10,12 @@ export default function UserMenu() {
 
   return (
     <div className="flex items-center justify-end gap-3 px-4 py-2 border-b border-[var(--border)] bg-[var(--bg-card)]">
+      <Link href="/" className="text-xs text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors mr-auto">
+        Home
+      </Link>
+      <Link href="/employees" className="text-xs text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors">
+        Team
+      </Link>
       {user.avatar_url && (
         <img
           src={user.avatar_url}
