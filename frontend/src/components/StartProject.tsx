@@ -31,13 +31,22 @@ const DOMAINS = [
   { id: "media", label: "Media", icon: "🎬", color: "#a855f7" },
 ] as const;
 
-const TEAM_MEMBERS = [
-  { icon: "👨‍💼", label: "CEO", desc: "Analyzes & delegates", color: "#635bff", status: "Plans strategy" },
-  { icon: "📋", label: "Business Analyst", desc: "Requirements & stories", color: "#0bbf8c", status: "Defines scope" },
-  { icon: "🔍", label: "Researcher", desc: "Market & tech research", color: "#f5a623", status: "Finds insights" },
-  { icon: "🏗️", label: "Architect", desc: "System design & APIs", color: "#5e81f4", status: "Designs systems" },
-  { icon: "💻", label: "Engineer", desc: "Full working code", color: "#ed5f74", status: "Writes code" },
-  { icon: "📊", label: "Presenter", desc: "Pitch deck & slides", color: "#00b5d8", status: "Creates pitch" },
+const PIPELINE_AGENTS = [
+  { icon: "👨‍💼", label: "CEO", color: "#635bff" },
+  { icon: "📋", label: "BA", color: "#0bbf8c" },
+  { icon: "🔍", label: "Researcher", color: "#f5a623" },
+  { icon: "🏗️", label: "Architect", color: "#5e81f4" },
+  { icon: "💻", label: "Engineer", color: "#ed5f74" },
+  { icon: "📊", label: "Presenter", color: "#00b5d8" },
+];
+
+const TEAM_EMPLOYEES = [
+  { icon: "🏗️", label: "Arc", color: "#8b5cf6" },
+  { icon: "📋", label: "Sage", color: "#0bbf8c" },
+  { icon: "🔍", label: "Scout", color: "#3b82f6" },
+  { icon: "⚡", label: "Atlas", color: "#f59e0b" },
+  { icon: "🛡️", label: "Sentinel", color: "#ef4444" },
+  { icon: "✍️", label: "Scribe", color: "#06b6d4" },
 ];
 
 const STATUS_DISPLAY: Record<string, { label: string; color: string; icon: string }> = {
@@ -90,31 +99,91 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
             <h1 className="text-4xl md:text-5xl font-bold mb-3 tracking-tight" style={{ color: "var(--text-primary)" }}>
               What are we building?
             </h1>
-            <p className="text-base" style={{ color: "var(--text-muted)", maxWidth: 420, margin: "0 auto" }}>
-              Describe an idea. Your 6-person AI team turns it into working software.
+            <p className="text-base" style={{ color: "var(--text-muted)", maxWidth: 480, margin: "0 auto" }}>
+              Two ways to work with your AI company
             </p>
           </div>
 
-          {/* Team lineup */}
-          <div className="flex items-center justify-center gap-1 mb-8 animate-fade-in" style={{ animationDelay: "0.05s" }}>
-            {TEAM_MEMBERS.map((t, i) => (
-              <div key={t.label}
-                   className="flex flex-col items-center gap-1.5 px-2 py-2 rounded-xl transition-all"
-                   style={{
-                     minWidth: 72,
-                     animation: `fadeSlideUp 0.4s ${i * 0.08}s both`,
-                   }}>
-                <div className="relative">
-                  <span className="text-2xl">{t.icon}</span>
-                  <span style={{
-                    position: "absolute", bottom: -2, right: -4,
-                    width: 8, height: 8, borderRadius: "50%",
-                    background: t.color, border: "2px solid var(--bg-base)",
-                  }} />
-                </div>
-                <span className="text-[10px] font-semibold" style={{ color: t.color }}>{t.label.split(" ")[0]}</span>
+          {/* Two Mode Cards */}
+          <div className="mode-grid grid gap-4 mb-8 animate-fade-in" style={{ gridTemplateColumns: "1fr 1fr", animationDelay: "0.05s" }}>
+            {/* Pipeline Mode */}
+            <div
+              className="rounded-2xl p-5 transition-all"
+              style={{
+                background: "var(--bg-card)",
+                border: "1.5px solid var(--accent)",
+                boxShadow: "0 0 20px rgba(99,91,255,0.08)",
+              }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span style={{ fontSize: 18 }}>&#9889;</span>
+                <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Build a Project</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded ml-auto uppercase tracking-wider"
+                      style={{ background: "var(--accent-bg)", color: "var(--accent)", border: "1px solid var(--accent-border)" }}>
+                  Pipeline
+                </span>
               </div>
-            ))}
+              <p className="text-xs mb-3" style={{ color: "var(--text-muted)", lineHeight: 1.5 }}>
+                Describe an idea &mdash; 6 agents build it end-to-end in one shot. From analysis to working code to pitch deck.
+              </p>
+              <div className="flex items-center gap-0.5">
+                {PIPELINE_AGENTS.map((a, i) => (
+                  <div key={a.label} className="flex flex-col items-center" style={{ minWidth: 44 }}>
+                    <span style={{ fontSize: 16 }}>{a.icon}</span>
+                    {i < PIPELINE_AGENTS.length - 1 && (
+                      <span className="text-[8px] mt-0.5" style={{ color: "var(--text-muted)" }}>&rarr;</span>
+                    )}
+                    <span className="text-[9px] font-semibold" style={{ color: a.color }}>{a.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Team Mode */}
+            <Link
+              href="/employees"
+              className="rounded-2xl p-5 transition-all"
+              style={{
+                background: "var(--bg-card)",
+                border: "1.5px solid var(--border)",
+                textDecoration: "none",
+                display: "block",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "#0bbf8c";
+                e.currentTarget.style.boxShadow = "0 0 20px rgba(11,191,140,0.08)";
+                e.currentTarget.style.transform = "translateY(-2px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "var(--border)";
+                e.currentTarget.style.boxShadow = "none";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span style={{ fontSize: 18 }}>&#129302;</span>
+                <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Your Team</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded ml-auto uppercase tracking-wider"
+                      style={{ background: "rgba(11,191,140,0.08)", color: "#0bbf8c", border: "1px solid rgba(11,191,140,0.2)" }}>
+                  Employees
+                </span>
+              </div>
+              <p className="text-xs mb-3" style={{ color: "var(--text-muted)", lineHeight: 1.5 }}>
+                Chat with persistent AI employees who learn from every conversation, remember context, and collaborate via delegation.
+              </p>
+              <div className="flex items-center gap-1">
+                {TEAM_EMPLOYEES.map((e) => (
+                  <div key={e.label} className="flex flex-col items-center" style={{ minWidth: 44 }}>
+                    <span style={{ fontSize: 16 }}>{e.icon}</span>
+                    <span className="text-[9px] font-semibold" style={{ color: e.color }}>{e.label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-1 mt-3 text-xs font-medium" style={{ color: "#0bbf8c" }}>
+                Chat with your team
+                <span>&rarr;</span>
+              </div>
+            </Link>
           </div>
 
           {/* Input Card */}
@@ -341,7 +410,9 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
       {/* Footer */}
       <div className="text-center py-6">
         <p className="text-[11px]" style={{ color: "var(--text-muted)", opacity: 0.5 }}>
-          CEO &bull; Business Analyst &bull; Researcher &bull; Architect &bull; Engineer &bull; Presenter
+          Pipeline: CEO &rarr; BA &rarr; Researcher &rarr; Architect &rarr; Engineer &rarr; Presenter
+          &nbsp;&nbsp;|&nbsp;&nbsp;
+          Team: Arc &bull; Sage &bull; Scout &bull; Atlas &bull; Sentinel &bull; Scribe
         </p>
       </div>
 
@@ -353,6 +424,11 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
+        }
+        @media (max-width: 640px) {
+          .mode-grid {
+            grid-template-columns: 1fr !important;
+          }
         }
       `}</style>
     </div>
