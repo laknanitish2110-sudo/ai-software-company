@@ -50,6 +50,7 @@ export default function EmployeeChatPage() {
   const [memoryFilter, setMemoryFilter] = useState<string>("");
   const [skills, setSkills] = useState<EmployeeSkill[]>([]);
   const [extracting, setExtracting] = useState(false);
+  const [showDelegationInfo, setShowDelegationInfo] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -551,7 +552,7 @@ export default function EmployeeChatPage() {
         {/* Messages */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
           {!activeSession && messages.length === 0 && (
-            <div style={{ textAlign: "center", padding: "100px 24px", maxWidth: 420, margin: "0 auto" }}>
+            <div style={{ textAlign: "center", padding: "80px 24px", maxWidth: 460, margin: "0 auto" }}>
               <div style={{
                 width: 64, height: 64, borderRadius: 20, margin: "0 auto 20px",
                 background: `${(ROLE_META[employee.role] || { color: "#635bff" }).color}10`,
@@ -580,6 +581,36 @@ export default function EmployeeChatPage() {
               >
                 Start Session
               </button>
+
+              {/* Delegation tip */}
+              <div style={{
+                marginTop: 32, padding: "16px 20px", borderRadius: 12,
+                background: "rgba(99,91,255,0.04)", border: "1px solid rgba(99,91,255,0.1)",
+                textAlign: "left",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#635bff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+                  </svg>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>Team Delegation</span>
+                </div>
+                <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, margin: "0 0 10px" }}>
+                  {employee.name} can delegate tasks to other team members. Just ask:
+                  <span style={{ display: "block", fontStyle: "italic", color: "var(--text-muted)", marginTop: 4 }}>
+                    &ldquo;Delegate the business analysis to Sage&rdquo;
+                  </span>
+                </p>
+                <button
+                  onClick={() => setShowDelegationInfo(true)}
+                  style={{
+                    background: "none", border: "none", padding: 0,
+                    fontSize: 13, fontWeight: 600, color: "var(--accent)",
+                    cursor: "pointer", textDecoration: "none",
+                  }}
+                >
+                  Learn how delegation works &rarr;
+                </button>
+              </div>
             </div>
           )}
 
@@ -758,6 +789,150 @@ export default function EmployeeChatPage() {
           </div>
         )}
       </div>
+
+      {/* Delegation Info Modal */}
+      {showDelegationInfo && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 200,
+            background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 24, animation: "fadeIn 0.15s ease-out",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowDelegationInfo(false); }}
+        >
+          <div style={{
+            width: "100%", maxWidth: 520, borderRadius: 16,
+            background: "var(--bg-card)", border: "1px solid var(--border)",
+            boxShadow: "0 24px 64px rgba(0,0,0,0.15)",
+            overflow: "hidden",
+          }}>
+            {/* Modal header */}
+            <div style={{
+              padding: "20px 24px", borderBottom: "1px solid var(--border)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>
+                How Delegation Works
+              </h3>
+              <button
+                onClick={() => setShowDelegationInfo(false)}
+                style={{
+                  background: "none", border: "none", fontSize: 18,
+                  color: "var(--text-muted)", cursor: "pointer", padding: "4px 8px",
+                  borderRadius: 6, lineHeight: 1,
+                }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div style={{ padding: "24px", overflowY: "auto", maxHeight: "70vh" }}>
+              <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.7, margin: "0 0 20px" }}>
+                Each employee can delegate tasks to other team members. When they delegate, they pass along the full context of your conversation so the other employee understands what&apos;s needed.
+              </p>
+
+              {/* Step-by-step */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
+                {[
+                  { step: "1", title: "You ask an employee", desc: "Chat with any employee about your project. For example, ask Arc to design a system." },
+                  { step: "2", title: "Request delegation", desc: "Tell the employee to delegate work to a teammate. Example: \"Delegate the business analysis to Sage\"" },
+                  { step: "3", title: "Context is transferred", desc: "The employee packages up what you discussed and sends it to the other employee with full context." },
+                  { step: "4", title: "Result comes back", desc: "The delegated employee does the work and the result appears in your conversation. You never need to switch chats." },
+                ].map((item) => (
+                  <div key={item.step} style={{ display: "flex", gap: 14 }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                      background: "var(--accent-bg)", border: "1px solid var(--accent-border)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 13, fontWeight: 700, color: "var(--accent)",
+                    }}>
+                      {item.step}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+                        {item.title}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                        {item.desc}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Example phrases */}
+              <div style={{
+                padding: "16px 18px", borderRadius: 10,
+                background: "var(--bg-base)", border: "1px solid var(--border)",
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
+                  Try saying
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {[
+                    "\"Ask Sage to analyze the business requirements for this\"",
+                    "\"Delegate the code review to Sentinel\"",
+                    "\"Have Scout research competitors in this space\"",
+                    "\"Get Scribe to write documentation for this API\"",
+                  ].map((phrase) => (
+                    <div key={phrase} style={{
+                      fontSize: 13, color: "var(--text-secondary)", fontStyle: "italic",
+                      padding: "6px 10px", borderRadius: 6, background: "var(--bg-card)",
+                    }}>
+                      {phrase}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Your team */}
+              <div style={{ marginTop: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
+                  Your Team
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {Object.entries(ROLE_META).map(([role, meta]) => {
+                    const names: Record<string, string> = {
+                      "Architect": "Arc", "Business Analyst": "Sage", "Researcher": "Scout",
+                      "Software Engineer": "Atlas", "QA Engineer": "Sentinel", "Technical Writer": "Scribe",
+                    };
+                    return (
+                      <div key={role} style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "8px 10px", borderRadius: 8, background: "var(--bg-base)",
+                      }}>
+                        <span style={{ fontSize: 16 }}>{meta.icon}</span>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                            {names[role] || role}
+                          </div>
+                          <div style={{ fontSize: 11, color: meta.color }}>{role}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal footer */}
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border)", textAlign: "right" }}>
+              <button
+                onClick={() => setShowDelegationInfo(false)}
+                style={{
+                  padding: "8px 20px", borderRadius: 8, border: "none",
+                  background: "var(--accent)", color: "#fff", fontSize: 13, fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes pulse {
