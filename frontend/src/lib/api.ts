@@ -646,6 +646,31 @@ export async function seedDefaultSkills(): Promise<{ seeded: number }> {
   return checkedJson(res, "Failed to seed skills");
 }
 
+export interface ActivityItem {
+  id: string;
+  employee_id: string | null;
+  employee_name: string | null;
+  event_type: string;
+  title: string;
+  detail: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  seen: number;
+}
+
+export async function getActivityFeed(limit = 50, unseenOnly = false): Promise<{ activities: ActivityItem[]; unseen_count: number }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (unseenOnly) params.set("unseen_only", "true");
+  const res = await fetchWithTimeout(`${API_BASE}/activity?${params}`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to fetch activity");
+}
+
+export async function markActivitySeen(): Promise<void> {
+  await fetchWithTimeout(`${API_BASE}/activity/mark-seen`, {
+    method: "POST", headers: authHeaders(),
+  });
+}
+
 export async function createEmployee(data: {
   name: string; role: string; persona?: string; avatar_url?: string; config?: Record<string, unknown>;
 }): Promise<Employee> {

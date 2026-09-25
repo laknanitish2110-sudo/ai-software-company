@@ -434,6 +434,22 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_delegation_status ON delegation_tasks(status);
                 CREATE INDEX IF NOT EXISTS idx_delegation_from ON delegation_tasks(from_employee_id);
+
+                CREATE TABLE IF NOT EXISTS activity_log (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    employee_id TEXT,
+                    employee_name TEXT,
+                    event_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    detail TEXT,
+                    metadata TEXT,
+                    created_at TEXT NOT NULL,
+                    seen INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_activity_unseen ON activity_log(user_id, seen);
             """)
         else:
             # PostgreSQL DDL
@@ -685,6 +701,22 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_delegation_status ON delegation_tasks(status);
                 CREATE INDEX IF NOT EXISTS idx_delegation_from ON delegation_tasks(from_employee_id);
+
+                CREATE TABLE IF NOT EXISTS activity_log (
+                    id VARCHAR(255) PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    employee_id VARCHAR(255),
+                    employee_name VARCHAR(255),
+                    event_type VARCHAR(64) NOT NULL,
+                    title TEXT NOT NULL,
+                    detail TEXT,
+                    metadata TEXT,
+                    created_at TEXT NOT NULL,
+                    seen INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_activity_unseen ON activity_log(user_id, seen);
             """)
         await db.commit()
 
@@ -2310,6 +2342,81 @@ async def get_pending_delegation_tasks(limit: int = 10) -> list[dict]:
             (limit,),
         )
         return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+# ─── Activity log ──────────────────────────────────────────────
+
+async def log_activity(user_id: str, event_type: str, title: str,
+                       employee_id: str | None = None, employee_name: str | None = None,
+                       detail: str | None = None, metadata: dict | None = None) -> dict:
+    db = await get_db()
+    try:
+        aid = new_id()
+        ts = now_iso()
+        meta_json = json.dumps(metadata) if metadata else None
+        await db.execute(
+            """INSERT INTO activity_log (id, user_id, employee_id, employee_name, event_type, title, detail, metadata, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (aid, user_id, employee_id, employee_name, event_type, title, detail, meta_json, ts),
+        )
+        await db.commit()
+        return {"id": aid, "event_type": event_type, "title": title, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_activity_feed(user_id: str, limit: int = 50, unseen_only: bool = False) -> list[dict]:
+    db = await get_db()
+    try:
+        sql = "SELECT * FROM activity_log WHERE user_id = ?"
+        params: list = [user_id]
+        if unseen_only:
+            sql += " AND seen = 0"
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        cursor = await db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("metadata"), str):
+                try:
+                    r["metadata"] = json.loads(r["metadata"])
+                except Exception:
+                    pass
+        return rows
+    finally:
+        await db.close()
+
+
+async def mark_activity_seen(user_id: str, activity_ids: list[str] | None = None):
+    db = await get_db()
+    try:
+        if activity_ids:
+            placeholders = ",".join("?" for _ in activity_ids)
+            await db.execute(
+                f"UPDATE activity_log SET seen = 1 WHERE user_id = ? AND id IN ({placeholders})",
+                (user_id, *activity_ids),
+            )
+        else:
+            await db.execute(
+                "UPDATE activity_log SET seen = 1 WHERE user_id = ? AND seen = 0",
+                (user_id,),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_unseen_activity_count(user_id: str) -> int:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT COUNT(*) as cnt FROM activity_log WHERE user_id = ? AND seen = 0",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
     finally:
         await db.close()
 

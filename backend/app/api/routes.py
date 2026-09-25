@@ -1835,7 +1835,37 @@ async def api_end_session(session_id: str, user=Depends(get_current_user)):
     from app.services.memory_engine import schedule_session_summary
     schedule_session_summary(session_id, emp["id"], emp["name"], emp["role"])
 
+    from app.core.database import log_activity
+    messages = await get_session_messages(session_id, limit=1000)
+    msg_count = len([m for m in messages if m["role"] in ("user", "employee")])
+    await log_activity(
+        user_id=user["id"],
+        event_type="session_completed",
+        title=f"Session with {emp['name']} ended",
+        employee_id=emp["id"],
+        employee_name=emp["name"],
+        detail=f"{msg_count} messages exchanged",
+        metadata={"session_id": session_id, "message_count": msg_count},
+    )
+
     return {"status": "ended"}
+
+
+# --- ACTIVITY FEED ENDPOINTS ---
+
+@router.get("/activity")
+async def api_get_activity_feed(limit: int = 50, unseen_only: bool = False, user=Depends(get_current_user)):
+    from app.core.database import get_activity_feed, get_unseen_activity_count
+    feed = await get_activity_feed(user["id"], limit=limit, unseen_only=unseen_only)
+    unseen = await get_unseen_activity_count(user["id"])
+    return {"activities": feed, "unseen_count": unseen}
+
+
+@router.post("/activity/mark-seen")
+async def api_mark_activity_seen(user=Depends(get_current_user)):
+    from app.core.database import mark_activity_seen
+    await mark_activity_seen(user["id"])
+    return {"status": "ok"}
 
 
 # --- EMPLOYEE MEMORY ENDPOINTS ---

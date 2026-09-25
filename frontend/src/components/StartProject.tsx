@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { ROUTE_CONFIG, classifyTask, AGENT_CONFIG, getRouteGuardrail } from "@/lib/constants";
+import { getActivityFeed, markActivitySeen, type ActivityItem } from "@/lib/api";
 
 interface RecentProject {
   id: string;
@@ -65,11 +66,43 @@ const STATUS_DISPLAY: Record<string, { label: string; color: string; icon: strin
 
 const ROUTE_ORDER = ["quick_build", "standard", "full", "research", "report"] as const;
 
+function formatTimeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export default function StartProject({ onStart, loading, recentProjects, hasDemo, onLoadDemo }: Props) {
   const [problem, setProblem] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const [activityDismissed, setActivityDismissed] = useState(false);
+
+  const loadActivity = useCallback(async () => {
+    try {
+      const data = await getActivityFeed(20, true);
+      setActivities(data.activities);
+      setUnseenCount(data.unseen_count);
+    } catch {}
+  }, []);
+
+  useEffect(() => { loadActivity(); }, [loadActivity]);
+
+  const handleDismissActivity = async () => {
+    try {
+      await markActivitySeen();
+      setActivityDismissed(true);
+      setUnseenCount(0);
+    } catch {}
+  };
 
   const suggestedRoute = useMemo(() => {
     if (problem.trim().length < 10) return "full";
@@ -187,6 +220,63 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
               </div>
             </Link>
           </div>
+
+          {/* While You Were Away */}
+          {!activityDismissed && activities.length > 0 && (
+            <div className="card p-4 mb-6 animate-fade-in" style={{ animationDelay: "0.08s", border: "1.5px solid var(--accent-border)" }}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 14 }}>&#128276;</span>
+                  <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-primary)" }}>
+                    While you were away
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ background: "var(--accent-bg)", color: "var(--accent)", border: "1px solid var(--accent-border)", minWidth: 20, textAlign: "center" }}>
+                    {unseenCount}
+                  </span>
+                </div>
+                <button
+                  onClick={handleDismissActivity}
+                  className="text-[10px] font-medium px-2 py-1 rounded-md transition-all"
+                  style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent-border)"; e.currentTarget.style.color = "var(--accent)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+                >
+                  Dismiss all
+                </button>
+              </div>
+              <div className="space-y-1.5" style={{ maxHeight: 200, overflowY: "auto" }}>
+                {activities.map((a) => {
+                  const eventConfig: Record<string, { icon: string; color: string }> = {
+                    delegation_completed: { icon: "✅", color: "#0bbf8c" },
+                    session_completed: { icon: "💬", color: "#635bff" },
+                    skill_learned: { icon: "✨", color: "#f5a623" },
+                  };
+                  const cfg = eventConfig[a.event_type] || { icon: "•", color: "var(--text-muted)" };
+                  const timeAgo = formatTimeAgo(a.created_at);
+                  return (
+                    <div key={a.id} className="flex items-start gap-2.5 px-2.5 py-2 rounded-lg" style={{ background: "var(--bg-elevated)" }}>
+                      <span style={{ fontSize: 13, lineHeight: "18px" }}>{cfg.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          {a.employee_name && (
+                            <span className="text-[11px] font-bold" style={{ color: cfg.color }}>{a.employee_name}</span>
+                          )}
+                          <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>{a.title.replace(a.employee_name || "", "").trim()}</span>
+                        </div>
+                        {a.detail && (
+                          <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--text-muted)", maxWidth: 400 }}>
+                            {a.detail.length > 120 ? a.detail.slice(0, 120) + "..." : a.detail}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-[10px] shrink-0 mt-0.5" style={{ color: "var(--text-muted)" }}>{timeAgo}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Input Card */}
           <div className="card p-6 animate-fade-in" style={{

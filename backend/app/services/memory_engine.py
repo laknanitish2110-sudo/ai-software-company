@@ -560,6 +560,27 @@ async def extract_skills_from_conversation(
 
         if saved:
             logger.info(f"Extracted {len(saved)} skills for employee {employee_id}")
+            try:
+                from app.core.database import log_activity, get_db
+                db = await get_db()
+                try:
+                    cursor = await db.execute(
+                        "SELECT name, user_id FROM employees WHERE id = ?", (employee_id,))
+                    emp_row = await cursor.fetchone()
+                finally:
+                    await db.close()
+                if emp_row:
+                    skill_names = ", ".join(s["name"] for s in saved)
+                    await log_activity(
+                        user_id=emp_row["user_id"],
+                        event_type="skill_learned",
+                        title=f"{emp_row['name']} learned {len(saved)} new skill{'s' if len(saved) > 1 else ''}",
+                        employee_id=employee_id,
+                        employee_name=emp_row["name"],
+                        detail=skill_names,
+                    )
+            except Exception as log_err:
+                logger.debug(f"Activity log for skills: {log_err}")
         return saved
 
     except Exception as e:

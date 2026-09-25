@@ -176,6 +176,17 @@ async def process_delegation_task(task: dict) -> dict:
         except Exception as pub_err:
             logger.debug(f"Redis publish notice for delegation: {pub_err}")
 
+        from app.core.database import log_activity
+        await log_activity(
+            user_id=user_id,
+            event_type="delegation_completed",
+            title=f"{target['name']} completed a task from {from_name}",
+            employee_id=to_emp_id,
+            employee_name=target["name"],
+            detail=response_text[:300] if response_text else None,
+            metadata={"task_id": task_id, "from_employee": from_name, "to_employee": target["name"]},
+        )
+
         logger.info(f"Delegation {task_id}: {from_name} → {target['name']} completed")
         return {"success": True, "result": response_text}
 
