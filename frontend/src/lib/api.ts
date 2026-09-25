@@ -119,6 +119,15 @@ export async function deleteProject(projectId: string): Promise<{ status: string
   return checkedJson(res, "Failed to delete project");
 }
 
+export async function renameProject(projectId: string, name: string): Promise<{ status: string; name: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/projects/${projectId}`, {
+    method: "PATCH",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ name }),
+  });
+  return checkedJson(res, "Failed to rename project");
+}
+
 export async function getProjectBudget(
   projectId: string
 ): Promise<Record<string, unknown>> {
@@ -950,10 +959,120 @@ export async function createCheckout(plan: string): Promise<{ url: string; sessi
   return checkedJson(res, "Failed to create checkout");
 }
 
+export interface AnalyticsData {
+  usage: UsageSummary;
+  employees: {
+    id: string;
+    name: string;
+    role: string;
+    status: string;
+    session_count: number;
+    memory_count: number;
+    skill_count: number;
+    last_active: string | null;
+  }[];
+  activity_summary: Record<string, number>;
+  total_activities: number;
+  period_days: number;
+}
+
+export async function getAnalytics(days: number = 30): Promise<AnalyticsData> {
+  const res = await fetchWithTimeout(`${API_BASE}/analytics?days=${days}`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load analytics");
+}
+
 export async function createPortalSession(): Promise<{ url: string }> {
   const res = await fetchWithTimeout(`${API_BASE}/billing/portal`, {
     method: "POST",
     headers: authHeaders(),
   });
   return checkedJson(res, "Failed to create portal session");
+}
+
+// ─── Scheduled Tasks ─────────────────────────────────────────────
+
+export interface ScheduledTask {
+  id: string;
+  user_id: string;
+  employee_id: string;
+  name: string;
+  description: string | null;
+  task_prompt: string;
+  schedule_type: "once" | "recurring";
+  cron_expression: string | null;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  last_run_result: string | null;
+  run_count: number;
+  is_active: boolean | number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createScheduledTask(data: {
+  employee_id: string; name: string; task_prompt: string;
+  description?: string; schedule_type?: string;
+  cron_expression?: string; next_run_at?: string;
+}): Promise<ScheduledTask> {
+  const res = await fetchWithTimeout(`${API_BASE}/scheduled-tasks`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(data),
+  });
+  return checkedJson(res, "Failed to create scheduled task");
+}
+
+export async function listScheduledTasks(employeeId?: string): Promise<{ tasks: ScheduledTask[] }> {
+  const url = employeeId
+    ? `${API_BASE}/scheduled-tasks?employee_id=${employeeId}`
+    : `${API_BASE}/scheduled-tasks`;
+  const res = await fetchWithTimeout(url, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load scheduled tasks");
+}
+
+export async function deleteScheduledTask(taskId: string): Promise<void> {
+  const res = await fetchWithTimeout(`${API_BASE}/scheduled-tasks/${taskId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to delete task");
+}
+
+export async function updateScheduledTask(taskId: string, updates: Record<string, unknown>): Promise<ScheduledTask> {
+  const res = await fetchWithTimeout(`${API_BASE}/scheduled-tasks/${taskId}`, {
+    method: "PATCH",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(updates),
+  });
+  return checkedJson(res, "Failed to update task");
+}
+
+export async function runScheduledTaskNow(taskId: string): Promise<{ status: string; session_id?: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/scheduled-tasks/${taskId}/run`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to run task");
+}
+
+// ─── Semantic Memory Search ─────────────────────────────────────
+
+export async function embedEmployeeMemories(employeeId: string): Promise<{ embedded: number; model: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/memories/embed`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to embed memories");
+}
+
+export async function semanticMemorySearch(employeeId: string, query: string, limit: number = 10): Promise<{
+  results: { memory_id: string; content: string; type: string; similarity: number; importance: number | null }[];
+  query: string;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/memories/search?q=${encodeURIComponent(query)}&limit=${limit}`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to search memories");
 }

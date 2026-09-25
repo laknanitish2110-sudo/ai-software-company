@@ -116,6 +116,13 @@ async def extract_memories_from_turn(
                 importance=importance,
                 tags=mem.get("tags"),
             )
+            try:
+                from app.core.embeddings import embed_text, MODEL_NAME
+                from app.core.database import store_memory_embedding
+                vec = embed_text(mem["content"])
+                await store_memory_embedding(saved["id"], employee_id, vec, model=MODEL_NAME)
+            except Exception:
+                pass
             created.append(saved)
 
         if created:

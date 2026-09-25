@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useRef, useEffect } from "react";
+import { useTheme } from "@/contexts/ThemeContext";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { getActivityFeed, markActivitySeen, type ActivityItem } from "@/lib/api";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
@@ -19,11 +21,41 @@ export default function UserMenu() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  const { theme, resolved, setTheme } = useTheme();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<ActivityItem[]>([]);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const loadNotifs = useCallback(async () => {
+    try {
+      const data = await getActivityFeed(10, false);
+      setNotifications(data.activities);
+      setUnseenCount(data.unseen_count);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    loadNotifs();
+    const interval = setInterval(loadNotifs, 15000);
+    return () => clearInterval(interval);
+  }, [user, loadNotifs]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   if (!user) return null;
 
   const NAV = [
     { href: "/", label: "Home" },
     { href: "/employees", label: "Team" },
+    { href: "/analytics", label: "Analytics" },
     { href: "/settings", label: "Settings" },
   ];
 
@@ -65,7 +97,114 @@ export default function UserMenu() {
         })}
       </div>
 
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }} ref={menuRef}>
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }} ref={menuRef}>
+        {/* Notification bell */}
+        <div style={{ position: "relative" }} ref={notifRef}>
+          <button
+            onClick={async () => {
+              setNotifOpen(!notifOpen);
+              if (!notifOpen && unseenCount > 0) {
+                try { await markActivitySeen(); setUnseenCount(0); } catch {}
+              }
+            }}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)",
+              background: "transparent", cursor: "pointer", color: "var(--text-muted)",
+              transition: "all 0.15s", position: "relative",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent-border)"; e.currentTarget.style.color = "var(--accent)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
+            </svg>
+            {unseenCount > 0 && (
+              <span style={{
+                position: "absolute", top: -4, right: -4,
+                width: 16, height: 16, borderRadius: "50%",
+                background: "var(--danger)", color: "#fff",
+                fontSize: 9, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{unseenCount > 9 ? "9+" : unseenCount}</span>
+            )}
+          </button>
+          {notifOpen && (
+            <div style={{
+              position: "absolute", top: 40, right: 0,
+              width: 300, maxHeight: 360, borderRadius: 12, padding: 4,
+              background: "var(--bg-card)", border: "1px solid var(--border)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+              zIndex: 200, overflowY: "auto", animation: "fadeIn 0.15s ease-out",
+            }}>
+              <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>Notifications</span>
+              </div>
+              {notifications.length === 0 ? (
+                <div style={{ padding: "20px 12px", textAlign: "center", fontSize: 12, color: "var(--text-muted)" }}>
+                  No notifications yet
+                </div>
+              ) : notifications.map((n) => {
+                const icons: Record<string, string> = {
+                  delegation_completed: "v", session_completed: "o", skill_learned: "*",
+                  scheduled_task_completed: "⏰", memory_created: "🧠",
+                };
+                const colors: Record<string, string> = {
+                  delegation_completed: "var(--success)", session_completed: "var(--accent)", skill_learned: "var(--warning)",
+                  scheduled_task_completed: "var(--info)", memory_created: "#8b5cf6",
+                };
+                return (
+                  <div key={n.id} style={{
+                    padding: "8px 12px", borderRadius: 8, marginBottom: 2,
+                    display: "flex", gap: 8, alignItems: "flex-start",
+                    background: n.seen ? "transparent" : "var(--accent-bg)",
+                  }}>
+                    <span style={{ fontSize: 12, color: colors[n.event_type] || "var(--text-muted)", flexShrink: 0, marginTop: 1 }}>
+                      {icons[n.event_type] || "-"}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{n.title}</div>
+                      {n.detail && (
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {n.detail.length > 80 ? n.detail.slice(0, 80) + "..." : n.detail}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                        {new Date(n.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}
+          title={`Switch to ${resolved === "dark" ? "light" : "dark"} mode`}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)",
+            background: "transparent", cursor: "pointer", color: "var(--text-muted)",
+            transition: "all 0.15s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent-border)"; e.currentTarget.style.color = "var(--accent)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
+        >
+          {resolved === "dark" ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          )}
+        </button>
         <button
           onClick={() => setMenuOpen(!menuOpen)}
           style={{

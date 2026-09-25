@@ -267,17 +267,63 @@ export default function EmployeesPage() {
         )}
 
         {(loading || provisioning) && (
-          <div style={{ textAlign: "center", padding: 80 }}>
-            <ThinkingOrb state={provisioning ? "working" : "searching"} size={64} theme="auto" />
-            <p style={{ color: "var(--text-muted)", fontSize: 14, marginTop: 16 }}>
-              {provisioning ? "Setting up your AI team..." : "Loading your team..."}
-            </p>
+          <div>
+            {provisioning ? (
+              <div style={{ textAlign: "center", padding: 80 }}>
+                <ThinkingOrb state="working" size={64} theme="auto" />
+                <p style={{ color: "var(--text-muted)", fontSize: 14, marginTop: 16 }}>
+                  Setting up your AI team...
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} style={{
+                    borderRadius: 16, overflow: "hidden",
+                    background: "var(--bg-card)", border: "1px solid var(--border)",
+                    animation: `fadeIn 0.3s ease-out ${i * 0.05}s both`,
+                  }}>
+                    <div className="skeleton" style={{ height: 3, borderRadius: 0 }} />
+                    <div style={{ padding: "20px 20px 16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+                        <div className="skeleton skeleton-circle" style={{ width: 32, height: 32 }} />
+                        <div style={{ flex: 1 }}>
+                          <div className="skeleton skeleton-text" style={{ width: "60%", marginBottom: 6 }} />
+                          <div className="skeleton skeleton-text-sm" style={{ width: "40%" }} />
+                        </div>
+                      </div>
+                      <div className="skeleton skeleton-text" style={{ width: "90%" }} />
+                      <div className="skeleton skeleton-text" style={{ width: "70%" }} />
+                      <div style={{ borderTop: "1px solid var(--border)", marginTop: 14, paddingTop: 12 }}>
+                        <div className="skeleton skeleton-text-sm" style={{ width: "50%" }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {error && (
-          <div style={{ padding: "16px 20px", borderRadius: 10, background: "rgba(237,95,116,0.08)", border: "1px solid rgba(237,95,116,0.2)", color: "#ed5f74", fontSize: 14, marginBottom: 16 }}>
-            {error}
+          <div style={{
+            padding: "16px 20px", borderRadius: 14, marginBottom: 16,
+            background: "rgba(237,95,116,0.06)", border: "1px solid rgba(237,95,116,0.15)",
+            display: "flex", alignItems: "center", gap: 12,
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+              background: "rgba(237,95,116,0.1)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ed5f74" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#ed5f74", marginBottom: 2 }}>Connection Error</div>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{error}</div>
+            </div>
           </div>
         )}
 

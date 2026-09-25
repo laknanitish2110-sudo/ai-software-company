@@ -7,7 +7,7 @@ import LandingPage from "@/components/LandingPage";
 import StartProject from "@/components/StartProject";
 import OnboardingModal from "@/components/OnboardingModal";
 import { useToast } from "@/components/Toast";
-import { createProject, getProjects, getDemoStatus, loadDemoCache } from "@/lib/api";
+import { createProject, getProjects, getDemoStatus, loadDemoCache, deleteProject, renameProject } from "@/lib/api";
 
 interface RecentProject {
   id: string;
@@ -28,10 +28,9 @@ export default function Home() {
     if (!user) return;
     getProjects()
       .then((projects) => {
-        const recent = projects
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 3);
-        setRecentProjects(recent);
+        const sorted = projects
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setRecentProjects(sorted);
         try {
           const dismissed = localStorage.getItem("onboarding_dismissed");
           if (projects.length === 0 && !dismissed) {
@@ -120,6 +119,19 @@ export default function Home() {
         recentProjects={recentProjects}
         hasDemo={hasDemo}
         onLoadDemo={handleLoadDemo}
+        onDeleteProject={async (id) => {
+          try {
+            await deleteProject(id);
+            setRecentProjects((prev) => prev.filter((p) => p.id !== id));
+            toast("success", "Deleted", "Project removed successfully.");
+          } catch { toast("error", "Error", "Failed to delete project."); }
+        }}
+        onRenameProject={async (id, name) => {
+          try {
+            await renameProject(id, name);
+            setRecentProjects((prev) => prev.map((p) => p.id === id ? { ...p, problem_statement: name } : p));
+          } catch { toast("error", "Error", "Failed to rename project."); }
+        }}
       />
     </>
   );

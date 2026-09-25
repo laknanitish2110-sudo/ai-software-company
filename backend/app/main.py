@@ -23,7 +23,11 @@ async def lifespan(app: FastAPI):
     from app.services.memory_engine import start_consolidation_worker, stop_consolidation_worker
     start_delegation_worker()
     start_consolidation_worker()
+    import asyncio
+    from app.core.scheduler import scheduler_loop
+    scheduler_task = asyncio.create_task(scheduler_loop(interval=60))
     yield
+    scheduler_task.cancel()
     stop_consolidation_worker()
     stop_delegation_worker()
     await stale_recovery_worker.stop()

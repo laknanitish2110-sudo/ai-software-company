@@ -54,6 +54,7 @@ from app.core.database import (
     create_user,
     get_user_by_email,
     delete_project,
+    rename_project,
     get_project_outputs,
     get_memory,
     list_projects,
@@ -95,6 +96,13 @@ from app.core.database import (
     provision_default_team,
     list_skills,
     create_skill,
+    create_scheduled_task,
+    list_scheduled_tasks,
+    get_scheduled_task,
+    update_scheduled_task,
+    delete_scheduled_task,
+    store_memory_embedding,
+    semantic_memory_search,
 )
 
 router = APIRouter()
@@ -704,6 +712,20 @@ async def delete_project_endpoint(project_id: str, current_user: dict = Depends(
     if not deleted:
         raise HTTPException(404, "Project not found")
     return {"status": "ok", "deleted": True}
+
+
+class RenameProjectRequest(BaseModel):
+    name: str
+
+
+@router.patch("/projects/{project_id}")
+async def rename_project_endpoint(project_id: str, req: RenameProjectRequest, current_user: dict = Depends(get_current_user)):
+    if not req.name or not req.name.strip():
+        raise HTTPException(400, "Name cannot be empty")
+    renamed = await rename_project(project_id, current_user["id"], req.name.strip())
+    if not renamed:
+        raise HTTPException(404, "Project not found")
+    return {"status": "ok", "name": req.name.strip()}
 
 
 @router.get("/projects/{project_id}/outputs")
@@ -1845,7 +1867,10 @@ def _handle_memory_commands(employee_id: str, user_text: str, response_text: str
 
 async def _save_memory_async(employee_id: str, content: str):
     try:
-        await create_memory(employee_id, "semantic", content, source="user_command", confidence=1.0, importance=0.7)
+        mem = await create_memory(employee_id, "semantic", content, source="user_command", confidence=1.0, importance=0.7)
+        from app.core.embeddings import embed_text, MODEL_NAME
+        vec = embed_text(content)
+        await store_memory_embedding(mem["id"], employee_id, vec, model=MODEL_NAME)
     except Exception as e:
         logger.warning(f"Failed to save memory: {e}")
 
@@ -1926,11 +1951,18 @@ async def api_create_memory(employee_id: str, req: CreateMemoryRequest, user=Dep
         raise HTTPException(404, "Employee not found")
     if req.type not in ("working", "episodic", "semantic", "preference", "procedural"):
         raise HTTPException(400, "Invalid memory type")
-    return await create_memory(
+    mem = await create_memory(
         employee_id, req.type, req.content, source=req.source,
         confidence=req.confidence, importance=req.importance,
         tags=req.tags, stale_after=req.stale_after,
     )
+    try:
+        from app.core.embeddings import embed_text, MODEL_NAME
+        vec = embed_text(req.content)
+        await store_memory_embedding(mem["id"], employee_id, vec, model=MODEL_NAME)
+    except Exception:
+        pass
+    return mem
 
 
 @router.patch("/memories/{memory_id}")
@@ -2204,3 +2236,164 @@ async def stripe_webhook(request: Request):
 
     await handle_webhook_event(event)
     return {"received": True}
+
+
+# ── Analytics endpoint ─────────────────────────────────────────────
+
+@router.get("/analytics")
+async def get_analytics(days: int = 30, current_user: dict = Depends(get_current_user)):
+    from app.core.database import get_usage_summary, get_activity_feed, list_employees as db_list_employees
+    user_id = current_user["id"]
+
+    usage = await get_usage_summary(user_id, days=days)
+    employees = await db_list_employees(user_id)
+    activities = await get_activity_feed(user_id, limit=100)
+
+    employee_stats = []
+    for emp in employees:
+        sessions = await list_employee_sessions(emp["id"], limit=100)
+        skills = await list_skills(emp["id"])
+        memories = await list_memories(emp["id"], limit=500)
+        total_messages = sum(1 for _ in sessions)
+        employee_stats.append({
+            "id": emp["id"],
+            "name": emp["name"],
+            "role": emp["role"],
+            "status": emp["status"],
+            "session_count": emp.get("session_count", len(sessions)),
+            "memory_count": emp.get("memory_count", len(memories)),
+            "skill_count": len([s for s in skills if s.get("is_active", True)]),
+            "last_active": emp.get("last_active"),
+        })
+
+    event_counts: dict[str, int] = {}
+    for a in activities:
+        et = a.get("event_type", "unknown")
+        event_counts[et] = event_counts.get(et, 0) + 1
+
+    return {
+        "usage": usage,
+        "employees": employee_stats,
+        "activity_summary": event_counts,
+        "total_activities": len(activities),
+        "period_days": days,
+    }
+
+
+# ─── Scheduled Tasks ─────────────────────────────────────────────
+
+class CreateScheduledTaskRequest(BaseModel):
+    employee_id: str
+    name: str
+    task_prompt: str
+    description: str | None = None
+    schedule_type: str = "once"
+    cron_expression: str | None = None
+    next_run_at: str | None = None
+
+
+@router.post("/scheduled-tasks")
+async def api_create_scheduled_task(req: CreateScheduledTaskRequest, user=Depends(get_current_user)):
+    emp = await get_employee(req.employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if req.schedule_type == "recurring" and not req.cron_expression:
+        raise HTTPException(400, "Recurring tasks require a cron_expression")
+    next_run = req.next_run_at
+    if req.schedule_type == "recurring" and req.cron_expression and not next_run:
+        from app.core.scheduler import compute_next_run
+        next_run = compute_next_run(req.cron_expression)
+    task = await create_scheduled_task(
+        user_id=user["id"], employee_id=req.employee_id,
+        name=req.name, task_prompt=req.task_prompt,
+        description=req.description, schedule_type=req.schedule_type,
+        cron_expression=req.cron_expression, next_run_at=next_run,
+    )
+    return task
+
+
+@router.get("/scheduled-tasks")
+async def api_list_scheduled_tasks(employee_id: str | None = None, user=Depends(get_current_user)):
+    tasks = await list_scheduled_tasks(user["id"], employee_id=employee_id)
+    return {"tasks": tasks}
+
+
+@router.get("/scheduled-tasks/{task_id}")
+async def api_get_scheduled_task(task_id: str, user=Depends(get_current_user)):
+    task = await get_scheduled_task(task_id)
+    if not task or task.get("user_id") != user["id"]:
+        raise HTTPException(404, "Task not found")
+    return task
+
+
+class UpdateScheduledTaskRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    task_prompt: str | None = None
+    is_active: bool | None = None
+    cron_expression: str | None = None
+
+
+@router.patch("/scheduled-tasks/{task_id}")
+async def api_update_scheduled_task(task_id: str, req: UpdateScheduledTaskRequest, user=Depends(get_current_user)):
+    task = await get_scheduled_task(task_id)
+    if not task or task.get("user_id") != user["id"]:
+        raise HTTPException(404, "Task not found")
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if "is_active" in updates:
+        updates["is_active"] = 1 if updates["is_active"] else 0
+    if "cron_expression" in updates and task.get("schedule_type") == "recurring":
+        from app.core.scheduler import compute_next_run
+        updates["next_run_at"] = compute_next_run(updates["cron_expression"])
+    updated = await update_scheduled_task(task_id, updates)
+    return updated
+
+
+@router.delete("/scheduled-tasks/{task_id}")
+async def api_delete_scheduled_task(task_id: str, user=Depends(get_current_user)):
+    deleted = await delete_scheduled_task(task_id, user["id"])
+    if not deleted:
+        raise HTTPException(404, "Task not found")
+    return {"status": "deleted"}
+
+
+@router.post("/scheduled-tasks/{task_id}/run")
+async def api_run_scheduled_task_now(task_id: str, user=Depends(get_current_user)):
+    task = await get_scheduled_task(task_id)
+    if not task or task.get("user_id") != user["id"]:
+        raise HTTPException(404, "Task not found")
+    from app.core.scheduler import run_scheduled_task
+    result = await run_scheduled_task(dict(task))
+    return result
+
+
+# ─── Semantic Memory ─────────────────────────────────────────────
+
+@router.post("/employees/{employee_id}/memories/embed")
+async def api_embed_memories(employee_id: str, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    memories = await list_memories(employee_id, limit=500)
+    from app.core.embeddings import embed_text, MODEL_NAME
+    embedded_count = 0
+    for mem in memories:
+        if not mem.get("content"):
+            continue
+        vec = embed_text(mem["content"])
+        await store_memory_embedding(mem["id"], employee_id, vec, model=MODEL_NAME)
+        embedded_count += 1
+    return {"embedded": embedded_count, "model": MODEL_NAME}
+
+
+@router.post("/employees/{employee_id}/memories/search")
+async def api_semantic_search(employee_id: str, q: str = "", limit: int = 10, user=Depends(get_current_user)):
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if not q.strip():
+        raise HTTPException(400, "Query cannot be empty")
+    from app.core.embeddings import embed_text
+    query_vec = embed_text(q)
+    results = await semantic_memory_search(employee_id, query_vec, limit=limit)
+    return {"results": results, "query": q}

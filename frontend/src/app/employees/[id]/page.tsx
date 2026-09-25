@@ -3,16 +3,20 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  getEmployee, listEmployeeSessions, createEmployeeSession, getSessionWithMessages,
+  getEmployee, updateEmployee, listEmployeeSessions, createEmployeeSession, getSessionWithMessages,
   sendEmployeeMessage, endEmployeeSession, listMemories, listSkills, extractSkills,
-  deactivateSkill, type Employee, type EmployeeSession, type SessionMessage,
-  type Memory, type EmployeeSkill,
+  deactivateSkill, getEmployeePermissions, updateEmployeePermission,
+  listScheduledTasks, createScheduledTask, deleteScheduledTask, runScheduledTaskNow,
+  type Employee, type EmployeeSession, type SessionMessage,
+  type Memory, type EmployeeSkill, type ToolPermission, type ScheduledTask,
 } from "@/lib/api";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 
-type Tab = "chat" | "memories" | "sessions" | "skills";
+type Tab = "chat" | "memories" | "sessions" | "skills" | "schedule" | "settings";
 
 const ROLE_META: Record<string, { icon: string; color: string }> = {
   "Business Analyst": { icon: "📋", color: "#0bbf8c" },
@@ -51,6 +55,16 @@ export default function EmployeeChatPage() {
   const [skills, setSkills] = useState<EmployeeSkill[]>([]);
   const [extracting, setExtracting] = useState(false);
   const [showDelegationInfo, setShowDelegationInfo] = useState(false);
+  const [permissions, setPermissions] = useState<ToolPermission[]>([]);
+  const [editPersona, setEditPersona] = useState("");
+  const [savingPersona, setSavingPersona] = useState(false);
+  const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [newTaskName, setNewTaskName] = useState("");
+  const [newTaskPrompt, setNewTaskPrompt] = useState("");
+  const [newTaskType, setNewTaskType] = useState<"once" | "recurring">("once");
+  const [newTaskCron, setNewTaskCron] = useState("");
+  const [savingTask, setSavingTask] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -101,6 +115,17 @@ export default function EmployeeChatPage() {
   useEffect(() => {
     if (sideTab !== "skills" || !employeeId) return;
     listSkills(employeeId).then(setSkills).catch(() => {});
+  }, [sideTab, employeeId]);
+
+  useEffect(() => {
+    if (sideTab !== "settings" || !employeeId) return;
+    getEmployeePermissions(employeeId).then(setPermissions).catch(() => {});
+    if (employee) setEditPersona(employee.persona || "");
+  }, [sideTab, employeeId, employee]);
+
+  useEffect(() => {
+    if (sideTab !== "schedule" || !employeeId) return;
+    listScheduledTasks(employeeId).then((d) => setScheduledTasks(d.tasks)).catch(() => {});
   }, [sideTab, employeeId]);
 
   async function handleStartSession() {
@@ -171,8 +196,41 @@ export default function EmployeeChatPage() {
 
   if (authLoading || loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg-base)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <ThinkingOrb state="connecting" size={64} theme="auto" />
+      <div style={{ display: "flex", height: "calc(100vh - 53px)", background: "var(--bg-base)" }}>
+        {/* Skeleton sidebar */}
+        <div style={{
+          width: 280, borderRight: "1px solid var(--border)", background: "var(--bg-card)",
+          display: "flex", flexDirection: "column", flexShrink: 0,
+        }}>
+          <div style={{ padding: "18px 16px", borderBottom: "1px solid var(--border)" }}>
+            <div className="skeleton skeleton-text-sm" style={{ width: 40, marginBottom: 14 }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div className="skeleton skeleton-circle" style={{ width: 32, height: 32 }} />
+              <div style={{ flex: 1 }}>
+                <div className="skeleton skeleton-text" style={{ width: "70%", marginBottom: 4 }} />
+                <div className="skeleton skeleton-text-sm" style={{ width: "50%" }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", borderBottom: "1px solid var(--border)", padding: "8px 12px", gap: 4 }}>
+            {[40, 50, 55, 35, 50, 50].map((w, i) => (
+              <div key={i} className="skeleton" style={{ width: w, height: 24, borderRadius: 6 }} />
+            ))}
+          </div>
+          <div style={{ padding: 12 }}>
+            <div className="skeleton skeleton-text" style={{ width: "80%", marginBottom: 12 }} />
+            <div className="skeleton skeleton-text" style={{ width: "60%" }} />
+          </div>
+        </div>
+        {/* Skeleton main area */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "14px 24px", borderBottom: "1px solid var(--border)", background: "var(--bg-card)" }}>
+            <div className="skeleton skeleton-text" style={{ width: 180 }} />
+          </div>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ThinkingOrb state="connecting" size={32} theme="auto" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -180,10 +238,30 @@ export default function EmployeeChatPage() {
   if (!user) return null;
   if (error && !employee) {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg-base)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ color: "#ed5f74", fontSize: 14, marginBottom: 16 }}>{error}</p>
-          <Link href="/employees" style={{ color: "var(--accent)", fontSize: 14 }}>Back to Team</Link>
+      <div style={{ minHeight: "calc(100vh - 53px)", background: "var(--bg-base)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ textAlign: "center", maxWidth: 400 }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 20, margin: "0 auto 20px",
+            background: "rgba(237,95,116,0.08)", border: "1px solid rgba(237,95,116,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ed5f74" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+          </div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>
+            Could not load employee
+          </h2>
+          <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 20, lineHeight: 1.6 }}>{error}</p>
+          <Link href="/employees" style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "10px 20px", borderRadius: 10,
+            background: "var(--accent)", color: "#fff", fontSize: 14, fontWeight: 600,
+            textDecoration: "none", boxShadow: "0 2px 8px rgba(99,91,255,0.25)",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M7.5 9L4.5 6L7.5 3"/></svg>
+            Back to Team
+          </Link>
         </div>
       </div>
     );
@@ -193,9 +271,9 @@ export default function EmployeeChatPage() {
   const MEMORY_TYPES = ["working", "episodic", "semantic", "preference", "procedural"];
 
   return (
-    <div style={{ display: "flex", height: "calc(100vh - 53px)", background: "var(--bg-base)" }}>
+    <div className="employee-layout" style={{ display: "flex", height: "calc(100vh - 53px)", background: "var(--bg-base)" }}>
       {/* Sidebar */}
-      <div style={{
+      <div className="employee-sidebar" style={{
         width: 280, borderRight: "1px solid var(--border)", background: "var(--bg-card)",
         display: "flex", flexDirection: "column", flexShrink: 0,
       }}>
@@ -245,7 +323,7 @@ export default function EmployeeChatPage() {
 
         {/* Tabs */}
         <div className="flex" style={{ borderBottom: "1px solid var(--border)" }}>
-          {(["chat", "sessions", "memories", "skills"] as Tab[]).map((tab) => (
+          {(["chat", "sessions", "memories", "skills", "schedule", "settings"] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setSideTab(tab)}
@@ -321,15 +399,32 @@ export default function EmployeeChatPage() {
 
           {sideTab === "sessions" && (
             <div>
+              <div style={{
+                fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase",
+                letterSpacing: "0.05em", marginBottom: 8,
+              }}>
+                Conversation History ({sessions.length})
+              </div>
               {sessions.length === 0 && (
-                <div style={{ textAlign: "center", padding: "32px 12px" }}>
-                  <div style={{ fontSize: 32, marginBottom: 10 }}>📂</div>
-                  <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No sessions yet</p>
+                <div style={{ textAlign: "center", padding: "28px 12px" }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 12, margin: "0 auto 10px",
+                    background: "var(--bg-elevated)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+                    </svg>
+                  </div>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 2 }}>No conversations yet</p>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Start a session to begin</p>
                 </div>
               )}
               {sessions.map((s) => {
                 const isActive = activeSession?.id === s.id;
                 const isLive = s.status === "active";
+                const summary = (s as unknown as Record<string, unknown>).summary as string | undefined;
+                const messageCount = (s as unknown as Record<string, unknown>).message_count as number | undefined;
                 return (
                   <button
                     key={s.id}
@@ -347,6 +442,8 @@ export default function EmployeeChatPage() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
                         {new Date(s.started_at).toLocaleDateString([], { month: "short", day: "numeric" })}
+                        {" "}
+                        {new Date(s.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
                       <span style={{
                         fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 4,
@@ -357,9 +454,19 @@ export default function EmployeeChatPage() {
                         {s.status}
                       </span>
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                      {new Date(s.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </div>
+                    {summary && (
+                      <div style={{
+                        fontSize: 11, color: "var(--text-secondary)", marginTop: 4,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {summary.length > 80 ? summary.slice(0, 80) + "..." : summary}
+                      </div>
+                    )}
+                    {messageCount != null && messageCount > 0 && (
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                        {messageCount} message{messageCount !== 1 ? "s" : ""}
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -380,9 +487,19 @@ export default function EmployeeChatPage() {
                 }}
               />
               {memories.length === 0 && (
-                <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 16 }}>
-                  No memories yet. Chat with {employee.name} to build memories.
-                </p>
+                <div style={{ textAlign: "center", padding: "28px 12px" }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 12, margin: "0 auto 10px",
+                    background: "var(--bg-elevated)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a10 10 0 0110 10 10 10 0 01-10 10A10 10 0 012 12 10 10 0 0112 2z"/><path d="M12 6v6l4 2"/>
+                    </svg>
+                  </div>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 2 }}>No memories yet</p>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>Chat with {employee.name} to build memories</p>
+                </div>
               )}
               {memories.map((m) => (
                 <div
@@ -437,9 +554,19 @@ export default function EmployeeChatPage() {
                 {extracting ? "Extracting..." : "Extract Skills from Conversations"}
               </button>
               {skills.length === 0 && (
-                <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 16 }}>
-                  No skills yet. {employee.name} learns skills from successful conversations.
-                </p>
+                <div style={{ textAlign: "center", padding: "28px 12px" }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 12, margin: "0 auto 10px",
+                    background: "var(--bg-elevated)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                  </div>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 2 }}>No skills learned</p>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.4 }}>{employee.name} learns skills from successful conversations</p>
+                </div>
               )}
               {skills.map((s) => (
                 <div
@@ -501,13 +628,330 @@ export default function EmployeeChatPage() {
               ))}
             </div>
           )}
+
+          {sideTab === "schedule" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Scheduled Tasks
+                </div>
+                <button
+                  onClick={() => setShowNewTask(!showNewTask)}
+                  style={{
+                    padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    background: "var(--accent-bg)", color: "var(--accent)",
+                    border: "1px solid var(--accent-border)", cursor: "pointer",
+                  }}
+                >{showNewTask ? "Cancel" : "+ New"}</button>
+              </div>
+
+              {showNewTask && (
+                <div style={{
+                  padding: 12, borderRadius: 10, marginBottom: 12,
+                  background: "var(--bg-elevated)", border: "1px solid var(--border)",
+                }}>
+                  <input
+                    value={newTaskName}
+                    onChange={(e) => setNewTaskName(e.target.value)}
+                    placeholder="Task name"
+                    style={{
+                      width: "100%", padding: "6px 10px", borderRadius: 6, fontSize: 12,
+                      border: "1px solid var(--border)", background: "var(--bg-base)",
+                      color: "var(--text-primary)", marginBottom: 8,
+                    }}
+                  />
+                  <textarea
+                    value={newTaskPrompt}
+                    onChange={(e) => setNewTaskPrompt(e.target.value)}
+                    placeholder="What should the employee do?"
+                    rows={3}
+                    style={{
+                      width: "100%", padding: "6px 10px", borderRadius: 6, fontSize: 12,
+                      border: "1px solid var(--border)", background: "var(--bg-base)",
+                      color: "var(--text-primary)", resize: "vertical", marginBottom: 8,
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    {(["once", "recurring"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setNewTaskType(t)}
+                        style={{
+                          padding: "4px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                          background: newTaskType === t ? "var(--accent-bg)" : "transparent",
+                          color: newTaskType === t ? "var(--accent)" : "var(--text-muted)",
+                          border: `1px solid ${newTaskType === t ? "var(--accent-border)" : "var(--border)"}`,
+                          cursor: "pointer", textTransform: "capitalize",
+                        }}
+                      >{t}</button>
+                    ))}
+                  </div>
+                  {newTaskType === "recurring" && (
+                    <input
+                      value={newTaskCron}
+                      onChange={(e) => setNewTaskCron(e.target.value)}
+                      placeholder="Cron expression (e.g. 0 9 * * 1 = Mon 9am)"
+                      style={{
+                        width: "100%", padding: "6px 10px", borderRadius: 6, fontSize: 12,
+                        border: "1px solid var(--border)", background: "var(--bg-base)",
+                        color: "var(--text-primary)", marginBottom: 8,
+                      }}
+                    />
+                  )}
+                  <button
+                    disabled={savingTask || !newTaskName.trim() || !newTaskPrompt.trim()}
+                    onClick={async () => {
+                      setSavingTask(true);
+                      try {
+                        const task = await createScheduledTask({
+                          employee_id: employeeId,
+                          name: newTaskName.trim(),
+                          task_prompt: newTaskPrompt.trim(),
+                          schedule_type: newTaskType,
+                          cron_expression: newTaskType === "recurring" ? newTaskCron : undefined,
+                        });
+                        setScheduledTasks((prev) => [task, ...prev]);
+                        setShowNewTask(false);
+                        setNewTaskName("");
+                        setNewTaskPrompt("");
+                        setNewTaskCron("");
+                      } catch { /* ignore */ }
+                      setSavingTask(false);
+                    }}
+                    style={{
+                      width: "100%", padding: "8px 0", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                      background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer",
+                      opacity: savingTask || !newTaskName.trim() || !newTaskPrompt.trim() ? 0.5 : 1,
+                    }}
+                  >{savingTask ? "Creating..." : "Create Task"}</button>
+                </div>
+              )}
+
+              {scheduledTasks.length === 0 && !showNewTask && (
+                <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
+                  No scheduled tasks yet. Create one to have this employee work on tasks automatically.
+                </div>
+              )}
+
+              {scheduledTasks.map((task) => {
+                const isActive = task.is_active === true || task.is_active === 1;
+                return (
+                  <div key={task.id} style={{
+                    padding: 12, borderRadius: 10, marginBottom: 8,
+                    background: "var(--bg-card)", border: "1px solid var(--border)",
+                    opacity: isActive ? 1 : 0.6,
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{task.name}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                          {task.schedule_type === "recurring" ? `Recurring: ${task.cron_expression}` : "One-time"}
+                          {task.run_count > 0 && ` · ${task.run_count} runs`}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await runScheduledTaskNow(task.id);
+                              const updated = await listScheduledTasks(employeeId);
+                              setScheduledTasks(updated.tasks);
+                            } catch { /* ignore */ }
+                          }}
+                          title="Run now"
+                          style={{
+                            padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                            background: "var(--success-bg)", color: "var(--success)",
+                            border: "1px solid var(--success-border)", cursor: "pointer",
+                          }}
+                        >Run</button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await deleteScheduledTask(task.id);
+                              setScheduledTasks((prev) => prev.filter((t) => t.id !== task.id));
+                            } catch { /* ignore */ }
+                          }}
+                          title="Delete"
+                          style={{
+                            padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                            background: "rgba(237,95,116,0.06)", color: "var(--danger)",
+                            border: "1px solid rgba(237,95,116,0.15)", cursor: "pointer",
+                          }}
+                        >Del</button>
+                      </div>
+                    </div>
+                    <div style={{
+                      fontSize: 11, color: "var(--text-secondary)", marginTop: 4,
+                      padding: "6px 8px", borderRadius: 6, background: "var(--bg-elevated)",
+                      whiteSpace: "pre-wrap", maxHeight: 60, overflow: "hidden",
+                    }}>{task.task_prompt}</div>
+                    {task.last_run_status && (
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
+                        Last run: <span style={{
+                          color: task.last_run_status === "success" ? "var(--success)" : "var(--danger)",
+                          fontWeight: 600,
+                        }}>{task.last_run_status}</span>
+                        {task.last_run_at && ` · ${new Date(task.last_run_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                      </div>
+                    )}
+                    {isActive && task.next_run_at && (
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                        Next run: {new Date(task.next_run_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {sideTab === "settings" && (
+            <div>
+              {/* Persona editor */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                  Persona
+                </div>
+                <textarea
+                  value={editPersona}
+                  onChange={(e) => setEditPersona(e.target.value)}
+                  rows={4}
+                  style={{
+                    width: "100%", padding: "8px 10px", borderRadius: 8,
+                    border: "1px solid var(--border)", background: "var(--bg-base)",
+                    fontSize: 12, color: "var(--text-primary)", outline: "none",
+                    resize: "vertical", fontFamily: "inherit", lineHeight: 1.5,
+                  }}
+                />
+                <button
+                  onClick={async () => {
+                    setSavingPersona(true);
+                    try {
+                      const updated = await updateEmployee(employeeId, { persona: editPersona });
+                      setEmployee(updated);
+                    } catch { /* ignore */ }
+                    setSavingPersona(false);
+                  }}
+                  disabled={savingPersona || editPersona === (employee.persona || "")}
+                  style={{
+                    marginTop: 6, width: "100%", padding: "6px 0", borderRadius: 6,
+                    border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                    background: editPersona !== (employee.persona || "") ? "var(--accent)" : "var(--bg-elevated)",
+                    color: editPersona !== (employee.persona || "") ? "#fff" : "var(--text-muted)",
+                    opacity: savingPersona ? 0.6 : 1,
+                  }}
+                >
+                  {savingPersona ? "Saving..." : "Save Persona"}
+                </button>
+              </div>
+
+              {/* Model selection */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                  LLM Model
+                </div>
+                <select
+                  value={(employee.config as Record<string, unknown>)?.model as string || "default"}
+                  onChange={async (e) => {
+                    const model = e.target.value === "default" ? undefined : e.target.value;
+                    try {
+                      const config = { ...(employee.config || {}), model: model || null };
+                      const updated = await updateEmployee(employeeId, { config });
+                      setEmployee(updated);
+                    } catch { /* ignore */ }
+                  }}
+                  style={{
+                    width: "100%", padding: "8px 10px", borderRadius: 8,
+                    border: "1px solid var(--border)", background: "var(--bg-base)",
+                    fontSize: 12, color: "var(--text-primary)", cursor: "pointer",
+                  }}
+                >
+                  <option value="default">Default (auto-select)</option>
+                  <option value="nvidia/llama-3.1-nemotron-ultra-253b-v1">Nemotron Ultra 253B</option>
+                  <option value="nvidia/llama-3.3-nemotron-super-49b-v1">Nemotron Super 49B</option>
+                  <option value="deepseek/deepseek-r1">DeepSeek R1</option>
+                  <option value="google/gemini-2.5-flash-preview">Gemini 2.5 Flash</option>
+                  <option value="meta-llama/llama-4-maverick">Llama 4 Maverick</option>
+                  <option value="qwen/qwen3-235b-a22b">Qwen 3 235B</option>
+                </select>
+                <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                  Override the LLM used for this employee&apos;s conversations
+                </p>
+              </div>
+
+              {/* Tool permissions */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+                  Tool Permissions
+                </div>
+                {permissions.length === 0 && (
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 12 }}>
+                    No tool permissions configured
+                  </p>
+                )}
+                {permissions.map((perm) => (
+                  <div
+                    key={perm.id}
+                    style={{
+                      padding: "8px 10px", borderRadius: 8, marginBottom: 4,
+                      background: "var(--bg-base)", border: "1px solid var(--border)",
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>
+                        {perm.tool}
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{perm.action}</div>
+                    </div>
+                    <select
+                      value={perm.permission}
+                      onChange={async (e) => {
+                        try {
+                          const updated = await updateEmployeePermission(employeeId, perm.tool, perm.action, e.target.value);
+                          setPermissions((prev) => prev.map((p) => p.id === perm.id ? updated : p));
+                        } catch { /* ignore */ }
+                      }}
+                      style={{
+                        padding: "3px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+                        border: "1px solid var(--border)", background: "var(--bg-card)",
+                        color: perm.permission === "allow" ? "var(--success)" : perm.permission === "deny" ? "var(--danger)" : "var(--warning)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="ask">Ask</option>
+                      <option value="deny">Deny</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              {/* Employee info */}
+              <div style={{ marginTop: 16, padding: "12px 10px", borderRadius: 8, background: "var(--bg-base)", border: "1px solid var(--border)" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Info
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+                  Created: {new Date(employee.created_at).toLocaleDateString()}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+                  Status: {employee.status}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+                  ID: <span style={{ fontFamily: "monospace", fontSize: 10 }}>{employee.id.slice(0, 12)}...</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Main chat area */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Chat header */}
-        <div style={{
+        <div className="chat-header" style={{
           padding: "14px 24px", borderBottom: "1px solid var(--border)",
           background: "var(--bg-card)",
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -550,69 +994,147 @@ export default function EmployeeChatPage() {
         </div>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-          {!activeSession && messages.length === 0 && (
-            <div style={{ textAlign: "center", padding: "80px 24px", maxWidth: 460, margin: "0 auto" }}>
-              <div style={{
-                width: 64, height: 64, borderRadius: 20, margin: "0 auto 20px",
-                background: `${(ROLE_META[employee.role] || { color: "#635bff" }).color}10`,
-                border: `1.5px solid ${(ROLE_META[employee.role] || { color: "#635bff" }).color}25`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 28,
-              }}>
-                {(ROLE_META[employee.role] || { icon: "🤖" }).icon}
-              </div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8, letterSpacing: "-0.02em" }}>
-                Chat with {employee.name}
-              </h2>
-              <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 24 }}>
-                Start a session to begin a conversation. {employee.name} remembers everything across sessions and learns new skills over time.
-              </p>
-              <button
-                onClick={handleStartSession}
-                style={{
-                  padding: "10px 28px", borderRadius: 10, border: "none",
-                  background: "var(--accent)", color: "#fff", fontSize: 14, fontWeight: 600,
-                  cursor: "pointer", boxShadow: "0 2px 12px rgba(99,91,255,0.3)",
-                  transition: "all 0.15s",
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-1px)"}
-                onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}
-              >
-                Start Session
-              </button>
+        <div className="chat-messages" style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+          {!activeSession && messages.length === 0 && (() => {
+            const roleColor = (ROLE_META[employee.role] || { color: "#635bff" }).color;
+            const SUGGESTIONS: Record<string, string[]> = {
+              "Business Analyst": ["Analyze the market for our product", "Create a competitive analysis", "Draft user stories for the next sprint"],
+              "Researcher": ["Research the latest trends in AI", "Find papers on retrieval-augmented generation", "Summarize key findings from our data"],
+              "Architect": ["Design the system architecture for a new feature", "Review our database schema", "Propose a microservices migration plan"],
+              "Software Engineer": ["Implement the authentication module", "Debug the failing API endpoint", "Write unit tests for the user service"],
+              "QA Engineer": ["Create a test plan for the login flow", "Run regression tests on the API", "Document the edge cases we need to cover"],
+              "Technical Writer": ["Write API documentation for our endpoints", "Create a user guide for onboarding", "Draft release notes for v2.0"],
+            };
+            const prompts = SUGGESTIONS[employee.role] || ["Help me with a task", "What can you do?", "Let's brainstorm ideas"];
+            return (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: "40px 24px" }}>
+                <div style={{ textAlign: "center", maxWidth: 520, width: "100%" }}>
+                  {/* Gradient orb backdrop */}
+                  <div style={{
+                    width: 80, height: 80, borderRadius: 24, margin: "0 auto 24px",
+                    background: `linear-gradient(135deg, ${roleColor}18, ${roleColor}08)`,
+                    border: `1.5px solid ${roleColor}25`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 36, position: "relative",
+                    boxShadow: `0 8px 32px ${roleColor}12`,
+                  }}>
+                    {(ROLE_META[employee.role] || { icon: "🤖" }).icon}
+                    <div style={{
+                      position: "absolute", bottom: -2, right: -2,
+                      width: 20, height: 20, borderRadius: 8,
+                      background: "var(--success)", border: "2px solid var(--bg-base)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <h2 style={{
+                    fontSize: 24, fontWeight: 800, color: "var(--text-primary)",
+                    marginBottom: 6, letterSpacing: "-0.03em",
+                  }}>
+                    {employee.name}
+                  </h2>
+                  <div style={{
+                    fontSize: 13, fontWeight: 600, color: roleColor,
+                    marginBottom: 8,
+                  }}>
+                    {employee.role}
+                  </div>
+                  <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 28, maxWidth: 380, margin: "0 auto 28px" }}>
+                    {employee.name} remembers everything across sessions and learns new skills over time. Start a conversation to begin.
+                  </p>
+                  <button
+                    onClick={handleStartSession}
+                    style={{
+                      padding: "12px 32px", borderRadius: 12, border: "none",
+                      background: `linear-gradient(135deg, ${roleColor}, ${roleColor}cc)`,
+                      color: "#fff", fontSize: 15, fontWeight: 700,
+                      cursor: "pointer",
+                      boxShadow: `0 4px 16px ${roleColor}40`,
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 6px 24px ${roleColor}50`; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = `0 4px 16px ${roleColor}40`; }}
+                  >
+                    Start Session
+                  </button>
 
-              {/* Delegation tip */}
-              <div style={{
-                marginTop: 32, padding: "16px 20px", borderRadius: 12,
-                background: "rgba(99,91,255,0.04)", border: "1px solid rgba(99,91,255,0.1)",
-                textAlign: "left",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#635bff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
-                  </svg>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>Team Delegation</span>
+                  {/* Suggested prompts */}
+                  <div style={{ marginTop: 36, textAlign: "left" }}>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, color: "var(--text-muted)",
+                      textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10,
+                      textAlign: "center",
+                    }}>
+                      Try asking
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {prompts.map((prompt, i) => (
+                        <button
+                          key={i}
+                          onClick={async () => {
+                            await handleStartSession();
+                            setInput(prompt);
+                          }}
+                          style={{
+                            padding: "12px 16px", borderRadius: 12,
+                            background: "var(--bg-card)", border: "1px solid var(--border)",
+                            cursor: "pointer", transition: "all 0.15s",
+                            display: "flex", alignItems: "center", gap: 10,
+                            textAlign: "left", width: "100%",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${roleColor}40`; e.currentTarget.style.background = `${roleColor}06`; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-card)"; }}
+                        >
+                          <div style={{
+                            width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                            background: `${roleColor}10`, border: `1px solid ${roleColor}20`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={roleColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                            </svg>
+                          </div>
+                          <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>{prompt}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Delegation tip */}
+                  <div style={{
+                    marginTop: 24, padding: "14px 18px", borderRadius: 12,
+                    background: "rgba(99,91,255,0.04)", border: "1px solid rgba(99,91,255,0.1)",
+                    textAlign: "left", display: "flex", alignItems: "flex-start", gap: 12,
+                  }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                      background: "rgba(99,91,255,0.08)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#635bff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+                      </svg>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--accent)", marginBottom: 4 }}>Team Delegation</div>
+                      <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: 0 }}>
+                        {employee.name} can delegate tasks to other team members for cross-functional work.
+                        <button
+                          onClick={() => setShowDelegationInfo(true)}
+                          style={{ background: "none", border: "none", padding: 0, fontSize: 12, fontWeight: 600, color: "var(--accent)", cursor: "pointer", marginLeft: 4 }}
+                        >
+                          Learn more
+                        </button>
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, margin: "0 0 10px" }}>
-                  {employee.name} can delegate tasks to other team members. Just ask:
-                  <span style={{ display: "block", fontStyle: "italic", color: "var(--text-muted)", marginTop: 4 }}>
-                    &ldquo;Delegate the business analysis to Sage&rdquo;
-                  </span>
-                </p>
-                <button
-                  onClick={() => setShowDelegationInfo(true)}
-                  style={{
-                    background: "none", border: "none", padding: 0,
-                    fontSize: 13, fontWeight: 600, color: "var(--accent)",
-                    cursor: "pointer", textDecoration: "none",
-                  }}
-                >
-                  Learn how delegation works &rarr;
-                </button>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {messages.map((msg) => {
             if (msg.role === "tool_calls") {
@@ -687,14 +1209,16 @@ export default function EmployeeChatPage() {
             if (msg.role !== "user" && msg.role !== "employee") return null;
             return (
               <div key={msg.id} style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 12 }}>
-                <div style={{
-                  maxWidth: "70%", padding: "10px 16px", borderRadius: 14,
-                  background: isUser ? "var(--accent)" : "var(--bg-card)",
-                  color: isUser ? "#fff" : "var(--text-primary)",
-                  border: isUser ? "none" : "1px solid var(--border)",
-                  fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word",
-                }}>
-                  {msg.content}
+                <div
+                  className={`msg-bubble md-content ${isUser ? "md-user" : ""}`}
+                  style={{
+                    maxWidth: "70%", padding: "10px 16px", borderRadius: 14,
+                    background: isUser ? "var(--accent)" : "var(--bg-card)",
+                    color: isUser ? "#fff" : "var(--text-primary)",
+                    border: isUser ? "none" : "1px solid var(--border)",
+                    wordBreak: "break-word",
+                  }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   <div style={{
                     fontSize: 11, marginTop: 4,
                     color: isUser ? "rgba(255,255,255,0.6)" : "var(--text-muted)",
@@ -727,7 +1251,7 @@ export default function EmployeeChatPage() {
 
         {/* Input */}
         {activeSession && activeSession.status === "active" && (
-          <div style={{ padding: "14px 24px 12px", borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}>
+          <div className="chat-input-area" style={{ padding: "14px 24px 12px", borderTop: "1px solid var(--border)", background: "var(--bg-card)" }}>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
               <div style={{
                 flex: 1, position: "relative", borderRadius: 14,

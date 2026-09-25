@@ -17,6 +17,8 @@ interface Props {
   recentProjects?: RecentProject[];
   hasDemo?: boolean;
   onLoadDemo?: () => void;
+  onDeleteProject?: (id: string) => Promise<void>;
+  onRenameProject?: (id: string, name: string) => Promise<void>;
 }
 
 const DOMAINS = [
@@ -77,7 +79,7 @@ function formatTimeAgo(iso: string): string {
   return `${days}d ago`;
 }
 
-export default function StartProject({ onStart, loading, recentProjects, hasDemo, onLoadDemo }: Props) {
+export default function StartProject({ onStart, loading, recentProjects, hasDemo, onLoadDemo, onDeleteProject, onRenameProject }: Props) {
   const [problem, setProblem] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
@@ -85,6 +87,11 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [unseenCount, setUnseenCount] = useState(0);
   const [activityDismissed, setActivityDismissed] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const loadActivity = useCallback(async () => {
     try {
@@ -451,51 +458,152 @@ export default function StartProject({ onStart, loading, recentProjects, hasDemo
             </div>
           </div>
 
-          {/* Recent Projects */}
-          {recentProjects && recentProjects.length > 0 && (
-            <div className="mt-8 animate-fade-in" style={{ animationDelay: "0.15s" }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                  Your Projects
-                </h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                  {recentProjects.length} recent
-                </span>
-              </div>
-              <div className="space-y-2">
-                {recentProjects.map((p) => {
-                  const statusInfo = STATUS_DISPLAY[p.status] || { label: p.status, color: "#8898aa", icon: "⚪" };
-                  return (
-                    <Link
-                      key={p.id}
-                      href={`/project/${p.id}`}
-                      className="flex items-center gap-3 p-4 rounded-xl transition-all"
+          {/* Project Management */}
+          {recentProjects && recentProjects.length > 0 && (() => {
+            const filtered = recentProjects.filter((p) => {
+              if (projectFilter !== "all") {
+                if (projectFilter === "active" && p.status === "completed") return false;
+                if (projectFilter === "completed" && p.status !== "completed") return false;
+              }
+              if (projectSearch.trim()) {
+                return p.problem_statement.toLowerCase().includes(projectSearch.toLowerCase());
+              }
+              return true;
+            });
+            return (
+              <div className="mt-8 animate-fade-in" style={{ animationDelay: "0.15s" }}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                    Your Projects
+                  </h3>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+                    {recentProjects.length} total
+                  </span>
+                </div>
+
+                {/* Search + filter bar */}
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    placeholder="Search projects..."
+                    value={projectSearch}
+                    onChange={(e) => setProjectSearch(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-lg text-xs"
+                    style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)", outline: "none" }}
+                  />
+                  {(["all", "active", "completed"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setProjectFilter(f)}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-semibold capitalize"
                       style={{
-                        background: "var(--bg-card)",
-                        border: "1px solid var(--border)",
-                        textDecoration: "none",
+                        background: projectFilter === f ? "var(--accent-bg)" : "var(--bg-elevated)",
+                        color: projectFilter === f ? "var(--accent)" : "var(--text-muted)",
+                        border: `1px solid ${projectFilter === f ? "var(--accent-border)" : "var(--border)"}`,
+                        cursor: "pointer",
                       }}
-                      onMouseOver={(e) => { e.currentTarget.style.borderColor = "var(--accent-border)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                      onMouseOut={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.transform = "translateY(0)"; }}
-                    >
-                      <span className="text-sm shrink-0">{statusInfo.icon}</span>
-                      <span className="text-sm truncate flex-1" style={{ color: "var(--text-secondary)" }}>
-                        {p.problem_statement.length > 70
-                          ? p.problem_statement.slice(0, 70) + "..."
-                          : p.problem_statement}
-                      </span>
-                      <span
-                        className="text-[10px] font-semibold px-2 py-1 rounded-md shrink-0"
-                        style={{ background: `${statusInfo.color}12`, color: statusInfo.color, border: `1px solid ${statusInfo.color}20` }}
+                    >{f}</button>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  {filtered.map((p) => {
+                    const statusInfo = STATUS_DISPLAY[p.status] || { label: p.status, color: "#8898aa", icon: "⚪" };
+                    const isEditing = editingId === p.id;
+                    const isDeleting = confirmDeleteId === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-3 p-4 rounded-xl transition-all"
+                        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
                       >
-                        {statusInfo.label}
-                      </span>
-                    </Link>
-                  );
-                })}
+                        <span className="text-sm shrink-0">{statusInfo.icon}</span>
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            onKeyDown={async (e) => {
+                              if (e.key === "Enter" && editName.trim()) {
+                                await onRenameProject?.(p.id, editName.trim());
+                                setEditingId(null);
+                              }
+                              if (e.key === "Escape") setEditingId(null);
+                            }}
+                            onBlur={() => setEditingId(null)}
+                            className="flex-1 text-sm px-2 py-1 rounded"
+                            style={{ background: "var(--bg-base)", border: "1px solid var(--accent)", color: "var(--text-primary)", outline: "none" }}
+                          />
+                        ) : (
+                          <Link
+                            href={`/project/${p.id}`}
+                            className="text-sm truncate flex-1"
+                            style={{ color: "var(--text-secondary)", textDecoration: "none" }}
+                          >
+                            {p.problem_statement.length > 60 ? p.problem_statement.slice(0, 60) + "..." : p.problem_statement}
+                          </Link>
+                        )}
+                        <span
+                          className="text-[10px] font-semibold px-2 py-1 rounded-md shrink-0"
+                          style={{ background: `${statusInfo.color}12`, color: statusInfo.color, border: `1px solid ${statusInfo.color}20` }}
+                        >{statusInfo.label}</span>
+
+                        {/* Actions */}
+                        {!isEditing && !isDeleting && (
+                          <div className="flex gap-1 shrink-0">
+                            <button
+                              onClick={() => { setEditingId(p.id); setEditName(p.problem_statement); }}
+                              title="Rename"
+                              className="p-1.5 rounded-md"
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12 }}
+                              onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent)"}
+                              onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-muted)"}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(p.id)}
+                              title="Delete"
+                              className="p-1.5 rounded-md"
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 12 }}
+                              onMouseEnter={(e) => e.currentTarget.style.color = "var(--danger)"}
+                              onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-muted)"}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                              </svg>
+                            </button>
+                          </div>
+                        )}
+                        {isDeleting && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[11px]" style={{ color: "var(--danger)" }}>Delete?</span>
+                            <button
+                              onClick={async () => { await onDeleteProject?.(p.id); setConfirmDeleteId(null); }}
+                              className="text-[11px] font-semibold px-2 py-1 rounded"
+                              style={{ background: "rgba(237,95,116,0.1)", color: "var(--danger)", border: "none", cursor: "pointer" }}
+                            >Yes</button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="text-[11px] font-semibold px-2 py-1 rounded"
+                              style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", border: "none", cursor: "pointer" }}
+                            >No</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {filtered.length === 0 && (
+                    <div className="text-center py-6 text-xs" style={{ color: "var(--text-muted)" }}>
+                      No projects match your search
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 

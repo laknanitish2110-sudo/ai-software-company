@@ -501,6 +501,43 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_usage_user ON usage_records(user_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_usage_type ON usage_records(record_type);
+
+                CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    employee_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    task_prompt TEXT NOT NULL,
+                    schedule_type TEXT NOT NULL DEFAULT 'once',
+                    cron_expression TEXT,
+                    next_run_at TEXT,
+                    last_run_at TEXT,
+                    last_run_status TEXT,
+                    last_run_result TEXT,
+                    run_count INTEGER NOT NULL DEFAULT 0,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sched_user ON scheduled_tasks(user_id);
+                CREATE INDEX IF NOT EXISTS idx_sched_employee ON scheduled_tasks(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_sched_next ON scheduled_tasks(next_run_at, is_active);
+
+                CREATE TABLE IF NOT EXISTS memory_embeddings (
+                    id TEXT PRIMARY KEY,
+                    memory_id TEXT NOT NULL UNIQUE,
+                    employee_id TEXT NOT NULL,
+                    embedding TEXT NOT NULL,
+                    model TEXT NOT NULL DEFAULT 'local',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (memory_id) REFERENCES memories(id),
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_membed_employee ON memory_embeddings(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_membed_memory ON memory_embeddings(memory_id);
             """)
         else:
             # PostgreSQL DDL
@@ -817,6 +854,39 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_usage_user ON usage_records(user_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_usage_type ON usage_records(record_type);
+
+                CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                    id VARCHAR(255) PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    employee_id VARCHAR(255) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    task_prompt TEXT NOT NULL,
+                    schedule_type VARCHAR(32) NOT NULL DEFAULT 'once',
+                    cron_expression VARCHAR(128),
+                    next_run_at TEXT,
+                    last_run_at TEXT,
+                    last_run_status VARCHAR(32),
+                    last_run_result TEXT,
+                    run_count INTEGER NOT NULL DEFAULT 0,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sched_user ON scheduled_tasks(user_id);
+                CREATE INDEX IF NOT EXISTS idx_sched_employee ON scheduled_tasks(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_sched_next ON scheduled_tasks(next_run_at, is_active);
+
+                CREATE TABLE IF NOT EXISTS memory_embeddings (
+                    id VARCHAR(255) PRIMARY KEY,
+                    memory_id VARCHAR(255) NOT NULL UNIQUE REFERENCES memories(id) ON DELETE CASCADE,
+                    employee_id VARCHAR(255) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    embedding TEXT NOT NULL,
+                    model VARCHAR(64) NOT NULL DEFAULT 'local',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_membed_employee ON memory_embeddings(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_membed_memory ON memory_embeddings(memory_id);
             """)
         await db.commit()
 
@@ -1149,6 +1219,22 @@ async def delete_project(project_id: str, user_id: str) -> bool:
         await db.execute("DELETE FROM agent_outputs WHERE project_id = ?", (project_id,))
         await db.execute("DELETE FROM executions WHERE project_id = ?", (project_id,))
         await db.execute("DELETE FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id))
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def rename_project(project_id: str, user_id: str, new_name: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT id FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id))
+        if not await cursor.fetchone():
+            return False
+        await db.execute(
+            "UPDATE projects SET problem_statement = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+            (new_name, now_iso(), project_id, user_id),
+        )
         await db.commit()
         return True
     finally:
@@ -2018,6 +2104,36 @@ async def deactivate_memory(memory_id: str) -> bool:
 
 
 async def retrieve_memories_for_context(employee_id: str, query: str | None = None, limit: int = 15) -> list[dict]:
+    if query:
+        try:
+            emb_count_db = await get_db()
+            try:
+                cursor = await emb_count_db.execute(
+                    "SELECT COUNT(*) as cnt FROM memory_embeddings WHERE employee_id = ?",
+                    (employee_id,))
+                row = await cursor.fetchone()
+                has_embeddings = row and row["cnt"] > 0
+            finally:
+                await emb_count_db.close()
+
+            if has_embeddings:
+                from app.core.embeddings import embed_text
+                query_vec = embed_text(query)
+                semantic_results = await semantic_memory_search(employee_id, query_vec, limit=limit)
+                if semantic_results:
+                    now = now_iso()
+                    db2 = await get_db()
+                    try:
+                        for sr in semantic_results:
+                            await db2.execute("UPDATE memories SET last_accessed = ? WHERE id = ?",
+                                              (now, sr["memory_id"]))
+                        await db2.commit()
+                    finally:
+                        await db2.close()
+                    return semantic_results
+        except Exception:
+            pass
+
     db = await get_db()
     try:
         now = now_iso()
@@ -2704,3 +2820,186 @@ async def get_usage_summary(user_id: str, days: int = 30) -> dict:
         }
     finally:
         await db.close()
+
+
+# ─── Scheduled Tasks ─────────────────────────────────────────────
+
+async def create_scheduled_task(
+    user_id: str, employee_id: str, name: str, task_prompt: str,
+    description: str | None = None, schedule_type: str = "once",
+    cron_expression: str | None = None, next_run_at: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        tid = new_id()
+        ts = now_iso()
+        if not next_run_at and schedule_type == "once":
+            next_run_at = ts
+        await db.execute(
+            """INSERT INTO scheduled_tasks
+               (id, user_id, employee_id, name, description, task_prompt,
+                schedule_type, cron_expression, next_run_at, is_active, run_count, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)""",
+            (tid, user_id, employee_id, name, description, task_prompt,
+             schedule_type, cron_expression, next_run_at, ts, ts),
+        )
+        await db.commit()
+        return {"id": tid, "user_id": user_id, "employee_id": employee_id,
+                "name": name, "description": description, "task_prompt": task_prompt,
+                "schedule_type": schedule_type, "cron_expression": cron_expression,
+                "next_run_at": next_run_at, "is_active": True, "run_count": 0,
+                "created_at": ts, "updated_at": ts}
+    finally:
+        await db.close()
+
+
+async def list_scheduled_tasks(user_id: str, employee_id: str | None = None) -> list[dict]:
+    db = await get_db()
+    try:
+        sql = "SELECT * FROM scheduled_tasks WHERE user_id = ?"
+        params: list = [user_id]
+        if employee_id:
+            sql += " AND employee_id = ?"
+            params.append(employee_id)
+        sql += " ORDER BY created_at DESC"
+        cursor = await db.execute(sql, tuple(params))
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def get_scheduled_task(task_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
+        return await cursor.fetchone()
+    finally:
+        await db.close()
+
+
+async def update_scheduled_task(task_id: str, updates: dict) -> dict | None:
+    db = await get_db()
+    try:
+        allowed = {"name", "description", "task_prompt", "schedule_type", "cron_expression",
+                    "next_run_at", "last_run_at", "last_run_status", "last_run_result",
+                    "run_count", "is_active"}
+        parts, vals = [], []
+        for k, v in updates.items():
+            if k not in allowed:
+                continue
+            parts.append(f"{k} = ?")
+            vals.append(v)
+        if not parts:
+            return await get_scheduled_task(task_id)
+        parts.append("updated_at = ?")
+        vals.append(now_iso())
+        vals.append(task_id)
+        await db.execute(f"UPDATE scheduled_tasks SET {', '.join(parts)} WHERE id = ?", vals)
+        await db.commit()
+        return await get_scheduled_task(task_id)
+    finally:
+        await db.close()
+
+
+async def delete_scheduled_task(task_id: str, user_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "DELETE FROM scheduled_tasks WHERE id = ? AND user_id = ?", (task_id, user_id))
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def get_due_scheduled_tasks(limit: int = 20) -> list[dict]:
+    db = await get_db()
+    try:
+        now = now_iso()
+        cursor = await db.execute(
+            """SELECT st.*, e.name as employee_name, e.role as employee_role
+               FROM scheduled_tasks st
+               JOIN employees e ON st.employee_id = e.id
+               WHERE st.is_active = 1 AND st.next_run_at IS NOT NULL AND st.next_run_at <= ?
+               ORDER BY st.next_run_at ASC LIMIT ?""",
+            (now, limit),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+# ─── Memory Embeddings (Semantic Memory) ─────────────────────────
+
+async def store_memory_embedding(memory_id: str, employee_id: str,
+                                  embedding: list[float], model: str = "local") -> dict:
+    db = await get_db()
+    try:
+        eid = new_id()
+        ts = now_iso()
+        embedding_json = json.dumps(embedding)
+        await db.execute(
+            "DELETE FROM memory_embeddings WHERE memory_id = ?", (memory_id,))
+        await db.execute(
+            """INSERT INTO memory_embeddings (id, memory_id, employee_id, embedding, model, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (eid, memory_id, employee_id, embedding_json, model, ts),
+        )
+        await db.commit()
+        return {"id": eid, "memory_id": memory_id, "model": model, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_memory_embeddings(employee_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT me.memory_id, me.embedding, m.content, m.type, m.importance, m.confidence
+               FROM memory_embeddings me
+               JOIN memories m ON me.memory_id = m.id
+               WHERE me.employee_id = ? AND m.is_active = 1
+               ORDER BY m.importance DESC""",
+            (employee_id,),
+        )
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("embedding"), str):
+                r["embedding"] = json.loads(r["embedding"])
+        return rows
+    finally:
+        await db.close()
+
+
+async def semantic_memory_search(employee_id: str, query_embedding: list[float],
+                                  limit: int = 10) -> list[dict]:
+    all_embeddings = await get_memory_embeddings(employee_id)
+    if not all_embeddings:
+        return []
+
+    def cosine_sim(a: list[float], b: list[float]) -> float:
+        dot = sum(x * y for x, y in zip(a, b))
+        mag_a = sum(x * x for x in a) ** 0.5
+        mag_b = sum(x * x for x in b) ** 0.5
+        if mag_a == 0 or mag_b == 0:
+            return 0.0
+        return dot / (mag_a * mag_b)
+
+    scored = []
+    for row in all_embeddings:
+        emb = row["embedding"]
+        if not emb:
+            continue
+        sim = cosine_sim(query_embedding, emb)
+        importance_boost = (row.get("importance") or 0.5) * 0.1
+        scored.append({
+            "memory_id": row["memory_id"],
+            "content": row["content"],
+            "type": row["type"],
+            "importance": row.get("importance"),
+            "confidence": row.get("confidence"),
+            "similarity": sim + importance_boost,
+        })
+
+    scored.sort(key=lambda x: x["similarity"], reverse=True)
+    return scored[:limit]
