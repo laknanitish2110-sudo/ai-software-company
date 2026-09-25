@@ -1076,3 +1076,107 @@ export async function semanticMemorySearch(employeeId: string, query: string, li
   });
   return checkedJson(res, "Failed to search memories");
 }
+
+
+// ─── Autonomous Execution ───────────────────────────────────────
+
+export interface AutonomousExecution {
+  id: string;
+  employee_id: string;
+  user_id: string;
+  session_id: string | null;
+  goal: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  state: string;
+  plan: string | null;
+  iteration: number;
+  max_iterations: number;
+  max_tokens: number;
+  tokens_used: number;
+  max_time_seconds: number;
+  sandbox_id: string | null;
+  error: string | null;
+  result: string | null;
+  progress: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ExecutionLog {
+  id: string;
+  execution_id: string;
+  iteration: number;
+  state: string;
+  action: string;
+  input_summary: string | null;
+  output_summary: string | null;
+  tokens_used: number;
+  duration_ms: number | null;
+  success: number;
+  created_at: string;
+}
+
+export interface ExecutionArtifact {
+  id: string;
+  execution_id: string;
+  type: string;
+  title: string;
+  path: string | null;
+  content: string | null;
+  language: string | null;
+  status: string;
+  metadata: string | null;
+  created_at: string;
+}
+
+export async function startExecution(employeeId: string, goal: string, options?: {
+  session_id?: string;
+  max_iterations?: number;
+  max_time_seconds?: number;
+}): Promise<{ execution: AutonomousExecution; message: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/execute`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ goal, ...options }),
+  });
+  return checkedJson(res, "Failed to start execution");
+}
+
+export async function listExecutions(employeeId: string, status?: string): Promise<{ executions: AutonomousExecution[] }> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/executions?${params}`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to list executions");
+}
+
+export async function getExecution(executionId: string): Promise<{ execution: AutonomousExecution }> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to get execution");
+}
+
+export async function getExecutionLogs(executionId: string): Promise<{ logs: ExecutionLog[] }> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/logs`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to get execution logs");
+}
+
+export async function getExecutionArtifacts(executionId: string): Promise<{ artifacts: ExecutionArtifact[] }> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/artifacts`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to get execution artifacts");
+}
+
+export async function cancelExecution2(executionId: string): Promise<{ cancelled: boolean }> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/cancel`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to cancel execution");
+}

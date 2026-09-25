@@ -435,6 +435,64 @@ async def init_db():
                 CREATE INDEX IF NOT EXISTS idx_delegation_status ON delegation_tasks(status);
                 CREATE INDEX IF NOT EXISTS idx_delegation_from ON delegation_tasks(from_employee_id);
 
+                CREATE TABLE IF NOT EXISTS autonomous_executions (
+                    id TEXT PRIMARY KEY,
+                    employee_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    session_id TEXT,
+                    goal TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    state TEXT NOT NULL DEFAULT 'PLANNING',
+                    plan TEXT,
+                    iteration INTEGER NOT NULL DEFAULT 0,
+                    max_iterations INTEGER NOT NULL DEFAULT 25,
+                    max_tokens INTEGER NOT NULL DEFAULT 200000,
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    max_time_seconds INTEGER NOT NULL DEFAULT 600,
+                    sandbox_id TEXT,
+                    error TEXT,
+                    result TEXT,
+                    progress TEXT,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id),
+                    FOREIGN KEY (session_id) REFERENCES employee_sessions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_auto_exec_employee ON autonomous_executions(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_auto_exec_status ON autonomous_executions(status);
+
+                CREATE TABLE IF NOT EXISTS execution_artifacts (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    path TEXT,
+                    content TEXT,
+                    language TEXT,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    metadata TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_exec_artifacts ON execution_artifacts(execution_id);
+
+                CREATE TABLE IF NOT EXISTS execution_logs (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    iteration INTEGER NOT NULL,
+                    state TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    input_summary TEXT,
+                    output_summary TEXT,
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER,
+                    success INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_exec_logs ON execution_logs(execution_id, iteration);
+
                 CREATE TABLE IF NOT EXISTS activity_log (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -789,6 +847,60 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_delegation_status ON delegation_tasks(status);
                 CREATE INDEX IF NOT EXISTS idx_delegation_from ON delegation_tasks(from_employee_id);
+
+                CREATE TABLE IF NOT EXISTS autonomous_executions (
+                    id VARCHAR(255) PRIMARY KEY,
+                    employee_id VARCHAR(255) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+                    user_id VARCHAR(255) NOT NULL,
+                    session_id VARCHAR(255) REFERENCES employee_sessions(id) ON DELETE SET NULL,
+                    goal TEXT NOT NULL,
+                    status VARCHAR(64) NOT NULL DEFAULT 'pending',
+                    state VARCHAR(64) NOT NULL DEFAULT 'PLANNING',
+                    plan TEXT,
+                    iteration INTEGER NOT NULL DEFAULT 0,
+                    max_iterations INTEGER NOT NULL DEFAULT 25,
+                    max_tokens INTEGER NOT NULL DEFAULT 200000,
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    max_time_seconds INTEGER NOT NULL DEFAULT 600,
+                    sandbox_id VARCHAR(255),
+                    error TEXT,
+                    result TEXT,
+                    progress TEXT,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_auto_exec_employee ON autonomous_executions(employee_id);
+                CREATE INDEX IF NOT EXISTS idx_auto_exec_status ON autonomous_executions(status);
+
+                CREATE TABLE IF NOT EXISTS execution_artifacts (
+                    id VARCHAR(255) PRIMARY KEY,
+                    execution_id VARCHAR(255) NOT NULL REFERENCES autonomous_executions(id) ON DELETE CASCADE,
+                    type VARCHAR(64) NOT NULL,
+                    title VARCHAR(255) NOT NULL,
+                    path VARCHAR(512),
+                    content TEXT,
+                    language VARCHAR(64),
+                    status VARCHAR(64) NOT NULL DEFAULT 'draft',
+                    metadata TEXT,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_exec_artifacts ON execution_artifacts(execution_id);
+
+                CREATE TABLE IF NOT EXISTS execution_logs (
+                    id VARCHAR(255) PRIMARY KEY,
+                    execution_id VARCHAR(255) NOT NULL REFERENCES autonomous_executions(id) ON DELETE CASCADE,
+                    iteration INTEGER NOT NULL,
+                    state VARCHAR(64) NOT NULL,
+                    action TEXT NOT NULL,
+                    input_summary TEXT,
+                    output_summary TEXT,
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER,
+                    success INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_exec_logs ON execution_logs(execution_id, iteration);
 
                 CREATE TABLE IF NOT EXISTS activity_log (
                     id VARCHAR(255) PRIMARY KEY,
@@ -3003,3 +3115,165 @@ async def semantic_memory_search(employee_id: str, query_embedding: list[float],
 
     scored.sort(key=lambda x: x["similarity"], reverse=True)
     return scored[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Autonomous execution CRUD
+# ---------------------------------------------------------------------------
+
+async def create_autonomous_execution(
+    employee_id: str, user_id: str, goal: str,
+    session_id: str | None = None,
+    max_iterations: int = 25, max_tokens: int = 200000,
+    max_time_seconds: int = 600,
+) -> dict:
+    db = await get_db()
+    try:
+        eid = _id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO autonomous_executions
+               (id, employee_id, user_id, session_id, goal, status, state,
+                max_iterations, max_tokens, max_time_seconds, created_at)
+               VALUES (?, ?, ?, ?, ?, 'pending', 'PLANNING', ?, ?, ?, ?)""",
+            (eid, employee_id, user_id, session_id, goal,
+             max_iterations, max_tokens, max_time_seconds, ts),
+        )
+        await db.commit()
+        return {
+            "id": eid, "employee_id": employee_id, "user_id": user_id,
+            "session_id": session_id, "goal": goal, "status": "pending",
+            "state": "PLANNING", "iteration": 0,
+            "max_iterations": max_iterations, "max_tokens": max_tokens,
+            "max_time_seconds": max_time_seconds, "tokens_used": 0,
+            "created_at": ts,
+        }
+    finally:
+        await db.close()
+
+
+async def get_autonomous_execution(execution_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM autonomous_executions WHERE id = ?", (execution_id,))
+        return await cursor.fetchone()
+    finally:
+        await db.close()
+
+
+async def update_autonomous_execution(execution_id: str, updates: dict):
+    db = await get_db()
+    try:
+        parts, vals = [], []
+        for k, v in updates.items():
+            parts.append(f"{k} = ?")
+            vals.append(v)
+        if not parts:
+            return
+        vals.append(execution_id)
+        await db.execute(
+            f"UPDATE autonomous_executions SET {', '.join(parts)} WHERE id = ?",
+            tuple(vals),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def list_autonomous_executions(
+    employee_id: str | None = None, user_id: str | None = None,
+    status: str | None = None, limit: int = 20,
+) -> list[dict]:
+    db = await get_db()
+    try:
+        clauses, params = [], []
+        if employee_id:
+            clauses.append("employee_id = ?")
+            params.append(employee_id)
+        if user_id:
+            clauses.append("user_id = ?")
+            params.append(user_id)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        cursor = await db.execute(
+            f"SELECT * FROM autonomous_executions {where} ORDER BY created_at DESC LIMIT ?",
+            tuple(params),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def add_execution_log(
+    execution_id: str, iteration: int, state: str, action: str,
+    input_summary: str | None = None, output_summary: str | None = None,
+    tokens_used: int = 0, duration_ms: int | None = None, success: bool = True,
+) -> dict:
+    db = await get_db()
+    try:
+        lid = _id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO execution_logs
+               (id, execution_id, iteration, state, action, input_summary,
+                output_summary, tokens_used, duration_ms, success, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (lid, execution_id, iteration, state, action,
+             input_summary, output_summary, tokens_used, duration_ms,
+             1 if success else 0, ts),
+        )
+        await db.commit()
+        return {"id": lid, "execution_id": execution_id, "iteration": iteration,
+                "state": state, "action": action}
+    finally:
+        await db.close()
+
+
+async def add_execution_artifact(
+    execution_id: str, artifact_type: str, title: str,
+    path: str | None = None, content: str | None = None,
+    language: str | None = None, metadata: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        aid = _id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO execution_artifacts
+               (id, execution_id, type, title, path, content, language, status, metadata, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)""",
+            (aid, execution_id, artifact_type, title, path, content, language, metadata, ts),
+        )
+        await db.commit()
+        return {"id": aid, "execution_id": execution_id, "type": artifact_type,
+                "title": title, "path": path, "status": "draft"}
+    finally:
+        await db.close()
+
+
+async def list_execution_artifacts(execution_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM execution_artifacts WHERE execution_id = ? ORDER BY created_at",
+            (execution_id,),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def get_execution_logs(execution_id: str, limit: int = 100) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM execution_logs WHERE execution_id = ? ORDER BY iteration, created_at LIMIT ?",
+            (execution_id, limit),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()

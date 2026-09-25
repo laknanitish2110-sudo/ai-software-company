@@ -1700,6 +1700,39 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
 
     user_msg = await add_session_message(session_id, "user", req.content)
 
+    auto_trigger = _detect_autonomous_trigger(req.content, emp)
+    if auto_trigger:
+        try:
+            from app.core.database import create_autonomous_execution, list_autonomous_executions
+            running = await list_autonomous_executions(employee_id=emp["id"], status="running", limit=1)
+            if not running:
+                execution = await create_autonomous_execution(
+                    employee_id=emp["id"],
+                    user_id=user["id"],
+                    goal=req.content,
+                    session_id=session_id,
+                    max_iterations=25,
+                    max_time_seconds=600,
+                )
+                from app.services.execution_controller import start_autonomous_execution
+                await start_autonomous_execution(execution["id"])
+
+                auto_msg = (
+                    f"I'm starting autonomous mode to complete this task. "
+                    f"I'll plan, implement, test, and deliver the result without interruption.\n\n"
+                    f"**Execution ID:** `{execution['id']}`\n"
+                    f"**Goal:** {req.content[:200]}\n\n"
+                    f"You can track progress in real-time. I'll notify you when it's done."
+                )
+                employee_msg = await add_session_message(session_id, "employee", auto_msg)
+                return {
+                    "user_message": user_msg,
+                    "employee_message": employee_msg,
+                    "autonomous_execution": execution,
+                }
+        except Exception as e:
+            logger.warning(f"Autonomous trigger failed, falling back to chat: {e}")
+
     await update_employee(emp["id"], user["id"], {"status": "thinking"})
 
     memories = await retrieve_memories_for_context(emp["id"], query=req.content, limit=10)
@@ -1851,6 +1884,28 @@ async def _get_user_github_token(user_id: str) -> str | None:
         return deobfuscate_token(token_enc, JWT_SECRET)
     except Exception:
         return None
+
+
+def _detect_autonomous_trigger(content: str, employee: dict) -> bool:
+    """Detect if a message should trigger autonomous execution mode."""
+    if employee.get("role", "").lower() != "software engineer":
+        return False
+
+    lower = content.lower().strip()
+
+    if lower.startswith("/auto ") or lower.startswith("/build "):
+        return True
+
+    auto_phrases = [
+        "build me", "create a", "build a", "implement a", "develop a",
+        "write a complete", "make a", "set up a", "scaffold a",
+        "build the", "create the", "implement the",
+    ]
+    if any(lower.startswith(p) for p in auto_phrases):
+        if len(content) > 30:
+            return True
+
+    return False
 
 
 def _handle_memory_commands(employee_id: str, user_text: str, response_text: str):
@@ -2397,3 +2452,124 @@ async def api_semantic_search(employee_id: str, q: str = "", limit: int = 10, us
     query_vec = embed_text(q)
     results = await semantic_memory_search(employee_id, query_vec, limit=limit)
     return {"results": results, "query": q}
+
+
+# ─── Autonomous Execution ───────────────────────────────────────
+
+class StartExecutionRequest(BaseModel):
+    goal: str
+    session_id: str | None = None
+    max_iterations: int = 25
+    max_time_seconds: int = 600
+
+
+@router.post("/employees/{employee_id}/execute")
+async def api_start_execution(employee_id: str, req: StartExecutionRequest, user=Depends(get_current_user)):
+    """Start an autonomous execution for an employee."""
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    from app.services.billing import check_usage_limit
+    within_limit, limit_msg = await check_usage_limit(user["id"], "employee_message")
+    if not within_limit:
+        return JSONResponse(status_code=429, content={"error": "PLAN_LIMIT", "message": limit_msg})
+
+    from app.core.database import create_autonomous_execution, list_autonomous_executions
+    running = await list_autonomous_executions(employee_id=employee_id, status="running", limit=1)
+    if running:
+        raise HTTPException(409, "This employee already has a running execution. Cancel it first or wait.")
+
+    execution = await create_autonomous_execution(
+        employee_id=employee_id,
+        user_id=user["id"],
+        goal=req.goal,
+        session_id=req.session_id,
+        max_iterations=min(req.max_iterations, 50),
+        max_time_seconds=min(req.max_time_seconds, 1800),
+    )
+
+    from app.services.execution_controller import start_autonomous_execution
+    await start_autonomous_execution(execution["id"])
+
+    return {
+        "execution": execution,
+        "message": f"Autonomous execution started. {emp['name']} is working on: {req.goal[:100]}",
+    }
+
+
+@router.get("/employees/{employee_id}/executions")
+async def api_list_executions(employee_id: str, status: str | None = None, limit: int = 20, user=Depends(get_current_user)):
+    """List autonomous executions for an employee."""
+    emp = await get_employee(employee_id, user["id"])
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    from app.core.database import list_autonomous_executions
+    executions = await list_autonomous_executions(
+        employee_id=employee_id, status=status, limit=limit,
+    )
+    return {"executions": executions}
+
+
+@router.get("/executions/{execution_id}")
+async def api_get_execution(execution_id: str, user=Depends(get_current_user)):
+    """Get details of an autonomous execution."""
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+    return {"execution": execution}
+
+
+@router.get("/executions/{execution_id}/logs")
+async def api_get_execution_logs(execution_id: str, limit: int = 100, user=Depends(get_current_user)):
+    """Get iteration logs for an execution."""
+    from app.core.database import get_autonomous_execution, get_execution_logs
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    logs = await get_execution_logs(execution_id, limit=limit)
+    return {"logs": logs}
+
+
+@router.get("/executions/{execution_id}/artifacts")
+async def api_get_execution_artifacts(execution_id: str, user=Depends(get_current_user)):
+    """Get artifacts produced by an execution."""
+    from app.core.database import get_autonomous_execution, list_execution_artifacts
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    artifacts = await list_execution_artifacts(execution_id)
+    return {"artifacts": artifacts}
+
+
+@router.post("/executions/{execution_id}/cancel")
+async def api_cancel_execution(execution_id: str, user=Depends(get_current_user)):
+    """Cancel a running autonomous execution."""
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+    if execution["status"] != "running":
+        raise HTTPException(400, f"Execution is {execution['status']}, not running")
+
+    from app.services.execution_controller import cancel_autonomous_execution
+    cancelled = await cancel_autonomous_execution(execution_id)
+    if not cancelled:
+        from app.core.database import update_autonomous_execution, now_iso
+        await update_autonomous_execution(execution_id, {
+            "status": "cancelled", "completed_at": now_iso(),
+        })
+
+    return {"cancelled": True, "execution_id": execution_id}

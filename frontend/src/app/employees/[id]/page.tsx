@@ -11,10 +11,13 @@ import {
   sendEmployeeMessage, endEmployeeSession, listMemories, listSkills, extractSkills,
   deactivateSkill, getEmployeePermissions, updateEmployeePermission,
   listScheduledTasks, createScheduledTask, deleteScheduledTask, runScheduledTaskNow,
+  listExecutions,
   type Employee, type EmployeeSession, type SessionMessage,
   type Memory, type EmployeeSkill, type ToolPermission, type ScheduledTask,
+  type AutonomousExecution,
 } from "@/lib/api";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
+import ExecutionProgress from "@/components/ExecutionProgress";
 
 type Tab = "chat" | "memories" | "sessions" | "skills" | "schedule" | "settings";
 
@@ -65,6 +68,7 @@ export default function EmployeeChatPage() {
   const [newTaskType, setNewTaskType] = useState<"once" | "recurring">("once");
   const [newTaskCron, setNewTaskCron] = useState("");
   const [savingTask, setSavingTask] = useState(false);
+  const [activeExecutionId, setActiveExecutionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -86,6 +90,12 @@ export default function EmployeeChatPage() {
           setActiveSession(active);
           setMessages(full.messages);
         }
+        try {
+          const { executions } = await listExecutions(employeeId, "running");
+          if (executions.length > 0) {
+            setActiveExecutionId(executions[0].id);
+          }
+        } catch { /* no running executions */ }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load employee");
       } finally {
@@ -161,7 +171,11 @@ export default function EmployeeChatPage() {
     setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
-      const result = await sendEmployeeMessage(activeSession.id, text);
+      const result = await sendEmployeeMessage(activeSession.id, text) as Record<string, unknown>;
+      if (result.autonomous_execution) {
+        const exec = result.autonomous_execution as AutonomousExecution;
+        setActiveExecutionId(exec.id);
+      }
       const full = await getSessionWithMessages(activeSession.id);
       setMessages(full.messages);
     } catch (e) {
@@ -1135,6 +1149,13 @@ export default function EmployeeChatPage() {
               </div>
             );
           })()}
+
+          {activeExecutionId && (
+            <ExecutionProgress
+              executionId={activeExecutionId}
+              onDismiss={() => setActiveExecutionId(null)}
+            />
+          )}
 
           {messages.map((msg) => {
             if (msg.role === "tool_calls") {
