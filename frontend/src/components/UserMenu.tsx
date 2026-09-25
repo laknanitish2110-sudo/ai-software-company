@@ -55,6 +55,7 @@ export default function UserMenu() {
   const NAV = [
     { href: "/", label: "Home" },
     { href: "/employees", label: "Team" },
+    { href: "/goals", label: "Goals" },
     { href: "/analytics", label: "Analytics" },
     { href: "/settings", label: "Settings" },
   ];

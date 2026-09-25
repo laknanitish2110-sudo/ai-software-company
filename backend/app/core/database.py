@@ -596,6 +596,50 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_membed_employee ON memory_embeddings(employee_id);
                 CREATE INDEX IF NOT EXISTS idx_membed_memory ON memory_embeddings(memory_id);
+
+                CREATE TABLE IF NOT EXISTS goals (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    priority TEXT NOT NULL DEFAULT 'medium',
+                    owner_employee_id TEXT,
+                    plan TEXT,
+                    result TEXT,
+                    progress INTEGER NOT NULL DEFAULT 0,
+                    total_tasks INTEGER NOT NULL DEFAULT 0,
+                    completed_tasks INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    FOREIGN KEY (owner_employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_goals_user ON goals(user_id, status);
+                CREATE INDEX IF NOT EXISTS idx_goals_owner ON goals(owner_employee_id);
+
+                CREATE TABLE IF NOT EXISTS goal_tasks (
+                    id TEXT PRIMARY KEY,
+                    goal_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    assigned_employee_id TEXT,
+                    depends_on TEXT,
+                    execution_type TEXT NOT NULL DEFAULT 'delegation',
+                    execution_id TEXT,
+                    result TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+                    FOREIGN KEY (assigned_employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_gtasks_goal ON goal_tasks(goal_id, sort_order);
+                CREATE INDEX IF NOT EXISTS idx_gtasks_status ON goal_tasks(goal_id, status);
+                CREATE INDEX IF NOT EXISTS idx_gtasks_employee ON goal_tasks(assigned_employee_id);
             """)
         else:
             # PostgreSQL DDL
@@ -999,6 +1043,46 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_membed_employee ON memory_embeddings(employee_id);
                 CREATE INDEX IF NOT EXISTS idx_membed_memory ON memory_embeddings(memory_id);
+
+                CREATE TABLE IF NOT EXISTS goals (
+                    id VARCHAR(255) PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    title VARCHAR(500) NOT NULL,
+                    description TEXT,
+                    status VARCHAR(32) NOT NULL DEFAULT 'draft',
+                    priority VARCHAR(16) NOT NULL DEFAULT 'medium',
+                    owner_employee_id VARCHAR(255) REFERENCES employees(id) ON DELETE SET NULL,
+                    plan TEXT,
+                    result TEXT,
+                    progress INTEGER NOT NULL DEFAULT 0,
+                    total_tasks INTEGER NOT NULL DEFAULT 0,
+                    completed_tasks INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_goals_user ON goals(user_id, status);
+                CREATE INDEX IF NOT EXISTS idx_goals_owner ON goals(owner_employee_id);
+
+                CREATE TABLE IF NOT EXISTS goal_tasks (
+                    id VARCHAR(255) PRIMARY KEY,
+                    goal_id VARCHAR(255) NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+                    title VARCHAR(500) NOT NULL,
+                    description TEXT,
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    assigned_employee_id VARCHAR(255) REFERENCES employees(id) ON DELETE SET NULL,
+                    depends_on TEXT,
+                    execution_type VARCHAR(32) NOT NULL DEFAULT 'delegation',
+                    execution_id VARCHAR(255),
+                    result TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_gtasks_goal ON goal_tasks(goal_id, sort_order);
+                CREATE INDEX IF NOT EXISTS idx_gtasks_status ON goal_tasks(goal_id, status);
+                CREATE INDEX IF NOT EXISTS idx_gtasks_employee ON goal_tasks(assigned_employee_id);
             """)
         await db.commit()
 
@@ -3324,5 +3408,228 @@ async def get_execution_logs(execution_id: str, limit: int = 100) -> list[dict]:
             (execution_id, limit),
         )
         return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+# ── Goals Engine ──────────────────────────────────────────────────────
+
+async def create_goal(
+    user_id: str, title: str, description: str | None = None,
+    priority: str = "medium", owner_employee_id: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        goal_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO goals
+               (id, user_id, title, description, status, priority, owner_employee_id, progress, total_tasks, completed_tasks, created_at)
+               VALUES (?, ?, ?, ?, 'draft', ?, ?, 0, 0, 0, ?)""",
+            (goal_id, user_id, title, description, priority, owner_employee_id, ts),
+        )
+        await db.commit()
+        return {
+            "id": goal_id, "user_id": user_id, "title": title, "description": description,
+            "status": "draft", "priority": priority, "owner_employee_id": owner_employee_id,
+            "plan": None, "result": None, "progress": 0, "total_tasks": 0, "completed_tasks": 0,
+            "created_at": ts, "started_at": None, "completed_at": None,
+        }
+    finally:
+        await db.close()
+
+
+async def get_goal(goal_id: str, user_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM goals WHERE id = ? AND user_id = ?", (goal_id, user_id),
+        )
+        row = await cursor.fetchone()
+        if row and isinstance(row.get("plan"), str):
+            try:
+                row["plan"] = json.loads(row["plan"])
+            except Exception:
+                pass
+        return row
+    finally:
+        await db.close()
+
+
+async def list_goals(user_id: str, status: str | None = None) -> list[dict]:
+    db = await get_db()
+    try:
+        query = "SELECT * FROM goals WHERE user_id = ?"
+        params: list = [user_id]
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC"
+        cursor = await db.execute(query, params)
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("plan"), str):
+                try:
+                    r["plan"] = json.loads(r["plan"])
+                except Exception:
+                    pass
+        return rows
+    finally:
+        await db.close()
+
+
+async def update_goal(goal_id: str, user_id: str, updates: dict) -> dict | None:
+    db = await get_db()
+    try:
+        if "plan" in updates and not isinstance(updates["plan"], str):
+            updates["plan"] = json.dumps(updates["plan"])
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        vals = list(updates.values()) + [goal_id, user_id]
+        await db.execute(f"UPDATE goals SET {sets} WHERE id = ? AND user_id = ?", vals)
+        await db.commit()
+        cursor = await db.execute("SELECT * FROM goals WHERE id = ?", (goal_id,))
+        row = await cursor.fetchone()
+        if row and isinstance(row.get("plan"), str):
+            try:
+                row["plan"] = json.loads(row["plan"])
+            except Exception:
+                pass
+        return row
+    finally:
+        await db.close()
+
+
+async def delete_goal(goal_id: str, user_id: str) -> bool:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "DELETE FROM goals WHERE id = ? AND user_id = ?", (goal_id, user_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def create_goal_task(
+    goal_id: str, title: str, description: str | None = None,
+    assigned_employee_id: str | None = None, depends_on: list[str] | None = None,
+    execution_type: str = "delegation", sort_order: int = 0,
+) -> dict:
+    db = await get_db()
+    try:
+        task_id = new_id()
+        ts = now_iso()
+        deps_str = json.dumps(depends_on) if depends_on else None
+        await db.execute(
+            """INSERT INTO goal_tasks
+               (id, goal_id, title, description, status, assigned_employee_id, depends_on, execution_type, sort_order, created_at)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)""",
+            (task_id, goal_id, title, description, assigned_employee_id, deps_str, execution_type, sort_order, ts),
+        )
+        await db.commit()
+        return {
+            "id": task_id, "goal_id": goal_id, "title": title, "description": description,
+            "status": "pending", "assigned_employee_id": assigned_employee_id,
+            "depends_on": depends_on, "execution_type": execution_type,
+            "execution_id": None, "result": None, "sort_order": sort_order,
+            "created_at": ts, "started_at": None, "completed_at": None,
+        }
+    finally:
+        await db.close()
+
+
+async def list_goal_tasks(goal_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM goal_tasks WHERE goal_id = ? ORDER BY sort_order, created_at", (goal_id,),
+        )
+        rows = await cursor.fetchall()
+        for r in rows:
+            if isinstance(r.get("depends_on"), str):
+                try:
+                    r["depends_on"] = json.loads(r["depends_on"])
+                except Exception:
+                    r["depends_on"] = None
+        return rows
+    finally:
+        await db.close()
+
+
+async def update_goal_task(task_id: str, updates: dict) -> dict | None:
+    db = await get_db()
+    try:
+        if "depends_on" in updates and not isinstance(updates["depends_on"], str):
+            updates["depends_on"] = json.dumps(updates["depends_on"])
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        vals = list(updates.values()) + [task_id]
+        await db.execute(f"UPDATE goal_tasks SET {sets} WHERE id = ?", vals)
+        await db.commit()
+        cursor = await db.execute("SELECT * FROM goal_tasks WHERE id = ?", (task_id,))
+        row = await cursor.fetchone()
+        if row and isinstance(row.get("depends_on"), str):
+            try:
+                row["depends_on"] = json.loads(row["depends_on"])
+            except Exception:
+                row["depends_on"] = None
+        return row
+    finally:
+        await db.close()
+
+
+async def get_goal_progress(goal_id: str) -> dict:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT status, COUNT(*) as cnt FROM goal_tasks WHERE goal_id = ? GROUP BY status",
+            (goal_id,),
+        )
+        rows = await cursor.fetchall()
+        total = sum(r["cnt"] for r in rows)
+        completed = sum(r["cnt"] for r in rows if r["status"] == "completed")
+        failed = sum(r["cnt"] for r in rows if r["status"] == "failed")
+        running = sum(r["cnt"] for r in rows if r["status"] == "running")
+        pending = sum(r["cnt"] for r in rows if r["status"] == "pending")
+        blocked = sum(r["cnt"] for r in rows if r["status"] == "blocked")
+        progress = int((completed / total) * 100) if total > 0 else 0
+        return {
+            "total": total, "completed": completed, "failed": failed,
+            "running": running, "pending": pending, "blocked": blocked,
+            "progress": progress,
+        }
+    finally:
+        await db.close()
+
+
+async def get_next_runnable_goal_tasks(goal_id: str) -> list[dict]:
+    """Get pending tasks whose dependencies are all completed."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM goal_tasks WHERE goal_id = ? AND status = 'pending' ORDER BY sort_order",
+            (goal_id,),
+        )
+        pending = await cursor.fetchall()
+
+        cursor2 = await db.execute(
+            "SELECT id FROM goal_tasks WHERE goal_id = ? AND status = 'completed'",
+            (goal_id,),
+        )
+        completed_ids = {r["id"] for r in await cursor2.fetchall()}
+
+        runnable = []
+        for t in pending:
+            deps_raw = t.get("depends_on")
+            if isinstance(deps_raw, str):
+                try:
+                    deps = json.loads(deps_raw)
+                except Exception:
+                    deps = None
+            else:
+                deps = deps_raw
+            if not deps or all(d in completed_ids for d in deps):
+                runnable.append(t)
+        return runnable
     finally:
         await db.close()

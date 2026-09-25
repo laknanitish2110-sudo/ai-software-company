@@ -1180,3 +1180,119 @@ export async function cancelExecution2(executionId: string): Promise<{ cancelled
   });
   return checkedJson(res, "Failed to cancel execution");
 }
+
+// ── Goals Engine ──────────────────────────────────────────────────────
+
+export interface Goal {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  owner_employee_id: string | null;
+  plan: unknown;
+  result: string | null;
+  progress: number;
+  total_tasks: number;
+  completed_tasks: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface GoalTask {
+  id: string;
+  goal_id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  assigned_employee_id: string | null;
+  depends_on: string[] | null;
+  execution_type: string;
+  execution_id: string | null;
+  result: string | null;
+  sort_order: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export async function createGoal(data: {
+  title: string;
+  description?: string;
+  priority?: string;
+  owner_employee_id?: string;
+}): Promise<{ goal: Goal }> {
+  const res = await fetchWithTimeout(`${API_BASE}/goals`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return checkedJson(res, "Failed to create goal");
+}
+
+export async function listGoals(status?: string): Promise<{ goals: Goal[] }> {
+  const qs = status ? `?status=${status}` : "";
+  const res = await fetchWithTimeout(`${API_BASE}/goals${qs}`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to list goals");
+}
+
+export async function getGoal(goalId: string): Promise<{ goal: Goal }> {
+  const res = await fetchWithTimeout(`${API_BASE}/goals/${goalId}`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to get goal");
+}
+
+export async function updateGoal(goalId: string, data: Partial<Goal>): Promise<{ goal: Goal }> {
+  const res = await fetchWithTimeout(`${API_BASE}/goals/${goalId}`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return checkedJson(res, "Failed to update goal");
+}
+
+export async function deleteGoal(goalId: string): Promise<{ deleted: boolean }> {
+  const res = await fetchWithTimeout(`${API_BASE}/goals/${goalId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to delete goal");
+}
+
+export async function decomposeGoal(goalId: string): Promise<{ goal_id: string; tasks: GoalTask[] }> {
+  const res = await fetchWithTimeout(`${API_BASE}/goals/${goalId}/decompose`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to decompose goal");
+}
+
+export async function startGoal(goalId: string): Promise<{ goal_id: string; launched: number }> {
+  const res = await fetchWithTimeout(`${API_BASE}/goals/${goalId}/start`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to start goal");
+}
+
+export async function listGoalTasks(goalId: string): Promise<{ tasks: GoalTask[] }> {
+  const res = await fetchWithTimeout(`${API_BASE}/goals/${goalId}/tasks`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to list goal tasks");
+}
+
+export async function getGoalProgress(goalId: string): Promise<{
+  goal_id: string; total: number; completed: number; failed: number;
+  running: number; pending: number; blocked: number; progress: number;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/goals/${goalId}/progress`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to get goal progress");
+}

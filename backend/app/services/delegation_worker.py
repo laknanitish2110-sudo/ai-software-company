@@ -199,13 +199,47 @@ async def process_delegation_task(task: dict) -> dict:
         )
 
         logger.info(f"Delegation {task_id}: {from_name} → {target['name']} completed ({_worker_id[:8]})")
+
+        try:
+            await _notify_goal_engine(task_id, response_text, user_id, success=True)
+        except Exception as ge:
+            logger.debug(f"Goal engine notification: {ge}")
+
         return {"success": True, "result": response_text}
 
     except Exception as e:
         logger.error(f"Delegation {task_id} failed: {e}")
         await update_employee(to_emp_id, user_id, {"status": "idle"})
         await update_delegation_task(task_id, {"status": "failed", "result": str(e)})
+
+        try:
+            await _notify_goal_engine(task_id, str(e), user_id, success=False)
+        except Exception:
+            pass
+
         return {"success": False, "error": str(e)}
+
+
+async def _notify_goal_engine(delegation_task_id: str, result: str, user_id: str, success: bool):
+    """Check if this delegation task is linked to a goal task, and notify the goal engine."""
+    from app.core.database import get_db
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT id FROM goal_tasks WHERE execution_id = ?", (delegation_task_id,),
+        )
+        row = await cursor.fetchone()
+    finally:
+        await db.close()
+
+    if not row:
+        return
+
+    from app.services.goal_engine import on_task_completed, on_task_failed
+    if success:
+        await on_task_completed(row["id"], result, user_id)
+    else:
+        await on_task_failed(row["id"], result, user_id)
 
 
 async def _try_claim_task(task_id: str) -> bool:

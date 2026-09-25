@@ -2573,3 +2573,99 @@ async def api_cancel_execution(execution_id: str, user=Depends(get_current_user)
         })
 
     return {"cancelled": True, "execution_id": execution_id}
+
+
+# ── Goals Engine ──────────────────────────────────────────────────────
+
+@router.post("/goals")
+async def api_create_goal(request: Request, user=Depends(get_current_user)):
+    body = await request.json()
+    title = body.get("title", "").strip()
+    if not title:
+        raise HTTPException(400, "Goal title is required")
+    from app.core.database import create_goal
+    goal = await create_goal(
+        user_id=user["id"],
+        title=title,
+        description=body.get("description"),
+        priority=body.get("priority", "medium"),
+        owner_employee_id=body.get("owner_employee_id"),
+    )
+    return {"goal": goal}
+
+
+@router.get("/goals")
+async def api_list_goals(status: str | None = None, user=Depends(get_current_user)):
+    from app.core.database import list_goals
+    goals = await list_goals(user["id"], status=status)
+    return {"goals": goals}
+
+
+@router.get("/goals/{goal_id}")
+async def api_get_goal(goal_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_goal
+    goal = await get_goal(goal_id, user["id"])
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    return {"goal": goal}
+
+
+@router.patch("/goals/{goal_id}")
+async def api_update_goal(goal_id: str, request: Request, user=Depends(get_current_user)):
+    body = await request.json()
+    allowed = {"title", "description", "priority", "owner_employee_id", "status"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(400, "No valid fields to update")
+    from app.core.database import update_goal
+    goal = await update_goal(goal_id, user["id"], updates)
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    return {"goal": goal}
+
+
+@router.delete("/goals/{goal_id}")
+async def api_delete_goal(goal_id: str, user=Depends(get_current_user)):
+    from app.core.database import delete_goal
+    deleted = await delete_goal(goal_id, user["id"])
+    if not deleted:
+        raise HTTPException(404, "Goal not found")
+    return {"deleted": True}
+
+
+@router.post("/goals/{goal_id}/decompose")
+async def api_decompose_goal(goal_id: str, user=Depends(get_current_user)):
+    from app.services.goal_engine import decompose_goal
+    result = await decompose_goal(goal_id, user["id"])
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+@router.post("/goals/{goal_id}/start")
+async def api_start_goal(goal_id: str, user=Depends(get_current_user)):
+    from app.services.goal_engine import start_goal
+    result = await start_goal(goal_id, user["id"])
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+@router.get("/goals/{goal_id}/tasks")
+async def api_list_goal_tasks(goal_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_goal, list_goal_tasks
+    goal = await get_goal(goal_id, user["id"])
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    tasks = await list_goal_tasks(goal_id)
+    return {"tasks": tasks}
+
+
+@router.get("/goals/{goal_id}/progress")
+async def api_goal_progress(goal_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_goal, get_goal_progress
+    goal = await get_goal(goal_id, user["id"])
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    progress = await get_goal_progress(goal_id)
+    return {"goal_id": goal_id, **progress}
