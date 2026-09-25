@@ -450,6 +450,25 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_activity_unseen ON activity_log(user_id, seen);
+
+                CREATE TABLE IF NOT EXISTS decision_log (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT,
+                    employee_id TEXT,
+                    decision_type TEXT NOT NULL,
+                    input_context TEXT,
+                    options TEXT,
+                    selected_choice TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    backend TEXT NOT NULL,
+                    latency_ms REAL,
+                    created_at TEXT NOT NULL,
+                    actual_outcome TEXT,
+                    outcome_correct INTEGER,
+                    human_override TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_decision_type ON decision_log(decision_type, created_at);
+                CREATE INDEX IF NOT EXISTS idx_decision_project ON decision_log(project_id);
             """)
         else:
             # PostgreSQL DDL
@@ -717,6 +736,25 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log(user_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_activity_unseen ON activity_log(user_id, seen);
+
+                CREATE TABLE IF NOT EXISTS decision_log (
+                    id VARCHAR(255) PRIMARY KEY,
+                    project_id VARCHAR(255),
+                    employee_id VARCHAR(255),
+                    decision_type VARCHAR(64) NOT NULL,
+                    input_context TEXT,
+                    options TEXT,
+                    selected_choice VARCHAR(255) NOT NULL,
+                    confidence REAL NOT NULL,
+                    backend VARCHAR(32) NOT NULL,
+                    latency_ms REAL,
+                    created_at TEXT NOT NULL,
+                    actual_outcome TEXT,
+                    outcome_correct INTEGER,
+                    human_override TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_decision_type ON decision_log(decision_type, created_at);
+                CREATE INDEX IF NOT EXISTS idx_decision_project ON decision_log(project_id);
             """)
         await db.commit()
 
@@ -2417,6 +2455,70 @@ async def get_unseen_activity_count(user_id: str) -> int:
         )
         row = await cursor.fetchone()
         return row["cnt"] if row else 0
+    finally:
+        await db.close()
+
+
+# ── Decision Log ──────────────────────────────────────────────────
+
+async def log_decision(
+    decision_type: str,
+    selected_choice: str,
+    confidence: float,
+    backend: str,
+    latency_ms: float = 0.0,
+    project_id: str = None,
+    employee_id: str = None,
+    input_context: str = None,
+    options: str = None,
+) -> str:
+    import uuid
+    from datetime import datetime, timezone
+    db = await get_db()
+    try:
+        row_id = str(uuid.uuid4())
+        await db.execute(
+            """INSERT INTO decision_log
+               (id, project_id, employee_id, decision_type, input_context, options,
+                selected_choice, confidence, backend, latency_ms, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (row_id, project_id, employee_id, decision_type,
+             (input_context or "")[:2000], options,
+             selected_choice, confidence, backend, latency_ms,
+             datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+        return row_id
+    finally:
+        await db.close()
+
+
+async def record_decision_outcome(decision_id: str, actual_outcome: str, outcome_correct: bool, human_override: str = None):
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE decision_log SET actual_outcome = ?, outcome_correct = ?, human_override = ? WHERE id = ?",
+            (actual_outcome, 1 if outcome_correct else 0, human_override, decision_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_decision_stats(decision_type: str = None, limit: int = 100) -> list[dict]:
+    db = await get_db()
+    try:
+        if decision_type:
+            cursor = await db.execute(
+                "SELECT * FROM decision_log WHERE decision_type = ? ORDER BY created_at DESC LIMIT ?",
+                (decision_type, limit),
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM decision_log ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+        return [dict(r) for r in await cursor.fetchall()]
     finally:
         await db.close()
 

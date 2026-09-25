@@ -1,13 +1,14 @@
 """
-Decision Engine — central decision layer for ForgeAI.
+Decision Engine — central decision layer for ARIA.
 
 Wraps Jev/Jeff client with question definitions and confidence thresholds.
 Falls back to existing logic when confidence is below threshold.
-Logs all decisions for future evaluation dataset building.
+Logs all decisions for evaluation dataset building.
 """
 
 import logging
 import json
+import asyncio
 from typing import Optional
 from dataclasses import asdict
 
@@ -123,8 +124,9 @@ class DecisionEngine:
             self._log_decision(f"assess_{name}", state, result)
         return results
 
-    def _log_decision(self, decision_type: str, state: str, result: DecisionResult):
-        """Log decision for evaluation dataset building."""
+    def _log_decision(self, decision_type: str, state: str, result: DecisionResult,
+                      project_id: str = None, employee_id: str = None):
+        """Log decision to database for evaluation dataset building."""
         logger.info(
             f"DECISION [{decision_type}] "
             f"choice={result.choice} "
@@ -132,6 +134,23 @@ class DecisionEngine:
             f"backend={result.backend} "
             f"latency={result.latency_ms:.0f}ms"
         )
+        try:
+            from app.core.database import log_decision
+            asyncio.get_event_loop().create_task(
+                log_decision(
+                    decision_type=decision_type,
+                    selected_choice=result.choice,
+                    confidence=result.confidence,
+                    backend=result.backend,
+                    latency_ms=result.latency_ms,
+                    project_id=project_id,
+                    employee_id=employee_id,
+                    input_context=state[:2000],
+                    options=json.dumps(result.probabilities),
+                )
+            )
+        except Exception as e:
+            logger.debug(f"Decision persistence skipped: {e}")
 
 
 decision_engine = DecisionEngine()

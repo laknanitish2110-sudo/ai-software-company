@@ -163,7 +163,38 @@ class RepairLoopService:
                             qa_report.failure_category = "INDEPENDENT_QA_FAILURE"
                             qa_report.root_cause = "Independent QA execution did not produce valid results."
 
-                # Step 3: Baseline & Regression Evaluation
+                # Step 3: Decision Engine interprets QA evidence
+                # Jev runs BEFORE pass/fail branching so it can override deterministic QA
+                jev_qa_decision = None
+                try:
+                    from app.decision_engine import decision_engine
+                    jev_qa_decision, jev_qa_result = await decision_engine.qa_gate(
+                        tests_total=getattr(exec_result, 'tests_run', 0),
+                        tests_passed=getattr(exec_result, 'tests_passed', 0),
+                        tests_failed=getattr(exec_result, 'tests_failed', 0),
+                        failure_details=qa_report.root_cause or "",
+                        attempt_number=attempt,
+                    )
+                    if jev_qa_result.above_threshold(0.85):
+                        if jev_qa_decision == "escalate":
+                            logger.info(f"Jev escalated project {project_id} (confidence={jev_qa_result.confidence:.2f})")
+                            return FinalValidationResult(
+                                attempts_used=attempt,
+                                final_status="ESCALATED",
+                                reason=f"Jev decision engine escalated: requires human judgment (confidence={jev_qa_result.confidence:.2f})",
+                                final_execution_result=exec_result.model_dump() if hasattr(exec_result, "model_dump") else exec_result.dict(),
+                                final_qa_report=qa_report.model_dump() if hasattr(qa_report, "model_dump") else qa_report.dict(),
+                                repair_history=history,
+                            )
+                        if jev_qa_decision == "repair" and qa_report.status == "PASS":
+                            logger.info(f"Jev overrode PASS → REPAIR for project {project_id} (confidence={jev_qa_result.confidence:.2f})")
+                            qa_report.status = "FAIL"
+                            qa_report.failure_category = "JEV_OVERRIDE"
+                            qa_report.root_cause = f"Decision engine flagged issues despite passing deterministic QA (confidence={jev_qa_result.confidence:.2f})"
+                except Exception as e:
+                    logger.debug(f"Jev QA gate skipped: {e}")
+
+                # Step 4: Baseline & Regression Evaluation
                 if attempt == 1:
                     baseline = capture_baseline(exec_result)
                     if qa_report.status == "PASS":
@@ -202,30 +233,6 @@ class RepairLoopService:
                             build_artifacts=getattr(exec_result, "build_artifacts", None),
                         )
 
-                # Step 3.5: Jev decision layer — QA gate override
-                try:
-                    from app.decision_engine import decision_engine
-                    jev_decision, jev_result = await decision_engine.qa_gate(
-                        tests_total=getattr(exec_result, 'tests_run', 0),
-                        tests_passed=getattr(exec_result, 'tests_passed', 0),
-                        tests_failed=getattr(exec_result, 'tests_failed', 0),
-                        failure_details=qa_report.root_cause or "",
-                        attempt_number=attempt,
-                    )
-                    if jev_result.above_threshold(0.85):
-                        if jev_decision == "escalate":
-                            logger.info(f"Jev escalated project {project_id} (confidence={jev_result.confidence:.2f})")
-                            return FinalValidationResult(
-                                attempts_used=attempt,
-                                final_status="ESCALATED",
-                                reason=f"Jev decision engine escalated: requires human judgment (confidence={jev_result.confidence:.2f})",
-                                final_execution_result=exec_result.model_dump() if hasattr(exec_result, "model_dump") else exec_result.dict(),
-                                final_qa_report=qa_report.model_dump() if hasattr(qa_report, "model_dump") else qa_report.dict(),
-                                repair_history=history,
-                            )
-                except Exception as e:
-                    logger.debug(f"Jev QA gate skipped: {e}")
-
                 # Step 4: Check if Attempt Limit Reached
                 if attempt == MAX_REPAIR_ATTEMPTS:
                     logger.warning(f"Hard ceiling reached ({MAX_REPAIR_ATTEMPTS} attempts) for project {project_id}. Terminating repair loop.")
@@ -240,7 +247,7 @@ class RepairLoopService:
                         final_files=current_files,
                     )
 
-                # Step 4.5: Jev repair strategy decision
+                # Step 5.5: Jev repair strategy decision
                 try:
                     from app.decision_engine import decision_engine
                     strategy, strat_result = await decision_engine.repair_strategy(

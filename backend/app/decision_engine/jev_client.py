@@ -77,6 +77,8 @@ async def _call_jeff_endpoint(state: str, question: dict) -> DecisionResult:
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 50,
                 "temperature": 0.1,
+                "logprobs": True,
+                "top_logprobs": 5,
             },
             headers={"Content-Type": "application/json"},
         )
@@ -84,22 +86,61 @@ async def _call_jeff_endpoint(state: str, question: dict) -> DecisionResult:
         data = resp.json()
     latency = (time.monotonic() - start) * 1000
 
-    raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip().lower()
+    choice_data = data.get("choices", [{}])[0]
+    raw = choice_data.get("message", {}).get("content", "").strip().lower()
+
+    # Match response to known options with quality scoring
     matched = None
+    match_quality = "none"
     for key in options:
-        if key.lower() in raw:
+        if raw == key.lower():
             matched = key
+            match_quality = "exact"
             break
+        if key.lower() in raw and len(raw) < len(key) * 3:
+            matched = key
+            match_quality = "substring"
+
     if not matched:
         matched = list(options.keys())[0] if options else raw
+        match_quality = "fallback"
+
+    # Compute confidence from logprobs if available, else from match quality
+    confidence = _jeff_confidence(choice_data, match_quality)
+
+    # Build probability distribution from logprobs or match quality
+    probs = {}
+    if match_quality == "exact":
+        probs = {k: (0.05 / max(len(options) - 1, 1)) for k in options}
+        probs[matched] = confidence
+    elif match_quality == "substring":
+        probs = {k: (0.1 / max(len(options) - 1, 1)) for k in options}
+        probs[matched] = confidence
+    else:
+        probs = {k: (1.0 / max(len(options), 1)) for k in options}
 
     return DecisionResult(
         choice=matched,
-        probabilities={matched: 0.8},
-        confidence=0.7,
+        probabilities=probs,
+        confidence=confidence,
         latency_ms=latency,
         backend="jeff",
     )
+
+
+def _jeff_confidence(choice_data: dict, match_quality: str) -> float:
+    """Derive confidence from logprobs when available, else from match quality."""
+    import math
+    logprobs_data = choice_data.get("logprobs")
+    if logprobs_data and logprobs_data.get("content"):
+        token_logprobs = [t.get("logprob", -1.0) for t in logprobs_data["content"] if "logprob" in t]
+        if token_logprobs:
+            avg_logprob = sum(token_logprobs) / len(token_logprobs)
+            raw_conf = math.exp(avg_logprob)
+            return round(min(max(raw_conf, 0.1), 0.99), 3)
+
+    quality_scores = {"exact": 0.88, "substring": 0.78, "fallback": 0.45, "none": 0.3}
+    return quality_scores.get(match_quality, 0.5)
 
 
 def _rule_based_fallback(state: str, question: dict) -> DecisionResult:
@@ -144,8 +185,16 @@ async def decide(state: str, question: dict) -> DecisionResult:
 
 
 async def decide_multi(state: str, questions: dict[str, dict]) -> dict[str, DecisionResult]:
-    """Make multiple decisions against the same state."""
+    """Make multiple decisions against the same state in parallel."""
+    import asyncio
+    names = list(questions.keys())
+    coros = [decide(state, questions[n]) for n in names]
+    results_list = await asyncio.gather(*coros, return_exceptions=True)
     results = {}
-    for name, question in questions.items():
-        results[name] = await decide(state, question)
+    for name, result in zip(names, results_list):
+        if isinstance(result, Exception):
+            logger.warning(f"decide_multi failed for '{name}': {result}")
+            results[name] = _rule_based_fallback(state, questions[name])
+        else:
+            results[name] = result
     return results

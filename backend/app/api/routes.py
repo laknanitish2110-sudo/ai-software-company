@@ -2095,3 +2095,13 @@ async def decision_test(req: DecisionTestRequest, current_user: dict = Depends(g
         "latency_ms": round(result.latency_ms, 1),
         "probabilities": result.probabilities,
     }
+
+
+@router.get("/decision/history")
+async def decision_history(
+    decision_type: str = None, limit: int = 50,
+    current_user: dict = Depends(get_current_user),
+):
+    from app.core.database import get_decision_stats
+    records = await get_decision_stats(decision_type=decision_type, limit=limit)
+    return {"decisions": records, "count": len(records)}
