@@ -336,22 +336,62 @@ export default function EmployeeChatPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex" style={{ borderBottom: "1px solid var(--border)" }}>
-          {(["chat", "sessions", "memories", "skills", "schedule", "settings"] as Tab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setSideTab(tab)}
-              style={{
-                flex: 1, padding: "10px 0", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                border: "none", background: "transparent",
-                color: sideTab === tab ? "var(--accent)" : "var(--text-muted)",
-                borderBottom: sideTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
-                textTransform: "capitalize",
-              }}
-            >
-              {tab}
-            </button>
-          ))}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(6, 1fr)",
+          borderBottom: "1px solid var(--border)", padding: "0 4px",
+        }}>
+          {([
+            { id: "chat" as Tab, icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+              </svg>
+            ), label: "Chat" },
+            { id: "sessions" as Tab, icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2a10 10 0 0110 10 10 10 0 01-10 10A10 10 0 012 12 10 10 0 0112 2z"/><path d="M12 6v6l4 2"/>
+              </svg>
+            ), label: "History" },
+            { id: "memories" as Tab, icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+              </svg>
+            ), label: "Memory" },
+            { id: "skills" as Tab, icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+            ), label: "Skills" },
+            { id: "schedule" as Tab, icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            ), label: "Tasks" },
+            { id: "settings" as Tab, icon: (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+              </svg>
+            ), label: "Config" },
+          ]).map(({ id, icon, label }) => {
+            const active = sideTab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setSideTab(id)}
+                title={label}
+                style={{
+                  padding: "8px 0", cursor: "pointer",
+                  border: "none", background: "transparent",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                  color: active ? "var(--accent)" : "var(--text-muted)",
+                  borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+                  transition: "color 0.15s",
+                }}
+              >
+                {icon}
+                <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.02em" }}>{label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Tab content */}
@@ -823,9 +863,17 @@ export default function EmployeeChatPage() {
           {sideTab === "settings" && (
             <div>
               {/* Persona editor */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-                  Persona
+              <div style={{
+                padding: 12, borderRadius: 10, marginBottom: 10,
+                background: "var(--bg-base)", border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                  </svg>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Persona
+                  </span>
                 </div>
                 <textarea
                   value={editPersona}
@@ -833,7 +881,7 @@ export default function EmployeeChatPage() {
                   rows={4}
                   style={{
                     width: "100%", padding: "8px 10px", borderRadius: 8,
-                    border: "1px solid var(--border)", background: "var(--bg-base)",
+                    border: "1px solid var(--border)", background: "var(--bg-card)",
                     fontSize: 12, color: "var(--text-primary)", outline: "none",
                     resize: "vertical", fontFamily: "inherit", lineHeight: 1.5,
                   }}
@@ -849,11 +897,12 @@ export default function EmployeeChatPage() {
                   }}
                   disabled={savingPersona || editPersona === (employee.persona || "")}
                   style={{
-                    marginTop: 6, width: "100%", padding: "6px 0", borderRadius: 6,
-                    border: "none", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                    marginTop: 6, width: "100%", padding: "7px 0", borderRadius: 8,
+                    border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer",
                     background: editPersona !== (employee.persona || "") ? "var(--accent)" : "var(--bg-elevated)",
                     color: editPersona !== (employee.persona || "") ? "#fff" : "var(--text-muted)",
                     opacity: savingPersona ? 0.6 : 1,
+                    transition: "all 0.15s",
                   }}
                 >
                   {savingPersona ? "Saving..." : "Save Persona"}
@@ -861,9 +910,17 @@ export default function EmployeeChatPage() {
               </div>
 
               {/* Model selection */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-                  LLM Model
+              <div style={{
+                padding: 12, borderRadius: 10, marginBottom: 10,
+                background: "var(--bg-base)", border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+                  </svg>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    LLM Model
+                  </span>
                 </div>
                 <select
                   value={(employee.config as Record<string, unknown>)?.model as string || "default"}
@@ -877,8 +934,13 @@ export default function EmployeeChatPage() {
                   }}
                   style={{
                     width: "100%", padding: "8px 10px", borderRadius: 8,
-                    border: "1px solid var(--border)", background: "var(--bg-base)",
+                    border: "1px solid var(--border)", background: "var(--bg-card)",
                     fontSize: 12, color: "var(--text-primary)", cursor: "pointer",
+                    appearance: "none",
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: "no-repeat",
+                    backgroundPosition: "right 10px center",
+                    paddingRight: 28,
                   }}
                 >
                   <option value="default">Default (auto-select)</option>
@@ -889,18 +951,26 @@ export default function EmployeeChatPage() {
                   <option value="meta-llama/llama-4-maverick">Llama 4 Maverick</option>
                   <option value="qwen/qwen3-235b-a22b">Qwen 3 235B</option>
                 </select>
-                <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.4 }}>
                   Override the LLM used for this employee&apos;s conversations
                 </p>
               </div>
 
               {/* Tool permissions */}
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-                  Tool Permissions
+              <div style={{
+                padding: 12, borderRadius: 10, marginBottom: 10,
+                background: "var(--bg-base)", border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+                  </svg>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Tool Permissions
+                  </span>
                 </div>
                 {permissions.length === 0 && (
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 12 }}>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "8px 0" }}>
                     No tool permissions configured
                   </p>
                 )}
@@ -908,8 +978,8 @@ export default function EmployeeChatPage() {
                   <div
                     key={perm.id}
                     style={{
-                      padding: "8px 10px", borderRadius: 8, marginBottom: 4,
-                      background: "var(--bg-base)", border: "1px solid var(--border)",
+                      padding: "7px 10px", borderRadius: 8, marginBottom: 3,
+                      background: "var(--bg-card)", border: "1px solid var(--border)",
                       display: "flex", alignItems: "center", justifyContent: "space-between",
                     }}
                   >
@@ -928,9 +998,9 @@ export default function EmployeeChatPage() {
                         } catch { /* ignore */ }
                       }}
                       style={{
-                        padding: "3px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600,
-                        border: "1px solid var(--border)", background: "var(--bg-card)",
-                        color: perm.permission === "allow" ? "var(--success)" : perm.permission === "deny" ? "var(--danger)" : "var(--warning)",
+                        padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700,
+                        border: "1px solid var(--border)", background: "transparent",
+                        color: perm.permission === "allow" ? "#22c55e" : perm.permission === "deny" ? "#ef4444" : "#f59e0b",
                         cursor: "pointer",
                       }}
                     >
@@ -943,18 +1013,36 @@ export default function EmployeeChatPage() {
               </div>
 
               {/* Employee info */}
-              <div style={{ marginTop: 16, padding: "12px 10px", borderRadius: 8, background: "var(--bg-base)", border: "1px solid var(--border)" }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  Info
+              <div style={{
+                padding: 12, borderRadius: 10,
+                background: "var(--bg-base)", border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                  </svg>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Info
+                  </span>
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
-                  Created: {new Date(employee.created_at).toLocaleDateString()}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
-                  Status: {employee.status}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
-                  ID: <span style={{ fontFamily: "monospace", fontSize: 10 }}>{employee.id.slice(0, 12)}...</span>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {[
+                    { label: "Created", value: new Date(employee.created_at).toLocaleDateString() },
+                    { label: "Status", value: employee.status, color: employee.status === "idle" ? "#22c55e" : "var(--accent)" },
+                    { label: "ID", value: employee.id.slice(0, 16) + "...", mono: true },
+                  ].map(({ label, value, color, mono }) => (
+                    <div key={label} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "4px 0",
+                    }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{label}</span>
+                      <span style={{
+                        fontSize: mono ? 10 : 11, fontWeight: 600,
+                        color: color || "var(--text-primary)",
+                        fontFamily: mono ? "monospace" : "inherit",
+                      }}>{value}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
