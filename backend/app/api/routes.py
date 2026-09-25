@@ -2430,15 +2430,21 @@ async def api_embed_memories(employee_id: str, user=Depends(get_current_user)):
     if not emp:
         raise HTTPException(404, "Employee not found")
     memories = await list_memories(employee_id, limit=500)
-    from app.core.embeddings import embed_text, MODEL_NAME
-    embedded_count = 0
+    from app.core.embeddings import embed_batch_async, get_model_info
+    model_info = get_model_info()
+    texts = []
+    mem_ids = []
     for mem in memories:
         if not mem.get("content"):
             continue
-        vec = embed_text(mem["content"])
-        await store_memory_embedding(mem["id"], employee_id, vec, model=MODEL_NAME)
-        embedded_count += 1
-    return {"embedded": embedded_count, "model": MODEL_NAME}
+        texts.append(mem["content"])
+        mem_ids.append(mem["id"])
+    if not texts:
+        return {"embedded": 0, "model": model_info["model"]}
+    vectors = await embed_batch_async(texts)
+    for mid, vec in zip(mem_ids, vectors):
+        await store_memory_embedding(mid, employee_id, vec, model=model_info["model"])
+    return {"embedded": len(mem_ids), "model": model_info["model"], "dim": model_info["dim"]}
 
 
 @router.post("/employees/{employee_id}/memories/search")
@@ -2448,10 +2454,10 @@ async def api_semantic_search(employee_id: str, q: str = "", limit: int = 10, us
         raise HTTPException(404, "Employee not found")
     if not q.strip():
         raise HTTPException(400, "Query cannot be empty")
-    from app.core.embeddings import embed_text
-    query_vec = embed_text(q)
+    from app.core.embeddings import embed_text_async, get_model_info
+    query_vec = await embed_text_async(q)
     results = await semantic_memory_search(employee_id, query_vec, limit=limit)
-    return {"results": results, "query": q}
+    return {"results": results, "query": q, "model": get_model_info()["model"]}
 
 
 # ─── Autonomous Execution ───────────────────────────────────────

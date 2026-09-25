@@ -3218,24 +3218,20 @@ async def get_memory_embeddings(employee_id: str) -> list[dict]:
 
 async def semantic_memory_search(employee_id: str, query_embedding: list[float],
                                   limit: int = 10) -> list[dict]:
+    from app.core.embeddings import cosine_similarity
     all_embeddings = await get_memory_embeddings(employee_id)
     if not all_embeddings:
         return []
 
-    def cosine_sim(a: list[float], b: list[float]) -> float:
-        dot = sum(x * y for x, y in zip(a, b))
-        mag_a = sum(x * x for x in a) ** 0.5
-        mag_b = sum(x * x for x in b) ** 0.5
-        if mag_a == 0 or mag_b == 0:
-            return 0.0
-        return dot / (mag_a * mag_b)
-
+    query_dim = len(query_embedding)
     scored = []
     for row in all_embeddings:
         emb = row["embedding"]
         if not emb:
             continue
-        sim = cosine_sim(query_embedding, emb)
+        if len(emb) != query_dim:
+            continue
+        sim = cosine_similarity(query_embedding, emb)
         importance_boost = (row.get("importance") or 0.5) * 0.1
         scored.append({
             "memory_id": row["memory_id"],
