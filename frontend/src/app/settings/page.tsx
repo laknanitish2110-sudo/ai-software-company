@@ -239,15 +239,15 @@ function SettingsPage() {
             </div>
           )}
 
-          {/* Plan cards */}
+          {/* Plan cards — side by side */}
           {loadingData ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
               {[0, 1, 2].map((i) => (
-                <div key={i} className="skeleton-card" style={{ height: 280, borderRadius: 16 }} />
+                <div key={i} className="skeleton-card" style={{ height: 260, borderRadius: 16 }} />
               ))}
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Object.keys(plans).length, 3)}, 1fr)`, gap: 16 }}>
               {Object.entries(plans).map(([key, plan]) => {
                 const isCurrent = key === currentPlan;
                 const isUpgrade = (key === "pro" && currentPlan === "free") || (key === "team" && currentPlan !== "team");
@@ -257,45 +257,47 @@ function SettingsPage() {
                     background: "var(--bg-card)",
                     border: isCurrent ? "2px solid var(--accent)" : "1px solid var(--border)",
                     position: "relative",
+                    display: "flex", flexDirection: "column",
                     transition: "all 0.2s ease",
                   }}>
-                    {/* Gradient header strip */}
                     <div style={{
                       height: 4,
                       background: isCurrent
                         ? "linear-gradient(90deg, var(--accent), #7c3aed)"
                         : PLAN_GRADIENTS[key] || "var(--bg-elevated)",
                     }} />
-                    <div style={{ padding: 24 }}>
-                      {isCurrent && (
-                        <div style={{
-                          display: "inline-flex", padding: "3px 10px", borderRadius: 20,
-                          fontSize: 10, fontWeight: 700,
-                          background: "var(--accent)", color: "#fff",
-                          marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.05em",
-                        }}>Current</div>
-                      )}
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                        <span style={{ fontSize: 24 }}>{PLAN_ICONS[key] || "📦"}</span>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
-                          {plan.name}
+                    <div style={{ padding: "20px 20px 16px", flex: 1, display: "flex", flexDirection: "column" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 20 }}>{PLAN_ICONS[key] || "📦"}</span>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
+                            {plan.name}
+                          </div>
                         </div>
+                        {isCurrent && (
+                          <span style={{
+                            padding: "2px 8px", borderRadius: 20,
+                            fontSize: 9, fontWeight: 700,
+                            background: "var(--accent)", color: "#fff",
+                            textTransform: "uppercase", letterSpacing: "0.05em",
+                          }}>Current</span>
+                        )}
                       </div>
-                      <div style={{ marginBottom: 20 }}>
-                        <span style={{ fontSize: 32, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
+                      <div style={{ marginBottom: 14 }}>
+                        <span style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
                           {plan.price_monthly === 0 ? "Free" : `$${plan.price_monthly}`}
                         </span>
                         {plan.price_monthly > 0 && (
-                          <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)", marginLeft: 2 }}>/mo</span>
+                          <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)", marginLeft: 2 }}>/mo</span>
                         )}
                       </div>
-                      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginBottom: 20 }}>
+                      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginBottom: 14, flex: 1 }}>
                         {plan.features.map((f, i) => (
                           <div key={i} style={{
-                            fontSize: 13, color: "var(--text-secondary)", padding: "5px 0",
-                            display: "flex", alignItems: "flex-start", gap: 8,
+                            fontSize: 12, color: "var(--text-secondary)", padding: "4px 0",
+                            display: "flex", alignItems: "flex-start", gap: 6,
                           }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
                               <polyline points="20 6 9 17 4 12"/>
                             </svg>
                             {f}
@@ -304,8 +306,8 @@ function SettingsPage() {
                       </div>
                       {isCurrent ? (
                         <div style={{
-                          padding: "10px 16px", borderRadius: 10, textAlign: "center",
-                          fontSize: 13, fontWeight: 600, color: "var(--text-muted)",
+                          padding: "9px 14px", borderRadius: 10, textAlign: "center",
+                          fontSize: 12, fontWeight: 600, color: "var(--text-muted)",
                           background: "var(--bg-elevated)", border: "1px solid var(--border)",
                         }}>Active plan</div>
                       ) : isUpgrade ? (
@@ -313,8 +315,8 @@ function SettingsPage() {
                           onClick={() => handleUpgrade(key)}
                           disabled={!!upgrading || !stripeConfigured}
                           style={{
-                            width: "100%", padding: "11px 16px", borderRadius: 10,
-                            fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer",
+                            width: "100%", padding: "10px 14px", borderRadius: 10,
+                            fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
                             background: "linear-gradient(135deg, var(--accent), #7c3aed)",
                             color: "#fff", transition: "all 0.15s",
                             opacity: upgrading ? 0.6 : 1,
@@ -335,75 +337,177 @@ function SettingsPage() {
 
       {tab === "profile" && (
         <div style={{ animation: "fadeIn 0.25s ease-out" }}>
-          <div style={{
-            borderRadius: 16, overflow: "hidden",
-            background: "var(--bg-card)", border: "1px solid var(--border)",
-          }}>
-            {/* Profile header with gradient */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            {/* Left — Account info */}
             <div style={{
-              padding: "24px 24px 20px",
-              background: "linear-gradient(135deg, rgba(99,91,255,0.06), rgba(124,58,237,0.03))",
-              borderBottom: "1px solid var(--border)",
-              display: "flex", alignItems: "center", gap: 16,
+              borderRadius: 16, overflow: "hidden",
+              background: "var(--bg-card)", border: "1px solid var(--border)",
+              display: "flex", flexDirection: "column",
             }}>
               <div style={{
-                width: 56, height: 56, borderRadius: 16,
-                background: "linear-gradient(135deg, var(--accent), #7c3aed)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#fff", fontSize: 20, fontWeight: 700,
-                boxShadow: "0 4px 14px rgba(99,91,255,0.3)",
+                padding: "20px 20px 16px",
+                background: "linear-gradient(135deg, rgba(99,91,255,0.06), rgba(124,58,237,0.03))",
+                borderBottom: "1px solid var(--border)",
+                display: "flex", alignItems: "center", gap: 14,
               }}>
-                {(user.display_name || user.email || "U").slice(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
-                  {user.display_name || "Your Profile"}
+                <div style={{
+                  width: 52, height: 52, borderRadius: 14,
+                  background: "linear-gradient(135deg, var(--accent), #7c3aed)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "#fff", fontSize: 19, fontWeight: 700,
+                  boxShadow: "0 4px 14px rgba(99,91,255,0.3)",
+                }}>
+                  {(user.display_name || user.email || "U").slice(0, 2).toUpperCase()}
                 </div>
-                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                  {user.email}
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.01em" }}>
+                    {user.display_name || "Your Profile"}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                    {user.email}
+                  </div>
+                </div>
+              </div>
+              <div style={{ padding: 16, flex: 1 }}>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {[
+                    { label: "Email", value: user.email, icon: "M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z M22 6l-10 7L2 6" },
+                    { label: "Display name", value: user.display_name || "Not set", icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 3a4 4 0 100 8 4 4 0 000-8z" },
+                    { label: "Account created", value: new Date(user.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), icon: "M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" },
+                    ...(user.oauth_provider ? [{
+                      label: "Sign-in method",
+                      value: user.oauth_provider.charAt(0).toUpperCase() + user.oauth_provider.slice(1),
+                      icon: "M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4 M10 17l5-5-5-5 M15 12H3",
+                    }] : []),
+                  ].map((field) => (
+                    <div key={field.label} style={{
+                      padding: "12px 14px", borderRadius: 10,
+                      background: "var(--bg-base)", border: "1px solid var(--border)",
+                      display: "flex", alignItems: "center", gap: 12,
+                    }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 8,
+                        background: "var(--accent-bg)", border: "1px solid var(--accent-border)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
+                      }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          {field.icon.split(" M").map((d, i) => (
+                            <path key={i} d={i === 0 ? d : `M${d}`} />
+                          ))}
+                        </svg>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 1 }}>
+                          {field.label}
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>
+                          {field.value}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-            <div style={{ padding: 24 }}>
-              <div style={{ display: "grid", gap: 16 }}>
-                {[
-                  { label: "Email", value: user.email, icon: "M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z M22 6l-10 7L2 6" },
-                  { label: "Display name", value: user.display_name || "Not set", icon: "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 3a4 4 0 100 8 4 4 0 000-8z" },
-                  { label: "Account created", value: new Date(user.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), icon: "M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" },
-                  ...(user.oauth_provider ? [{
-                    label: "Sign-in method",
-                    value: user.oauth_provider.charAt(0).toUpperCase() + user.oauth_provider.slice(1),
-                    icon: "M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4 M10 17l5-5-5-5 M15 12H3",
-                  }] : []),
-                ].map((field) => (
-                  <div key={field.label} style={{
-                    padding: "14px 16px", borderRadius: 12,
-                    background: "var(--bg-base)", border: "1px solid var(--border)",
-                    display: "flex", alignItems: "center", gap: 14,
-                    transition: "border-color 0.15s",
-                  }}>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: 10,
-                      background: "var(--accent-bg)", border: "1px solid var(--accent-border)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      flexShrink: 0,
-                    }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        {field.icon.split(" M").map((d, i) => (
-                          <path key={i} d={i === 0 ? d : `M${d}`} />
-                        ))}
-                      </svg>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
-                        {field.label}
+
+            {/* Right — Account stats & plan info */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Current plan card */}
+              <div style={{
+                borderRadius: 16, overflow: "hidden",
+                background: "var(--bg-card)", border: "1px solid var(--border)",
+              }}>
+                <div style={{
+                  padding: "14px 18px",
+                  background: "linear-gradient(135deg, rgba(11,191,140,0.06), rgba(6,182,212,0.03))",
+                  borderBottom: "1px solid var(--border)",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Plan
+                  </span>
+                </div>
+                <div style={{ padding: 18 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <span style={{ fontSize: 24 }}>{PLAN_ICONS[currentPlan] || "🌱"}</span>
+                    <div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)" }}>
+                        {subscription?.plan_name || "Free"}
                       </div>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)" }}>
-                        {field.value}
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        {subscription?.current_period_end
+                          ? `Renews ${new Date(subscription.current_period_end).toLocaleDateString()}`
+                          : "No expiry"}
                       </div>
                     </div>
                   </div>
-                ))}
+                  {subscription && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--bg-base)", border: "1px solid var(--border)", textAlign: "center" }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>
+                          {subscription.limits.pipeline_runs === -1 ? "∞" : subscription.limits.pipeline_runs}
+                        </div>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>Pipelines/mo</div>
+                      </div>
+                      <div style={{ padding: "8px 10px", borderRadius: 8, background: "var(--bg-base)", border: "1px solid var(--border)", textAlign: "center" }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--success)" }}>
+                          {subscription.limits.employee_messages === -1 ? "∞" : subscription.limits.employee_messages}
+                        </div>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>Messages/mo</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick stats */}
+              <div style={{
+                borderRadius: 16, overflow: "hidden",
+                background: "var(--bg-card)", border: "1px solid var(--border)",
+                flex: 1,
+              }}>
+                <div style={{
+                  padding: "14px 18px",
+                  background: "linear-gradient(135deg, rgba(99,91,255,0.04), transparent)",
+                  borderBottom: "1px solid var(--border)",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+                  </svg>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Quick Stats
+                  </span>
+                </div>
+                <div style={{ padding: 18 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {[
+                      { label: "Total Tokens", value: usage?.total_tokens?.toLocaleString() || "0", color: "var(--accent)", icon: "M13 2L3 14h9l-1 8 10-12h-9l1-8" },
+                      { label: "Input", value: usage?.total_input?.toLocaleString() || "0", color: "#3b82f6", icon: "M12 19V5 M5 12l7-7 7 7" },
+                      { label: "Output", value: usage?.total_output?.toLocaleString() || "0", color: "var(--success)", icon: "M12 5v14 M19 12l-7 7-7-7" },
+                      { label: "Account Age", value: (() => { const d = Math.floor((Date.now() - new Date(user.created_at).getTime()) / 86400000); return d < 1 ? "Today" : `${d}d`; })(), color: "#f59e0b", icon: "M12 2a10 10 0 0110 10 10 10 0 01-10 10A10 10 0 012 12 10 10 0 0112 2z M12 6v6l4 2" },
+                    ].map((s) => (
+                      <div key={s.label} style={{
+                        padding: "10px 12px", borderRadius: 10,
+                        background: "var(--bg-base)", border: "1px solid var(--border)",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            {s.icon.split(" M").map((d, i) => (
+                              <path key={i} d={i === 0 ? d : `M${d}`} />
+                            ))}
+                          </svg>
+                          <span style={{ fontSize: 9, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{s.label}</span>
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>{s.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
