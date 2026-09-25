@@ -6,7 +6,7 @@ import secrets
 import time
 from urllib.parse import urlencode
 import httpx
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
 from app.services.redis_coordinator import redis_coordinator
 
 logger = logging.getLogger(__name__)
@@ -565,6 +565,11 @@ async def classify_task_endpoint(req: CreateProjectRequest, current_user: dict =
 async def create_project_endpoint(req: CreateProjectRequest, current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
     try:
+        from app.services.billing import check_usage_limit
+        within_limit, limit_msg = await check_usage_limit(user_id, "pipeline_run")
+        if not within_limit:
+            return JSONResponse(status_code=429, content={"error": "PLAN_LIMIT", "message": limit_msg})
+
         allowed, retry_after = await rate_limiter.check_rate_limit(user_id=user_id, action="create")
         if not allowed:
             return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
@@ -575,6 +580,15 @@ async def create_project_endpoint(req: CreateProjectRequest, current_user: dict 
             auto_approve=req.auto_approve,
             route=req.route or "full",
         )
+        try:
+            from app.core.database import record_usage
+            await record_usage(
+                user_id=user_id, record_type="pipeline_run",
+                tokens_input=len(req.problem_statement) // 4,
+                project_id=project.get("id") if isinstance(project, dict) else None,
+            )
+        except Exception:
+            pass
         return project
     except RedisUnavailableError as e:
         if get_environment() == "production":
@@ -1657,6 +1671,11 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
     if session["status"] != "active":
         raise HTTPException(400, "Session is not active")
 
+    from app.services.billing import check_usage_limit
+    within_limit, limit_msg = await check_usage_limit(user["id"], "employee_message")
+    if not within_limit:
+        return JSONResponse(status_code=429, content={"error": "PLAN_LIMIT", "message": limit_msg})
+
     user_msg = await add_session_message(session_id, "user", req.content)
 
     await update_employee(emp["id"], user["id"], {"status": "thinking"})
@@ -1780,6 +1799,16 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
 
     from app.services.memory_engine import schedule_memory_extraction
     schedule_memory_extraction(emp["id"], req.content, response_text, session_id)
+
+    try:
+        from app.core.database import record_usage
+        await record_usage(
+            user_id=user["id"], record_type="employee_message",
+            tokens_input=len(req.content) // 4, tokens_output=len(response_text) // 4,
+            employee_id=emp["id"],
+        )
+    except Exception:
+        pass
 
     return {
         "user_message": user_msg,
@@ -2105,3 +2134,73 @@ async def decision_history(
     from app.core.database import get_decision_stats
     records = await get_decision_stats(decision_type=decision_type, limit=limit)
     return {"decisions": records, "count": len(records)}
+
+
+# ── Billing endpoints ──────────────────────────────────────────────
+
+@router.get("/billing/plans")
+async def get_plans():
+    from app.services.billing import PLANS
+    from app.core.config import STRIPE_PUBLISHABLE_KEY
+    return {
+        "plans": PLANS,
+        "stripe_configured": bool(STRIPE_PUBLISHABLE_KEY),
+        "publishable_key": STRIPE_PUBLISHABLE_KEY or None,
+    }
+
+
+@router.get("/billing/subscription")
+async def get_subscription_endpoint(current_user: dict = Depends(get_current_user)):
+    from app.services.billing import get_plan_limits
+    return await get_plan_limits(current_user["id"])
+
+
+@router.get("/billing/usage")
+async def get_usage_endpoint(days: int = 30, current_user: dict = Depends(get_current_user)):
+    from app.core.database import get_usage_summary
+    return await get_usage_summary(current_user["id"], days=days)
+
+
+class CheckoutRequest(BaseModel):
+    plan: str
+
+
+@router.post("/billing/checkout")
+async def create_checkout(req: CheckoutRequest, current_user: dict = Depends(get_current_user)):
+    if req.plan not in ("pro", "team"):
+        raise HTTPException(400, "Invalid plan. Choose 'pro' or 'team'.")
+    from app.services.billing import create_checkout_session
+    result = await create_checkout_session(current_user["id"], current_user["email"], req.plan)
+    if not result:
+        raise HTTPException(400, "Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRICE_PRO/TEAM in environment.")
+    return result
+
+
+@router.post("/billing/portal")
+async def create_portal(current_user: dict = Depends(get_current_user)):
+    from app.services.billing import create_portal_session
+    result = await create_portal_session(current_user["id"])
+    if not result:
+        raise HTTPException(400, "No active Stripe subscription found.")
+    return result
+
+
+@router.post("/billing/webhook")
+async def stripe_webhook(request: Request):
+    from app.core.config import STRIPE_WEBHOOK_SECRET
+    from app.services.billing import handle_webhook_event, get_stripe
+    stripe = get_stripe()
+    if not stripe:
+        raise HTTPException(400, "Stripe not configured")
+
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except Exception as e:
+        logger.warning(f"Stripe webhook verification failed: {e}")
+        raise HTTPException(400, "Invalid webhook signature")
+
+    await handle_webhook_event(event)
+    return {"received": True}

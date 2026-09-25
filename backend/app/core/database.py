@@ -469,6 +469,38 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_decision_type ON decision_log(decision_type, created_at);
                 CREATE INDEX IF NOT EXISTS idx_decision_project ON decision_log(project_id);
+
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL UNIQUE,
+                    stripe_customer_id TEXT,
+                    stripe_subscription_id TEXT,
+                    plan TEXT NOT NULL DEFAULT 'free',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    current_period_start TEXT,
+                    current_period_end TEXT,
+                    cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_sub_user ON subscriptions(user_id);
+                CREATE INDEX IF NOT EXISTS idx_sub_stripe ON subscriptions(stripe_customer_id);
+
+                CREATE TABLE IF NOT EXISTS usage_records (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    record_type TEXT NOT NULL,
+                    tokens_input INTEGER NOT NULL DEFAULT 0,
+                    tokens_output INTEGER NOT NULL DEFAULT 0,
+                    model TEXT,
+                    employee_id TEXT,
+                    project_id TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_usage_user ON usage_records(user_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_usage_type ON usage_records(record_type);
             """)
         else:
             # PostgreSQL DDL
@@ -755,6 +787,36 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_decision_type ON decision_log(decision_type, created_at);
                 CREATE INDEX IF NOT EXISTS idx_decision_project ON decision_log(project_id);
+
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id VARCHAR(255) PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                    stripe_customer_id VARCHAR(255),
+                    stripe_subscription_id VARCHAR(255),
+                    plan VARCHAR(32) NOT NULL DEFAULT 'free',
+                    status VARCHAR(32) NOT NULL DEFAULT 'active',
+                    current_period_start TEXT,
+                    current_period_end TEXT,
+                    cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sub_user ON subscriptions(user_id);
+                CREATE INDEX IF NOT EXISTS idx_sub_stripe ON subscriptions(stripe_customer_id);
+
+                CREATE TABLE IF NOT EXISTS usage_records (
+                    id VARCHAR(255) PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    record_type VARCHAR(64) NOT NULL,
+                    tokens_input INTEGER NOT NULL DEFAULT 0,
+                    tokens_output INTEGER NOT NULL DEFAULT 0,
+                    model VARCHAR(255),
+                    employee_id VARCHAR(255),
+                    project_id VARCHAR(255),
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_usage_user ON usage_records(user_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_usage_type ON usage_records(record_type);
             """)
         await db.commit()
 
@@ -2522,3 +2584,123 @@ async def get_decision_stats(decision_type: str = None, limit: int = 100) -> lis
     finally:
         await db.close()
 
+
+# ── Subscriptions ──────────────────────────────────────────────────
+
+async def get_subscription(user_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM subscriptions WHERE user_id = ?", (user_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def get_subscription_by_stripe_customer(customer_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM subscriptions WHERE stripe_customer_id = ?", (customer_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def upsert_subscription(
+    user_id: str,
+    plan: str = "free",
+    stripe_customer_id: str = None,
+    stripe_subscription_id: str = None,
+    status: str = "active",
+    current_period_start: str = None,
+    current_period_end: str = None,
+    cancel_at_period_end: bool = False,
+) -> dict:
+    import uuid
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    db = await get_db()
+    try:
+        existing = await get_subscription(user_id)
+        if existing:
+            await db.execute(
+                """UPDATE subscriptions SET plan=?, stripe_customer_id=?, stripe_subscription_id=?,
+                   status=?, current_period_start=?, current_period_end=?,
+                   cancel_at_period_end=?, updated_at=? WHERE user_id=?""",
+                (plan, stripe_customer_id, stripe_subscription_id, status,
+                 current_period_start, current_period_end,
+                 1 if cancel_at_period_end else 0, now, user_id),
+            )
+        else:
+            await db.execute(
+                """INSERT INTO subscriptions
+                   (id, user_id, stripe_customer_id, stripe_subscription_id, plan, status,
+                    current_period_start, current_period_end, cancel_at_period_end, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (str(uuid.uuid4()), user_id, stripe_customer_id, stripe_subscription_id,
+                 plan, status, current_period_start, current_period_end,
+                 1 if cancel_at_period_end else 0, now, now),
+            )
+        await db.commit()
+        return await get_subscription(user_id)
+    finally:
+        await db.close()
+
+
+# ── Usage Records ──────────────────────────────────────────────────
+
+async def record_usage(
+    user_id: str,
+    record_type: str,
+    tokens_input: int = 0,
+    tokens_output: int = 0,
+    model: str = None,
+    employee_id: str = None,
+    project_id: str = None,
+) -> str:
+    import uuid
+    from datetime import datetime, timezone
+    db = await get_db()
+    try:
+        row_id = str(uuid.uuid4())
+        await db.execute(
+            """INSERT INTO usage_records
+               (id, user_id, record_type, tokens_input, tokens_output, model, employee_id, project_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (row_id, user_id, record_type, tokens_input, tokens_output,
+             model, employee_id, project_id, datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+        return row_id
+    finally:
+        await db.close()
+
+
+async def get_usage_summary(user_id: str, days: int = 30) -> dict:
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT record_type,
+                      COUNT(*) as count,
+                      SUM(tokens_input) as total_input,
+                      SUM(tokens_output) as total_output
+               FROM usage_records
+               WHERE user_id = ? AND created_at >= ?
+               GROUP BY record_type""",
+            (user_id, cutoff),
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+        total_input = sum(r["total_input"] or 0 for r in rows)
+        total_output = sum(r["total_output"] or 0 for r in rows)
+        return {
+            "total_tokens": total_input + total_output,
+            "total_input": total_input,
+            "total_output": total_output,
+            "by_type": rows,
+            "period_days": days,
+        }
+    finally:
+        await db.close()

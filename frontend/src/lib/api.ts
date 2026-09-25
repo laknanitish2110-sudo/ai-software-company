@@ -893,3 +893,67 @@ export async function deactivateSkill(employeeId: string, skillId: string): Prom
   });
   await checkedJson(res, "Failed to deactivate skill");
 }
+
+// ── Billing ──────────────────────────────────────────────────────
+
+export interface PlanInfo {
+  name: string;
+  price_monthly: number;
+  pipeline_runs: number;
+  employee_messages: number;
+  employees: number;
+  features: string[];
+}
+
+export interface SubscriptionInfo {
+  plan: string;
+  plan_name: string;
+  limits: {
+    pipeline_runs: number;
+    employee_messages: number;
+    employees: number;
+  };
+  status: string;
+  cancel_at_period_end: boolean;
+  current_period_end: string | null;
+}
+
+export interface UsageSummary {
+  total_tokens: number;
+  total_input: number;
+  total_output: number;
+  by_type: { record_type: string; count: number; total_input: number; total_output: number }[];
+  period_days: number;
+}
+
+export async function getPlans(): Promise<{ plans: Record<string, PlanInfo>; stripe_configured: boolean; publishable_key: string | null }> {
+  const res = await fetchWithTimeout(`${API_BASE}/billing/plans`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load plans");
+}
+
+export async function getSubscription(): Promise<SubscriptionInfo> {
+  const res = await fetchWithTimeout(`${API_BASE}/billing/subscription`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load subscription");
+}
+
+export async function getUsage(days: number = 30): Promise<UsageSummary> {
+  const res = await fetchWithTimeout(`${API_BASE}/billing/usage?days=${days}`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to load usage");
+}
+
+export async function createCheckout(plan: string): Promise<{ url: string; session_id: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/billing/checkout`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ plan }),
+  });
+  return checkedJson(res, "Failed to create checkout");
+}
+
+export async function createPortalSession(): Promise<{ url: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/billing/portal`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to create portal session");
+}

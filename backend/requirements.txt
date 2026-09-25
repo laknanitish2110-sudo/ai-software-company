@@ -16,5 +16,6 @@ asyncpg==0.31.0
 arq==0.26.1
 redis>=5.0.0
 cryptography>=42.0.0
+stripe>=8.0.0
 
 

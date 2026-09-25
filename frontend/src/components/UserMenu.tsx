@@ -24,6 +24,7 @@ export default function UserMenu() {
   const NAV = [
     { href: "/", label: "Home" },
     { href: "/employees", label: "Team" },
+    { href: "/settings", label: "Settings" },
   ];
 
   const initials = (user.display_name || user.email || "U").slice(0, 2).toUpperCase();
