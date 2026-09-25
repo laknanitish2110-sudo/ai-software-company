@@ -289,7 +289,16 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 20px;
-  animation: pulseSubtle 2s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.06) 50%, transparent 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.8s infinite linear;
 }
 
 /* ─── Markdown in chat bubbles ─────────────────────────────── */

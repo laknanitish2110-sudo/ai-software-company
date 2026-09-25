@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAnalytics, type AnalyticsData } from "@/lib/api";
+import { ThinkingOrb } from "thinking-orbs";
 
 const ROLE_COLORS: Record<string, string> = {
   "Architect": "#8b5cf6",
@@ -82,10 +83,72 @@ export default function AnalyticsPage() {
   if (loading || !data) {
     return (
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginBottom: 24 }}>Analytics</h1>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="skeleton-card" style={{ height: 100 }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Analytics</h1>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0 }}>Loading team insights...</p>
+          </div>
+        </div>
+
+        {/* Orb + loading message */}
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          padding: "32px 0 40px", marginBottom: 28,
+        }}>
+          <ThinkingOrb state="solving" size={64} theme="auto" />
+          <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 16, fontWeight: 500 }}>
+            Crunching your team&apos;s data...
+          </p>
+        </div>
+
+        {/* Skeleton stat cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 32 }}>
+          {["Tokens", "Sessions", "Memories", "Skills"].map((label) => (
+            <div key={label} style={{
+              padding: "20px 24px", borderRadius: 14,
+              background: "var(--bg-card)", border: "1px solid var(--border)",
+              overflow: "hidden",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
+                {label}
+              </div>
+              <div className="skeleton" style={{ height: 28, width: "60%", borderRadius: 6, marginBottom: 6 }} />
+              <div className="skeleton" style={{ height: 10, width: "40%", borderRadius: 4 }} />
+            </div>
+          ))}
+        </div>
+
+        {/* Skeleton chart card */}
+        <div style={{
+          padding: 24, borderRadius: 16, marginBottom: 24,
+          background: "var(--bg-card)", border: "1px solid var(--border)",
+        }}>
+          <div className="skeleton" style={{ height: 16, width: 120, borderRadius: 6, marginBottom: 20 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[85, 60, 45, 30, 70, 20].map((w, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div className="skeleton" style={{ width: 80, height: 12, borderRadius: 4, flexShrink: 0 }} />
+                <div className="skeleton" style={{ height: 20, width: `${w}%`, borderRadius: 6, flex: 1 }} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Skeleton two-column charts */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          {[0, 1].map((i) => (
+            <div key={i} style={{
+              padding: 24, borderRadius: 16,
+              background: "var(--bg-card)", border: "1px solid var(--border)",
+            }}>
+              <div className="skeleton" style={{ height: 16, width: 160, borderRadius: 6, marginBottom: 20 }} />
+              {[70, 50, 35, 60].map((w, j) => (
+                <div key={j} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                  <div className="skeleton" style={{ width: 60, height: 12, borderRadius: 4, flexShrink: 0 }} />
+                  <div className="skeleton" style={{ height: 18, width: `${w}%`, borderRadius: 6, flex: 1 }} />
+                </div>
+              ))}
+            </div>
           ))}
         </div>
       </div>
