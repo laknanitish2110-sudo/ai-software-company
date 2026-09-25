@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import LandingPage from "@/components/LandingPage";
 import StartProject from "@/components/StartProject";
+import OnboardingModal from "@/components/OnboardingModal";
 import { useToast } from "@/components/Toast";
 import { createProject, getProjects, getDemoStatus, loadDemoCache } from "@/lib/api";
 
@@ -19,6 +20,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [hasDemo, setHasDemo] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -30,6 +32,12 @@ export default function Home() {
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           .slice(0, 3);
         setRecentProjects(recent);
+        try {
+          const dismissed = localStorage.getItem("onboarding_dismissed");
+          if (projects.length === 0 && !dismissed) {
+            setShowOnboarding(true);
+          }
+        } catch {}
       })
       .catch(() => {
         toast("warning", "Backend offline", "Could not load recent projects. Is the backend running?");
@@ -87,13 +95,32 @@ export default function Home() {
     return <LandingPage />;
   }
 
+  function dismissOnboarding() {
+    setShowOnboarding(false);
+    try { localStorage.setItem("onboarding_dismissed", "1"); } catch {}
+  }
+
   return (
-    <StartProject
-      onStart={handleStart}
-      loading={loading}
-      recentProjects={recentProjects}
-      hasDemo={hasDemo}
-      onLoadDemo={handleLoadDemo}
-    />
+    <>
+      {showOnboarding && (
+        <OnboardingModal
+          onDismiss={dismissOnboarding}
+          onTryPipeline={() => {
+            dismissOnboarding();
+          }}
+          onTryEmployee={() => {
+            dismissOnboarding();
+            router.push("/employees");
+          }}
+        />
+      )}
+      <StartProject
+        onStart={handleStart}
+        loading={loading}
+        recentProjects={recentProjects}
+        hasDemo={hasDemo}
+        onLoadDemo={handleLoadDemo}
+      />
+    </>
   );
 }
