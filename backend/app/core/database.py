@@ -2674,6 +2674,55 @@ async def get_pending_delegation_tasks(limit: int = 10) -> list[dict]:
         await db.close()
 
 
+async def recover_stale_delegation_tasks(stale_seconds: int = 360) -> list[str]:
+    """Reset delegation tasks stuck in 'running' for longer than stale_seconds back to 'pending'."""
+    db = await get_db()
+    try:
+        cutoff = (datetime.utcnow() - timedelta(seconds=stale_seconds)).isoformat()
+        cursor = await db.execute(
+            "SELECT id FROM delegation_tasks WHERE status = 'running' AND created_at < ?",
+            (cutoff,),
+        )
+        stale = await cursor.fetchall()
+        recovered = []
+        for row in stale:
+            await db.execute(
+                "UPDATE delegation_tasks SET status = 'pending' WHERE id = ? AND status = 'running'",
+                (row["id"],),
+            )
+            recovered.append(row["id"])
+        if recovered:
+            await db.commit()
+        return recovered
+    finally:
+        await db.close()
+
+
+async def recover_stale_autonomous_executions(stale_seconds: int = 660) -> list[str]:
+    """Mark autonomous executions stuck in 'running' as 'failed' after stale_seconds."""
+    db = await get_db()
+    try:
+        cutoff = (datetime.utcnow() - timedelta(seconds=stale_seconds)).isoformat()
+        cursor = await db.execute(
+            "SELECT id FROM autonomous_executions WHERE status = 'running' AND started_at < ?",
+            (cutoff,),
+        )
+        stale = await cursor.fetchall()
+        recovered = []
+        for row in stale:
+            await db.execute(
+                """UPDATE autonomous_executions SET status = 'failed', error = 'Worker crash or timeout (recovered by sweep)',
+                   completed_at = ? WHERE id = ? AND status = 'running'""",
+                (now_iso(), row["id"]),
+            )
+            recovered.append(row["id"])
+        if recovered:
+            await db.commit()
+        return recovered
+    finally:
+        await db.close()
+
+
 # ─── Activity log ──────────────────────────────────────────────
 
 async def log_activity(user_id: str, event_type: str, title: str,

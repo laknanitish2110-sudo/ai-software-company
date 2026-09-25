@@ -11,7 +11,7 @@ import logging
 from typing import Optional, List, Dict, Any
 
 from app.core.config import get_environment
-from app.core.database import claim_and_recover_stale_executions
+from app.core.database import claim_and_recover_stale_executions, recover_stale_autonomous_executions
 from app.services.redis_coordinator import redis_coordinator
 
 logger = logging.getLogger(__name__)
@@ -96,6 +96,14 @@ class StaleExecutionRecoveryWorker:
                         {"execution_id": exec_id, "reason": "Worker process crash or lost heartbeat"},
                         execution_id=exec_id
                     )
+            # Also sweep stale autonomous executions
+            try:
+                auto_recovered = await recover_stale_autonomous_executions(stale_seconds=660)
+                for exec_id in auto_recovered:
+                    logger.warning(f"Recovery worker: stale autonomous execution {exec_id} marked failed")
+            except Exception as ae:
+                logger.debug(f"Autonomous execution recovery error: {ae}")
+
             return claimed
         finally:
             if token:
