@@ -547,7 +547,18 @@ from app.services.resource_budget import resource_budget, ResourceBudgetExceeded
 @router.post("/classify")
 async def classify_task_endpoint(req: CreateProjectRequest, current_user: dict = Depends(get_current_user)):
     from app.services.task_router import classify_task
-    return classify_task(req.problem_statement)
+    base = classify_task(req.problem_statement)
+    try:
+        from app.decision_engine import decision_engine
+        jev_route, jev_result = await decision_engine.classify_route(req.problem_statement)
+        base["jev_suggestion"] = jev_route
+        base["jev_confidence"] = jev_result.confidence
+        base["jev_backend"] = jev_result.backend
+        if jev_result.above_threshold(0.75):
+            base["suggested_route"] = jev_route
+    except Exception:
+        pass
+    return base
 
 
 @router.post("/projects")
@@ -2027,3 +2038,60 @@ async def api_deactivate_skill(employee_id: str, skill_id: str, user=Depends(get
     if not ok:
         raise HTTPException(404, "Skill not found")
     return {"deactivated": True}
+
+
+# ── Decision Engine endpoints ──────────────────────────────────────
+
+class DecisionTestRequest(BaseModel):
+    question_type: str  # route, qa, repair, employee, difficulty, human_review
+    context: str = ""
+
+
+@router.get("/decision/health")
+async def decision_health(current_user: dict = Depends(get_current_user)):
+    from app.decision_engine.jev_client import JEV_API_KEY, JEFF_ENDPOINT
+    return {
+        "jev_configured": bool(JEV_API_KEY),
+        "jeff_configured": bool(JEFF_ENDPOINT),
+        "active_backend": "jev" if JEV_API_KEY else ("jeff" if JEFF_ENDPOINT else "rules"),
+    }
+
+
+@router.post("/decision/test")
+async def decision_test(req: DecisionTestRequest, current_user: dict = Depends(get_current_user)):
+    from app.decision_engine import decision_engine
+    from dataclasses import asdict
+
+    context = req.context or "Build a task management app with user auth and real-time updates"
+
+    if req.question_type == "route":
+        choice, result = await decision_engine.classify_route(context)
+    elif req.question_type == "qa":
+        choice, result = await decision_engine.qa_gate(
+            tests_total=10, tests_passed=8, tests_failed=2,
+            failure_details=context or "2 tests failed: auth middleware and rate limiter"
+        )
+    elif req.question_type == "repair":
+        choice, result = await decision_engine.repair_strategy(
+            attempt_number=2, previous_attempts=["patched auth.py"],
+            current_failures=context or "rate limiter still fails", files_changed=3
+        )
+    elif req.question_type == "employee":
+        choice, result = await decision_engine.route_employee(context)
+    elif req.question_type == "assess":
+        results = await decision_engine.assess_task(context)
+        return {
+            "question_type": "assess",
+            "results": {k: asdict(v) for k, v in results.items()},
+        }
+    else:
+        raise HTTPException(400, f"Unknown question_type: {req.question_type}. Use: route, qa, repair, employee, assess")
+
+    return {
+        "question_type": req.question_type,
+        "choice": choice,
+        "confidence": result.confidence,
+        "backend": result.backend,
+        "latency_ms": round(result.latency_ms, 1),
+        "probabilities": result.probabilities,
+    }
