@@ -82,6 +82,14 @@ The second is undeniable: nobody can argue that self-review beats independent re
 
 ---
 
-Related: [[Project Vision]], [[Roadmap]], [[Six Agent Architecture]], [[AI Agent Market - Competitors]]
+## Evolution: AI Action Infrastructure
+
+This thesis remains valid but is now **one layer** of a larger strategic framework. The deep thesis shifts ARIA from "AI software company" to "AI Action Infrastructure" — a model-agnostic reliability runtime where the fundamental object is ACTION with intent, authority, preconditions, evidence, verification, commit, rollback, and audit.
+
+See [[Deep Thesis — AI Action Infrastructure]] for the full framework.
+
+---
+
+Related: [[Deep Thesis — AI Action Infrastructure]], [[Project Vision]], [[Roadmap]], [[Six Agent Architecture]], [[AI Agent Market - Competitors]]
 
 #thesis #strategy #locked

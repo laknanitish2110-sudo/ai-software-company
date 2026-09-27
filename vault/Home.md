@@ -9,6 +9,7 @@
 > |--------|-------|
 > | **Version** | v3.0 (Autonomous Execution Runtime) |
 > | **Core Thesis** | Agent Output Quality Assurance — [[Core Thesis]] |
+> | **Deep Thesis** | AI Action Infrastructure — [[Deep Thesis — AI Action Infrastructure]] |
 > | **Frontend** | [Vercel](https://ai-software-company-gold.vercel.app) — auto-deploy |
 > | **Backend** | Railway (app + Redis + Postgres) — auto-deploy |
 > | **Employees** | 6 roles: Sage, Scout, Arc, Atlas, Sentinel, Scribe |
@@ -34,6 +35,7 @@
 | Document | Description |
 |----------|-------------|
 | [[Core Thesis]] | Why ARIA exists — the undeniable positioning |
+| [[Deep Thesis — AI Action Infrastructure]] | The larger framework — reliability runtime, not just an agent |
 | [[Project Vision]] | Original vision and evolution |
 | [[Roadmap]] | V1-V5 roadmap with current status |
 
