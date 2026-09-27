@@ -1,17 +1,22 @@
 """
 Autonomous execution controller for AI employees.
 
-Drives a state-machine loop that enables an employee (starting with Atlas,
-the Software Engineer) to autonomously complete multi-step coding tasks:
+Policy-driven state machine — each employee role gets its own execution
+pipeline via ExecutionPolicy (see execution_policies.py):
 
-  PLANNING → IMPLEMENTING → EXECUTING → OBSERVING → REPAIRING → TESTING → QA → DELIVERING → COMPLETED
+  Atlas (Engineer): PLANNING → IMPLEMENTING → EXECUTING → OBSERVING → REPAIRING → TESTING → QA → DELIVERING
+  Scout (Researcher): PLANNING → RESEARCHING → ANALYZING → SYNTHESIZING → QA → DELIVERING
+  Arc (Architect): PLANNING → DESIGNING → EVALUATING → REFINING → QA → DELIVERING
+  ... etc.
 
 Key design decisions:
-- Employee-agnostic: any employee can use this loop, Atlas proves it first
+- Policy-driven: each role has its own states, transitions, and phase prompts
+- Structured state transitions: LLM returns JSON with next_state + reason
 - Persistent E2B sandbox: one sandbox lives across the entire execution
 - Budget-limited: max iterations, tokens, and wall-clock time prevent runaway
 - Observable: every iteration logged, progress events published via Redis
-- Sentinel QA gate: optionally delegates to Sentinel for quality check before delivery
+- Independent Sentinel QA: separate LLM call in clean context for verification
+- Cost tracking: per-phase token tracking for billing and budget enforcement
 """
 
 import json
@@ -19,108 +24,28 @@ import asyncio
 import logging
 import time
 import os
-from enum import Enum
 from typing import Any
+
+from app.services.execution_policies import (
+    Phase, ExecutionPolicy, TERMINAL_PHASES,
+    get_policy_for_role, get_valid_transitions, get_phase_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
-
-class ExecutionState(str, Enum):
-    PLANNING = "PLANNING"
-    IMPLEMENTING = "IMPLEMENTING"
-    EXECUTING = "EXECUTING"
-    OBSERVING = "OBSERVING"
-    REPAIRING = "REPAIRING"
-    TESTING = "TESTING"
-    QA = "QA"
-    DELIVERING = "DELIVERING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    CANCELLED = "CANCELLED"
-
-
-TRANSITIONS = {
-    ExecutionState.PLANNING: [ExecutionState.IMPLEMENTING, ExecutionState.FAILED],
-    ExecutionState.IMPLEMENTING: [ExecutionState.EXECUTING, ExecutionState.FAILED],
-    ExecutionState.EXECUTING: [ExecutionState.OBSERVING, ExecutionState.FAILED],
-    ExecutionState.OBSERVING: [
-        ExecutionState.REPAIRING,
-        ExecutionState.TESTING,
-        ExecutionState.IMPLEMENTING,
-        ExecutionState.FAILED,
-    ],
-    ExecutionState.REPAIRING: [ExecutionState.EXECUTING, ExecutionState.FAILED],
-    ExecutionState.TESTING: [
-        ExecutionState.QA,
-        ExecutionState.REPAIRING,
-        ExecutionState.FAILED,
-    ],
-    ExecutionState.QA: [
-        ExecutionState.DELIVERING,
-        ExecutionState.REPAIRING,
-        ExecutionState.FAILED,
-    ],
-    ExecutionState.DELIVERING: [ExecutionState.COMPLETED, ExecutionState.FAILED],
-}
-
-
-PHASE_PROMPTS = {
-    ExecutionState.PLANNING: (
-        "You are in PLANNING phase. Analyze the goal and create a concrete, step-by-step plan.\n"
-        "Output a numbered list of implementation steps. Be specific about files, functions, and tests.\n"
-        "End your plan with a clear summary of what you will build.\n"
-        "Do NOT start coding yet — just plan."
-    ),
-    ExecutionState.IMPLEMENTING: (
-        "You are in IMPLEMENTING phase. Write the code according to your plan.\n"
-        "Use write_file to create each file. Use read_file if you need to check existing files.\n"
-        "Implement ALL the code needed — models, logic, endpoints, config.\n"
-        "When you're done writing all files, respond with DONE."
-    ),
-    ExecutionState.EXECUTING: (
-        "You are in EXECUTING phase. Run the code you wrote to verify it works.\n"
-        "Use run_code to execute the main entry point or start the application.\n"
-        "If it needs packages installed, include them.\n"
-        "Report the output exactly as it appears."
-    ),
-    ExecutionState.OBSERVING: (
-        "You are in OBSERVING phase. Analyze the execution results.\n"
-        "If there were errors, identify the root cause and what needs to be fixed.\n"
-        "If execution succeeded, decide whether to run tests or proceed to QA.\n"
-        "Respond with one of: NEEDS_REPAIR (if errors), RUN_TESTS (if code works), NEEDS_MORE_CODE (if incomplete)."
-    ),
-    ExecutionState.REPAIRING: (
-        "You are in REPAIRING phase. Fix the issues identified in the previous phase.\n"
-        "Read the failing files, identify the bug, and use write_file to fix them.\n"
-        "When all fixes are applied, respond with DONE."
-    ),
-    ExecutionState.TESTING: (
-        "You are in TESTING phase. Write and run tests for the code you built.\n"
-        "Use write_file to create test files, then use run_code to execute them.\n"
-        "If tests fail, report what failed. If tests pass, respond with TESTS_PASSED."
-    ),
-    ExecutionState.QA: (
-        "You are in QA phase. Review the entire codebase you've built.\n"
-        "List all files created. Check for: missing error handling, security issues,\n"
-        "incomplete implementations, missing edge cases.\n"
-        "If quality is acceptable, respond with QA_PASSED.\n"
-        "If issues found, respond with QA_FAILED and list what needs fixing."
-    ),
-    ExecutionState.DELIVERING: (
-        "You are in DELIVERING phase. Prepare a final summary of what was built.\n"
-        "List all files created, key decisions made, and how to use the result.\n"
-        "This summary will be shown to the user as the deliverable."
-    ),
-}
+ExecutionState = Phase
 
 
 class AutonomousExecutionController:
-    """Drives a single autonomous execution to completion."""
+    """Drives a single autonomous execution to completion using role-specific policies."""
 
     def __init__(self, execution_id: str):
         self.execution_id = execution_id
         self._sandbox = None
         self._cancelled = False
+        self._policy: ExecutionPolicy | None = None
+        self._phase_costs: dict[str, int] = {}
+        self._total_cost_tokens: int = 0
 
     async def run(self):
         """Main entry point — runs the full autonomous loop."""
@@ -140,6 +65,9 @@ class AutonomousExecutionController:
                 "status": "failed", "error": "Employee not found",
             })
             return
+
+        self._policy = get_policy_for_role(employee.get("role", ""))
+        logger.info(f"Execution {self.execution_id}: using {self._policy.role} policy ({len(self._policy.phases)} phases)")
 
         from app.core.database import now_iso
         await update_autonomous_execution(self.execution_id, {
@@ -176,7 +104,7 @@ class AutonomousExecutionController:
             EMPLOYEE_ROLE_TO_ENGINE_ROLE,
         )
 
-        state = ExecutionState(execution.get("state", "PLANNING"))
+        state = Phase(execution.get("state", "PLANNING"))
         iteration = execution.get("iteration", 0)
         tokens_used = execution.get("tokens_used", 0)
         max_iterations = execution.get("max_iterations", 25)
@@ -199,9 +127,15 @@ class AutonomousExecutionController:
 
         chat_messages = self._build_system_messages(employee, execution["goal"])
 
-        while state not in (ExecutionState.COMPLETED, ExecutionState.FAILED, ExecutionState.CANCELLED):
+        while state not in TERMINAL_PHASES:
             if self._cancelled:
-                state = ExecutionState.CANCELLED
+                state = Phase.CANCELLED
+                break
+
+            from app.core.database import get_autonomous_execution as _check_exec
+            _current = await _check_exec(self.execution_id)
+            if _current and _current.get("status") == "cancelled":
+                state = Phase.CANCELLED
                 break
 
             if iteration >= max_iterations:
@@ -217,11 +151,20 @@ class AutonomousExecutionController:
             iteration += 1
             iter_start = time.time()
 
-            phase_prompt = PHASE_PROMPTS.get(state, "")
-            if state == ExecutionState.PLANNING and plan_text:
+            phase_prompt = get_phase_prompt(self._policy, state)
+            if state == Phase.PLANNING and plan_text:
                 phase_prompt += f"\n\nPrevious plan:\n{plan_text}"
 
-            chat_messages.append({"role": "user", "content": f"[PHASE: {state.value}]\n{phase_prompt}"})
+            valid_next = get_valid_transitions(self._policy, state)
+            transition_names = [p.value for p in valid_next if p not in TERMINAL_PHASES]
+            transition_instruction = (
+                "\n\nWhen you are ready to transition, respond with a JSON block:\n"
+                '```json\n{"next_state": "<STATE>", "confidence": 0.0-1.0, "reason": "..."}\n```\n'
+                f"Valid next states: {', '.join(transition_names)}\n"
+                "If you need to stay in the current phase, omit the JSON block."
+            )
+
+            chat_messages.append({"role": "user", "content": f"[PHASE: {state.value}]\n{phase_prompt}{transition_instruction}"})
 
             await self._publish_progress(
                 "iteration",
@@ -229,11 +172,7 @@ class AutonomousExecutionController:
                 {"state": state.value, "iteration": iteration},
             )
 
-            use_tools = state in (
-                ExecutionState.IMPLEMENTING, ExecutionState.EXECUTING,
-                ExecutionState.REPAIRING, ExecutionState.TESTING,
-                ExecutionState.QA, ExecutionState.DELIVERING,
-            )
+            use_tools = state != Phase.PLANNING
 
             tool_iterations = 0
             max_tool_iterations = 10
@@ -250,6 +189,9 @@ class AutonomousExecutionController:
 
                 est_tokens = (len(str(chat_messages)) + len(text or "")) // 4
                 tokens_used += est_tokens
+                phase_key = state.value
+                self._phase_costs[phase_key] = self._phase_costs.get(phase_key, 0) + est_tokens
+                self._total_cost_tokens = tokens_used
 
                 if not tool_calls:
                     response_text = text or ""
@@ -301,9 +243,50 @@ class AutonomousExecutionController:
                 success=True,
             )
 
-            next_state = self._determine_next_state(state, response_text)
+            if state == Phase.QA:
+                sentinel_result = await self._run_sentinel_verification(execution, plan_text)
+                if sentinel_result and sentinel_result.get("verdict") == "FAIL":
+                    issues_text = json.dumps(sentinel_result.get("issues", []), indent=2)
+                    chat_messages.append({
+                        "role": "user",
+                        "content": (
+                            f"[SENTINEL QA REVIEW — INDEPENDENT VERIFICATION]\n"
+                            f"An independent reviewer found issues:\n{issues_text}\n\n"
+                            f"Summary: {sentinel_result.get('summary', 'Issues found')}\n\n"
+                            f"You must fix these issues before the work can be delivered."
+                        ),
+                    })
+                    await add_execution_log(
+                        execution_id=self.execution_id,
+                        iteration=iteration,
+                        state="SENTINEL_QA",
+                        action="sentinel_fail",
+                        input_summary="Independent Sentinel verification",
+                        output_summary=sentinel_result.get("summary", "")[:500],
+                        tokens_used=0,
+                        duration_ms=0,
+                        success=False,
+                    )
+                    next_state = Phase.REPAIRING if Phase.REPAIRING in get_valid_transitions(self._policy, state) else Phase.FAILED
+                elif sentinel_result and sentinel_result.get("verdict") == "PASS":
+                    await add_execution_log(
+                        execution_id=self.execution_id,
+                        iteration=iteration,
+                        state="SENTINEL_QA",
+                        action="sentinel_pass",
+                        input_summary="Independent Sentinel verification",
+                        output_summary=sentinel_result.get("summary", "")[:500],
+                        tokens_used=0,
+                        duration_ms=0,
+                        success=True,
+                    )
+                    next_state = self._determine_next_state(state, response_text, self._policy)
+                else:
+                    next_state = self._determine_next_state(state, response_text, self._policy)
+            else:
+                next_state = self._determine_next_state(state, response_text, self._policy)
 
-            if state == ExecutionState.PLANNING:
+            if state == Phase.PLANNING:
                 plan_text = response_text
                 await update_autonomous_execution(self.execution_id, {"plan": plan_text})
 
@@ -316,6 +299,8 @@ class AutonomousExecutionController:
                     "iteration": iteration,
                     "tokens_used": tokens_used,
                     "elapsed_seconds": int(time.time() - start_time),
+                    "phase_costs": self._phase_costs,
+                    "policy": self._policy.role,
                 }),
             })
 
@@ -324,10 +309,57 @@ class AutonomousExecutionController:
             if len(chat_messages) > 60:
                 chat_messages = self._compact_messages(chat_messages)
 
-        if state == ExecutionState.COMPLETED:
+        if state == Phase.COMPLETED:
             await self._complete(execution, response_text, iteration, tokens_used)
-        elif state == ExecutionState.CANCELLED:
+        elif state == Phase.CANCELLED:
             await self._handle_cancellation(execution)
+
+    async def _run_sentinel_verification(self, execution: dict, plan_text: str) -> dict | None:
+        """Run independent Sentinel QA verification using a separate LLM context."""
+        try:
+            from app.core.database import get_db
+            db = await get_db()
+            try:
+                cursor = await db.execute(
+                    "SELECT * FROM execution_artifacts WHERE execution_id = ?",
+                    (self.execution_id,),
+                )
+                artifact_rows = await cursor.fetchall()
+            finally:
+                await db.close()
+
+            artifacts = [
+                {
+                    "title": row.get("title", ""),
+                    "path": row.get("path", ""),
+                    "content": row.get("content", ""),
+                    "language": row.get("language", ""),
+                }
+                for row in artifact_rows
+            ] if artifact_rows else []
+
+            from app.core.database import get_employee
+            employee = await get_employee(execution["employee_id"], execution["user_id"])
+            employee_name = employee["name"] if employee else "AI Employee"
+
+            from app.services.sentinel_verifier import sentinel_verify
+            result = await sentinel_verify(
+                goal=execution["goal"],
+                plan=plan_text,
+                artifacts=artifacts,
+                employee_name=employee_name,
+            )
+
+            await self._publish_progress(
+                "sentinel_qa",
+                f"Sentinel verdict: {result.get('verdict', 'UNKNOWN')}",
+                {"verdict": result},
+            )
+
+            return result
+        except Exception as e:
+            logger.error(f"Sentinel verification error: {e}")
+            return None
 
     def _build_system_messages(self, employee: dict, goal: str) -> list[dict]:
         system_prompt = (
@@ -338,65 +370,95 @@ class AutonomousExecutionController:
 
         system_prompt += (
             "\nYou are running in AUTONOMOUS MODE. You must complete the following goal "
-            "entirely on your own, without asking questions. Use your tools to write code, "
-            "execute it, fix errors, and test it.\n\n"
+            "entirely on your own, without asking questions. Use your tools to complete "
+            "the work thoroughly.\n\n"
             "IMPORTANT RULES:\n"
-            "- Write complete, working code — no placeholders or TODOs\n"
+            "- Produce complete, working output — no placeholders or TODOs\n"
             "- When you encounter errors, analyze and fix them\n"
-            "- Write tests and make sure they pass\n"
             "- Each phase has a specific purpose — follow the phase instructions\n"
-            "- Respond with the phase transition keywords when ready to move on\n"
+            "- When ready to move to the next phase, respond with a JSON transition block:\n"
+            '  ```json\n  {"next_state": "PHASE_NAME", "confidence": 0.0-1.0, "reason": "..."}\n  ```\n'
+            "- The valid next states will be listed in each phase prompt\n"
+            "- Your work will be independently reviewed by a QA verifier\n"
             f"\nGOAL: {goal}\n"
         )
         return [{"role": "system", "content": system_prompt}]
 
-    def _determine_next_state(self, current: ExecutionState, response: str) -> ExecutionState:
-        """Parse the LLM response to determine the next state transition."""
+    def _determine_next_state(self, current: Phase, response: str, policy: ExecutionPolicy) -> Phase:
+        """Parse structured JSON transition from LLM response, with string-matching fallback."""
+        valid = get_valid_transitions(policy, current)
+        non_terminal = [p for p in valid if p not in TERMINAL_PHASES]
+
+        parsed = self._parse_transition_json(response)
+        if parsed:
+            requested = parsed.get("next_state", "").upper()
+            for candidate in valid:
+                if candidate.value == requested:
+                    confidence = parsed.get("confidence", 0.5)
+                    reason = parsed.get("reason", "")
+                    logger.info(
+                        f"Execution {self.execution_id}: {current.value} → {candidate.value} "
+                        f"(confidence={confidence}, reason={reason[:80]})"
+                    )
+                    return candidate
+            logger.warning(
+                f"Execution {self.execution_id}: LLM requested '{requested}' "
+                f"but valid transitions are {[p.value for p in valid]}"
+            )
+
+        return self._fallback_transition(current, response, policy)
+
+    @staticmethod
+    def _parse_transition_json(response: str) -> dict | None:
+        """Extract a JSON transition block from the LLM response."""
+        if not response:
+            return None
+        import re
+        json_match = re.search(r'```json\s*\n?\s*(\{.*?\})\s*\n?\s*```', response, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+        bare_match = re.search(r'\{"next_state"\s*:.*?\}', response, re.DOTALL)
+        if bare_match:
+            try:
+                return json.loads(bare_match.group(0))
+            except json.JSONDecodeError:
+                pass
+        return None
+
+    def _fallback_transition(self, current: Phase, response: str, policy: ExecutionPolicy) -> Phase:
+        """String-matching fallback for when LLM doesn't return structured JSON."""
+        valid = get_valid_transitions(policy, current)
+        non_terminal = [p for p in valid if p not in TERMINAL_PHASES]
         response_upper = response.upper() if response else ""
 
-        if current == ExecutionState.PLANNING:
-            return ExecutionState.IMPLEMENTING
+        if current == Phase.PLANNING:
+            return non_terminal[0] if non_terminal else Phase.FAILED
 
-        elif current == ExecutionState.IMPLEMENTING:
-            if "DONE" in response_upper:
-                return ExecutionState.EXECUTING
-            return ExecutionState.IMPLEMENTING
+        if current == Phase.DELIVERING:
+            return Phase.COMPLETED
 
-        elif current == ExecutionState.EXECUTING:
-            return ExecutionState.OBSERVING
+        for candidate in non_terminal:
+            if candidate.value in response_upper:
+                return candidate
 
-        elif current == ExecutionState.OBSERVING:
-            if "NEEDS_REPAIR" in response_upper:
-                return ExecutionState.REPAIRING
-            elif "NEEDS_MORE_CODE" in response_upper:
-                return ExecutionState.IMPLEMENTING
-            elif "RUN_TESTS" in response_upper or "TESTS" in response_upper:
-                return ExecutionState.TESTING
-            return ExecutionState.TESTING
+        if "DONE" in response_upper or "COMPLETE" in response_upper or "PASSED" in response_upper:
+            forward = [p for p in non_terminal if p != current]
+            if forward:
+                return forward[0]
 
-        elif current == ExecutionState.REPAIRING:
-            if "DONE" in response_upper:
-                return ExecutionState.EXECUTING
-            return ExecutionState.REPAIRING
+        if "FAIL" in response_upper or "ERROR" in response_upper:
+            if Phase.REPAIRING in valid:
+                return Phase.REPAIRING
+            return Phase.FAILED
 
-        elif current == ExecutionState.TESTING:
-            if "TESTS_PASSED" in response_upper or "ALL TESTS PASS" in response_upper:
-                return ExecutionState.QA
-            elif "FAIL" in response_upper:
-                return ExecutionState.REPAIRING
-            return ExecutionState.QA
+        if len(non_terminal) == 1:
+            return non_terminal[0]
 
-        elif current == ExecutionState.QA:
-            if "QA_PASSED" in response_upper or "QUALITY" in response_upper and "ACCEPTABLE" in response_upper:
-                return ExecutionState.DELIVERING
-            elif "QA_FAILED" in response_upper:
-                return ExecutionState.REPAIRING
-            return ExecutionState.DELIVERING
-
-        elif current == ExecutionState.DELIVERING:
-            return ExecutionState.COMPLETED
-
-        return ExecutionState.FAILED
+        forward = [p for p in non_terminal if p != current]
+        return forward[0] if forward else (non_terminal[0] if non_terminal else Phase.FAILED)
 
     def _compact_messages(self, messages: list[dict]) -> list[dict]:
         """Keep system + last 40 messages to avoid context overflow."""
@@ -409,11 +471,18 @@ class AutonomousExecutionController:
 
         await update_autonomous_execution(self.execution_id, {
             "status": "completed",
-            "state": ExecutionState.COMPLETED.value,
+            "state": Phase.COMPLETED.value,
             "result": result,
             "iteration": iteration,
             "tokens_used": tokens_used,
             "completed_at": now_iso(),
+            "progress": json.dumps({
+                "state": Phase.COMPLETED.value,
+                "iteration": iteration,
+                "tokens_used": tokens_used,
+                "phase_costs": self._phase_costs,
+                "policy": self._policy.role if self._policy else "unknown",
+            }),
         })
 
         await self._collect_artifacts(execution)
@@ -448,7 +517,7 @@ class AutonomousExecutionController:
 
         await update_autonomous_execution(self.execution_id, {
             "status": "cancelled",
-            "state": ExecutionState.CANCELLED.value,
+            "state": Phase.CANCELLED.value,
             "completed_at": now_iso(),
         })
         await self._publish_progress("cancelled", "Execution cancelled by user")
@@ -525,32 +594,35 @@ def _guess_language(path: str) -> str | None:
 # Background runner
 # ---------------------------------------------------------------------------
 
-_active_executions: dict[str, AutonomousExecutionController] = {}
+async def start_autonomous_execution(execution_id: str):
+    """Enqueue an autonomous execution for the durable worker to pick up.
 
-
-async def start_autonomous_execution(execution_id: str) -> AutonomousExecutionController:
-    """Start an autonomous execution in the background. Returns the controller."""
-    controller = AutonomousExecutionController(execution_id)
-    _active_executions[execution_id] = controller
-
-    async def _run_and_cleanup():
-        try:
-            await controller.run()
-        finally:
-            _active_executions.pop(execution_id, None)
-
-    asyncio.create_task(_run_and_cleanup())
-    return controller
+    The execution stays in 'pending' status — the execution_worker polls
+    for pending executions, claims them via Redis SETNX, and runs them
+    with heartbeat/timeout/retry. This survives process restarts.
+    """
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        logger.error(f"start_autonomous_execution: {execution_id} not found")
+        return
+    if execution["status"] != "pending":
+        logger.warning(f"start_autonomous_execution: {execution_id} already {execution['status']}")
+        return
+    logger.info(f"Execution {execution_id} enqueued for worker pickup")
 
 
 async def cancel_autonomous_execution(execution_id: str) -> bool:
-    """Cancel a running autonomous execution."""
-    controller = _active_executions.get(execution_id)
-    if controller:
-        await controller.cancel()
-        return True
-    return False
-
-
-def get_active_execution(execution_id: str) -> AutonomousExecutionController | None:
-    return _active_executions.get(execution_id)
+    """Cancel a running autonomous execution by marking it in the DB."""
+    from app.core.database import get_autonomous_execution, update_autonomous_execution, now_iso
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        return False
+    if execution["status"] in ("completed", "failed", "cancelled"):
+        return False
+    await update_autonomous_execution(execution_id, {
+        "status": "cancelled",
+        "error": "Cancelled by user",
+        "completed_at": now_iso(),
+    })
+    return True

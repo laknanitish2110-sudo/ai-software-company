@@ -1181,6 +1181,22 @@ export async function cancelExecution2(executionId: string): Promise<{ cancelled
   return checkedJson(res, "Failed to cancel execution");
 }
 
+export interface ExecutionCosts {
+  execution_id: string;
+  tokens_used: number;
+  phase_costs: Record<string, number>;
+  policy: string;
+  iteration: number;
+  status: string;
+}
+
+export async function getExecutionCosts(executionId: string): Promise<ExecutionCosts> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/costs`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to get execution costs");
+}
+
 // ── Goals Engine ──────────────────────────────────────────────────────
 
 export interface Goal {

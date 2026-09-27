@@ -2581,6 +2581,33 @@ async def api_cancel_execution(execution_id: str, user=Depends(get_current_user)
     return {"cancelled": True, "execution_id": execution_id}
 
 
+@router.get("/executions/{execution_id}/costs")
+async def api_get_execution_costs(execution_id: str, user=Depends(get_current_user)):
+    """Get per-phase cost breakdown for an execution."""
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    progress = {}
+    if execution.get("progress"):
+        try:
+            progress = json.loads(execution["progress"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {
+        "execution_id": execution_id,
+        "tokens_used": execution.get("tokens_used", 0),
+        "phase_costs": progress.get("phase_costs", {}),
+        "policy": progress.get("policy", "unknown"),
+        "iteration": execution.get("iteration", 0),
+        "status": execution.get("status", "unknown"),
+    }
+
+
 # ── Goals Engine ──────────────────────────────────────────────────────
 
 @router.post("/goals")

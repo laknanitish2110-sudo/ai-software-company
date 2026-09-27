@@ -3589,10 +3589,25 @@ async def get_goal_progress(goal_id: str) -> dict:
         pending = sum(r["cnt"] for r in rows if r["status"] == "pending")
         blocked = sum(r["cnt"] for r in rows if r["status"] == "blocked")
         progress = int((completed / total) * 100) if total > 0 else 0
+
+        cursor2 = await db.execute(
+            """SELECT COALESCE(SUM(ae.tokens_used), 0) as total_tokens,
+                      COUNT(ae.id) as execution_count
+               FROM goal_tasks gt
+               JOIN autonomous_executions ae ON ae.id = gt.execution_id
+               WHERE gt.goal_id = ?""",
+            (goal_id,),
+        )
+        cost_row = await cursor2.fetchone()
+        total_tokens = cost_row["total_tokens"] if cost_row else 0
+        execution_count = cost_row["execution_count"] if cost_row else 0
+
         return {
             "total": total, "completed": completed, "failed": failed,
             "running": running, "pending": pending, "blocked": blocked,
             "progress": progress,
+            "total_tokens": total_tokens,
+            "execution_count": execution_count,
         }
     finally:
         await db.close()

@@ -20,8 +20,10 @@ async def lifespan(app: FastAPI):
     await init_db()
     await stale_recovery_worker.start()
     from app.services.delegation_worker import start_delegation_worker, stop_delegation_worker
+    from app.services.execution_worker import start_execution_worker, stop_execution_worker
     from app.services.memory_engine import start_consolidation_worker, stop_consolidation_worker
     start_delegation_worker()
+    start_execution_worker()
     start_consolidation_worker()
     import asyncio
     from app.core.scheduler import scheduler_loop
@@ -29,6 +31,7 @@ async def lifespan(app: FastAPI):
     yield
     scheduler_task.cancel()
     stop_consolidation_worker()
+    stop_execution_worker()
     stop_delegation_worker()
     await stale_recovery_worker.stop()
     try:
