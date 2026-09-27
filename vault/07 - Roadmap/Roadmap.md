@@ -45,20 +45,32 @@
 - [x] **Jev Decision Layer** — cheap model (Lightning 30B) for routing/QA, expensive (Super 120B) for creative work
 - [x] **"While You Were Away" Reports** — structured work summaries grouped by employee
 
-## V4.0 — Quality Guarantee Platform (IN PROGRESS)
-**Status:** Thesis locked, implementation planned
+## V4.0 — AI Action Infrastructure (IN PROGRESS)
+**Status:** Deep thesis locked, roadmap locked, implementation next
 
-> [!decision] ARIA's core thesis: "We're the only AI that guarantees output quality through independent verification."
-> See [[Core Thesis]] for the full strategic argument.
+> [!decision] ARIA's evolution: from "AI software company" to "the first AI Action Infrastructure — a model-agnostic reliability runtime that proves what happened, guarantees quality, recovers intelligently, and gets smarter with every execution."
+> See [[Deep Thesis — AI Action Infrastructure]] for the full framework.
 
-### Locked Features (sequential implementation)
+### The 6 Core Features (sequential, foundation-first)
 
-| # | Feature | Description | Status |
-|---|---------|-------------|--------|
-| 1 | **Verification Proof Engine** | Scorecards showing what Sentinel caught vs what would've shipped raw | Planned |
-| 2 | **AI CEO Briefing** | Opinionated daily strategic summary from Jev layer | Planned |
-| 3 | **Employee Debate** | Structured disagreement between agents, visible to user | Planned |
-| 4 | **Execution Replay** | DVR for AI reasoning, fork from any point | Planned |
+| # | Feature | Deep Thesis Gap | Description | Status |
+|---|---------|----------------|-------------|--------|
+| 1 | **Action Ledger** | B (Action Truth) + C (Causal History) | Every step = causal record with intent, evidence, verification, commit | Planned |
+| 2 | **Verification Proof Engine** | B (Action Truth) | Scorecards: what Sentinel caught, quality delta, cost-vs-bugs-saved | Planned |
+| 3 | **State Truth Engine** | A (State Truth) | Claims validated against evidence — memory ≠ truth | Planned |
+| 4 | **Recovery Engine** | D (Recovery) | Diagnose → checkpoint → compensate → resume from verified state | Planned |
+| 5 | **Cross-Agent Trust Chain** | E (Cross-Agent Trust) | Proof trail: who authorized what, based on which evidence | Planned |
+| 6 | **Experience Compiler** | Moat (accumulated intelligence) | Trajectories + failures → reusable skills with tests | Planned |
+
+See [[Action Infrastructure Roadmap]] for detailed specs of each feature.
+
+### Additional Locked Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **AI CEO Briefing** | Opinionated daily strategic summary from Jev layer | Planned |
+| **Employee Debate** | Structured disagreement between agents, visible to user | Planned |
+| **Execution Replay** | DVR for AI reasoning, fork from any point | Planned |
 
 ### Supporting Work
 
@@ -66,7 +78,6 @@
 |---------|-------------|--------|
 | E2E Production Test | Execution worker + Sentinel + Jev on Railway with real LLMs | Planned |
 | Execution History Page | Dedicated `/executions` route with filtering | Planned |
-| Sentinel Dashboard | QA pass/fail rates, cost savings visualization | Planned |
 | Cross-Employee Execution | Goals requiring multiple employees orchestrated together | Planned |
 | Away Mode | Queue goals and leave — team works autonomously | Planned |
 
