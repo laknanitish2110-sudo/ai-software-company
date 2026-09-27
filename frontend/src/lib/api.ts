@@ -680,6 +680,67 @@ export async function markActivitySeen(): Promise<void> {
   });
 }
 
+export interface WorkReportExecution {
+  execution_id: string;
+  goal: string;
+  status: string;
+  state: string;
+  iteration: number;
+  tokens_used: number;
+  phase_costs: Record<string, number>;
+  phases_completed: string[];
+  artifacts: { id: string; type: string; title: string; path: string | null; language: string | null }[];
+  sentinel_result: unknown;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+}
+
+export interface WorkReportEmployee {
+  employee_id: string;
+  employee_name: string;
+  employee_role: string;
+  employee_avatar: string | null;
+  executions: WorkReportExecution[];
+  total_tokens: number;
+  completed: number;
+  failed: number;
+  artifacts_count: number;
+}
+
+export interface WorkReport {
+  period: { since: string; hours: number };
+  summary: {
+    total_executions: number;
+    completed: number;
+    failed: number;
+    in_progress: number;
+    cancelled?: number;
+    total_tokens: number;
+    total_artifacts: number;
+    active_employees?: number;
+  };
+  employees: WorkReportEmployee[];
+  timeline: {
+    timestamp: string;
+    employee_name: string;
+    employee_role: string;
+    event: string;
+    status: string;
+    execution_id: string;
+  }[];
+  has_activity: boolean;
+}
+
+export async function getWorkReport(hours = 24, since?: string): Promise<WorkReport> {
+  const params = new URLSearchParams({ hours: String(hours) });
+  if (since) params.set("since", since);
+  const res = await fetchWithTimeout(`${API_BASE}/work-report?${params}`, { headers: authHeaders() });
+  return checkedJson(res, "Failed to fetch work report");
+}
+
 export async function createEmployee(data: {
   name: string; role: string; persona?: string; avatar_url?: string; config?: Record<string, unknown>;
 }): Promise<Employee> {

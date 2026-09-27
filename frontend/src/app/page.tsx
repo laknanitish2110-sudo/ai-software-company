@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import LandingPage from "@/components/LandingPage";
 import StartProject from "@/components/StartProject";
 import OnboardingModal from "@/components/OnboardingModal";
+import WorkReportPanel from "@/components/WorkReport";
 import { useToast } from "@/components/Toast";
 import { createProject, getProjects, getDemoStatus, loadDemoCache, deleteProject, renameProject } from "@/lib/api";
 
@@ -21,6 +22,7 @@ export default function Home() {
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [hasDemo, setHasDemo] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showWorkReport, setShowWorkReport] = useState(true);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -113,6 +115,7 @@ export default function Home() {
           }}
         />
       )}
+      {showWorkReport && <WorkReportPanel onDismiss={() => setShowWorkReport(false)} />}
       <StartProject
         onStart={handleStart}
         loading={loading}

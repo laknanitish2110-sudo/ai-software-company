@@ -1988,6 +1988,13 @@ async def api_mark_activity_seen(user=Depends(get_current_user)):
     return {"status": "ok"}
 
 
+@router.get("/work-report")
+async def api_get_work_report(hours: int = 24, since: str | None = None, user=Depends(get_current_user)):
+    from app.services.work_reports import generate_work_report
+    report = await generate_work_report(user["id"], since=since, hours=hours)
+    return report
+
+
 # --- EMPLOYEE MEMORY ENDPOINTS ---
 
 @router.get("/employees/{employee_id}/memories")
