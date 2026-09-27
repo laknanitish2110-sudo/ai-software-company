@@ -1,173 +1,94 @@
 # Roadmap
 
-## V1.0 — Hackathon MVP (DONE)
-**Target:** Aug 18-19, 2026 hackathon
-**Status:** Complete
+## V1.0–V1.4 — Hackathon Pipeline (DONE)
+**Status:** Complete (Aug 2026)
 
-### What's built
-- [x] 6-agent sequential pipeline (CEO -> BA -> Researcher -> Architect -> Engineer -> PPT)
-- [x] 4 founder approval gates (BA, Researcher, Architect, Engineer)
-- [x] Cross-review system — agents review each other's output
-- [x] Shared project memory across all agents
-- [x] Real-time WebSocket activity feed
-- [x] Call Employee — direct chat with any agent
-- [x] Engineer pair programming iteration mode
-- [x] Code generation -> downloadable `.zip` with runnable project
-- [x] PPTX generation -> downloadable `.pptx` presentation
-- [x] DOCX generation -> downloadable `.docx` documentation
-- [x] Web search via Tavily (AI-optimized search) for Researcher
-- [x] Light theme dashboard with pipeline visualization
-- [x] n8n webhook integration (5 event types, 12 events per run)
-- [x] Share buttons (Google Drive, Sheets, Email, Share All)
-- [x] OmniRoute AI gateway for model routing
-- [x] End-to-end test with all deliverables (see [[Pipeline Test Results]])
-- [x] Model strategy — free models + Claude Sonnet 4 for Engineer (see [[Model Strategy]])
+- [x] 6-agent sequential pipeline (CEO → BA → Researcher → Architect → Engineer → PPT)
+- [x] 4 founder approval gates
+- [x] Cross-review system
+- [x] RAG Workflow Agent (19,870 n8n workflows)
+- [x] CEO-first pipeline with deliverable type classification
+- [x] Real outputs: ZIP, PPTX, DOCX, n8n JSON
+- [x] Deployed: Vercel (frontend) + Railway (backend)
 
-## V1.1 — Deployed + Polished (DONE)
-**Completed:** 2026-08-11
-**Status:** Complete
+## V2.0 — Persistent AI Employee Platform (DONE)
+**Status:** Complete (Sep 2026)
 
-### What's new
-- [x] **Backend deployed** — originally Railway, migrating to Render for LaunchpadX
-- [x] **Frontend deployed on Vercel** — live at `frontend-wheat-ten-gla6y29t60.vercel.app`
-- [x] **SIH-optimized agent prompts** — all 6 agents tuned for ultra-short SIH inputs (median 72 chars)
-  - CEO: 3 concrete expansion examples, Indian context (PM Kisan, DIKSHA, CSC centres)
-  - BA: Indian personas mandatory, DPDP Act 2023, 2G connectivity, 24h scope
-  - Researcher: Bhashini API, IndiaAI, prior SIH winners, Indian startup sources
-  - Architect: Railway/Render hosting, Indian scale (1.4B people), Razorpay/PhonePe UPI
-  - Engineer: Indian locale (INR, IST, pincode), 3-command setup
-  - PPT: SIH judge criteria, Indian statistics
-- [x] **Skeleton loading states** — shimmer animation loaders replacing blank screens
-  - DashboardSkeleton, SkeletonCanvas, SkeletonOutputCard, SkeletonActivity
-  - CSS `@keyframes shimmer` and `@keyframes pulseSubtle` animations
-- [x] **Enhanced peer review system**
-  - Quality score (1-10) with color-coded badge (green/blue/yellow/red)
-  - Role-specific review criteria (5 questions per role, SIH-focused)
-  - PPT agent now reviewed by Engineer
-  - Alignment check and hackathon readiness fields
-- [x] **Toast notification system** — success/error/warning/info toasts with auto-dismiss
-- [x] **WebSocket disconnect banner** — visual warning + auto-reconnect
-- [x] **Agent introspection panel** — view token usage, model, processing time
-- [x] **CORS configuration** — regex match for `*.vercel.app` domains
-- [x] **Health endpoint** — `GET /health` for Railway monitoring
+> [!pipeline] The pivot from pipeline tool to AI company platform.
 
-## V1.2 — RAG Workflow Agent (DONE)
-**Completed:** 2026-08-11
-**Status:** Complete
+- [x] **Auth + User Accounts** — OAuth (Google/GitHub), JWT sessions
+- [x] **Persistent AI Employees** — 6 roles: Sage (BA), Scout (Researcher), Arc (Architect), Atlas (Engineer), Sentinel (QA), Scribe (Writer)
+- [x] **Employee Chat** — direct conversation with any employee, with memory
+- [x] **Tool System** — function calling, code execution (E2B sandbox)
+- [x] **Employee Memory** — 5 types: core, episodic, procedural, semantic, working
+- [x] **Memory Consolidation** — dedup, conflict resolution, freshness decay
+- [x] **Skill Learning** — employees learn from past work
+- [x] **Multi-Employee Delegation** — employees hand off work to each other
+- [x] **Async Delegation Worker** — Redis-backed durable task processing
+- [x] **Goals Engine** — decompose objectives into task graphs
+- [x] **Semantic Memory** — NVIDIA neural embeddings with TF-IDF fallback
+- [x] **Billing** — Stripe integration, per-user usage tracking
+- [x] **Onboarding** — guided first-time experience
+- [x] **Settings** — profile, plan management
 
-### What's new
-- [x] **RAG Workflow Agent** — searches 19,870 n8n workflows before pipeline starts
-  - Workflow indexer: parses JSONs into SQLite with FTS5 full-text search
-  - 27 domain categories, SIH theme mapping
-  - 7,806 AI-powered workflows identified (39%)
-  - Three-tier classification: reusable / modifiable / inspiration
-- [x] **Auto-wired into pipeline** — runs before CEO, results in shared memory for all agents
-- [x] **5 new API endpoints** — `/workflows/analyze`, `/search`, `/categories`, etc.
-- [x] **Node-based categorization** — uncategorized workflows classified by their n8n node types
+## V3.0 — Autonomous Execution Runtime (DONE)
+**Status:** Complete (Sep 27, 2026) — Commit `db34a26`
 
-## V1.3 — CEO-First Pipeline + Workflow JSON (DONE)
-**Completed:** 2026-08-14
-**Status:** Complete
+> [!agent] The anti-wrapper differentiator. AI employees that work autonomously with independent quality assurance.
 
-### What's new
-- [x] **CEO-first pipeline** — CEO runs before RAG, breaks problem into 3-7 searchable components
-- [x] **Deliverable type classification** — CEO classifies output as `code`, `workflow`, or `hybrid`
-  - "code" → web app, API, CLI (regular ZIP download)
-  - "workflow" → automation/agent pipeline (n8n workflow JSON, importable into n8n)
-  - "hybrid" → both a code project AND an automation workflow (rare, only when genuinely needed)
-- [x] **Component-by-component RAG search** — RAG searches each CEO component separately, tags results with matched component
-- [x] **n8n workflow JSON as deliverable** — Engineer generates valid n8n workflow JSON with real node types, connections, credential placeholders
-- [x] **Workflow JSON download** — new endpoint `GET /api/projects/{id}/download/workflow`
-- [x] **Token efficiency** — no wasted tokens generating both code and workflow when only one is needed
-- [x] **Per-component context** — agents see which workflows match which component of the problem
-- [x] **26 API routes** (was 25)
-- [x] **4 deliverable types** (ZIP, PPTX, DOCX, n8n JSON)
+- [x] **Durable Execution Worker** — Redis-backed, SETNX claims, heartbeat, retry, dead-letter queue
+- [x] **Employee Execution Policies** — role-specific state machines (Atlas: 8 phases, Scout: 6, etc.)
+- [x] **Structured State Transitions** — LLM returns JSON decisions validated against policy transition graph
+- [x] **Independent Sentinel Verification** — separate LLM context, never sees builder reasoning
+- [x] **Execution Cost Tracking** — per-phase token tracking, budget enforcement
+- [x] **Multi-Tier Sentinel** — 3-tier fail-fast: Structural (cheap) → Deep (standard) → Domain (role-specific)
+- [x] **Jev Decision Layer** — cheap model (Lightning 30B) for routing/QA, expensive (Super 120B) for creative work
+- [x] **"While You Were Away" Reports** — structured work summaries grouped by employee
 
-## V1.4 — LaunchpadX Prompt Tuning (DONE)
-**Completed:** 2026-08-21
-**Status:** Complete
+## V4.0 — Quality Guarantee Platform (IN PROGRESS)
+**Status:** Thesis locked, implementation planned
 
-### What's new
-- [x] **All 6 agent prompts retuned for LaunchpadX** — theme: Agentic AI / GenAI / Agent Building
-  - CEO: Agentic AI expansion examples, agent design pattern context, framework references
-  - BA: AI agent ecosystem constraints (LLM cost, hallucination, latency), SNIST Hyderabad personas
-  - Researcher: Agent frameworks (LangChain, CrewAI, AutoGen), LLM providers, vector DBs, production tooling
-  - Architect: Agent pipeline design, RAG pipeline, tool calling, memory strategies, cost-per-query
-  - Engineer: Showcase agentic patterns, agent demo-ability, LLM error handling
-  - PPT: LaunchpadX judge criteria (agent innovation, technical depth, demo quality)
-- [x] **Cross-review criteria updated** — "SIH judges" → "LaunchpadX judges (Agentic AI theme)"
-- [x] **CORS updated** — added `*.onrender.com` regex for Render backend hosting
-- [x] **Deliverable type examples updated** — SIH examples → agentic AI examples
+> [!decision] ARIA's core thesis: "We're the only AI that guarantees output quality through independent verification."
+> See [[Core Thesis]] for the full strategic argument.
 
-## V1.5 — Level 4 Engineer
-**Goal:** Engineer agent auto-deploys generated projects
+### Locked Features (sequential implementation)
 
-> [!pipeline] Level 4 Upgrade
-> The Engineer currently generates code as a `.zip` download. Level 4 makes it **auto-deploy**:
+| # | Feature | Description | Status |
+|---|---------|-------------|--------|
+| 1 | **Verification Proof Engine** | Scorecards showing what Sentinel caught vs what would've shipped raw | Planned |
+| 2 | **AI CEO Briefing** | Opinionated daily strategic summary from Jev layer | Planned |
+| 3 | **Employee Debate** | Structured disagreement between agents, visible to user | Planned |
+| 4 | **Execution Replay** | DVR for AI reasoning, fork from any point | Planned |
+
+### Supporting Work
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| **GitHub Auto-Create** | Auto-create repo, push generated code | Planned |
-| **Vercel Auto-Deploy** | Auto-deploy from GitHub, return live URL | Planned |
-| **Interactive Build** | Founder watches code appear in real-time editor | Planned |
-| **Live Preview** | Generated app running at a real URL, not a ZIP | Planned |
-| **Iteration Mode** | Edit code in-browser, re-deploy instantly | Planned |
+| E2E Production Test | Execution worker + Sentinel + Jev on Railway with real LLMs | Planned |
+| Execution History Page | Dedicated `/executions` route with filtering | Planned |
+| Sentinel Dashboard | QA pass/fail rates, cost savings visualization | Planned |
+| Cross-Employee Execution | Goals requiring multiple employees orchestrated together | Planned |
+| Away Mode | Queue goals and leave — team works autonomously | Planned |
 
-See [[GitHub Integration]] and [[Engineer Agent]] for details.
+## V5.0 — Org Intelligence (FUTURE)
+**Status:** Vision only
 
-## V2.0 — Post-Hackathon Product
-**Goal:** Reliable personal tool for solo devs
-
-| Feature | Why | Status |
-|---------|-----|--------|
-| Agent memory persistence | Agents learn from past projects | Planned |
-| Project history dashboard | Browse and compare past projects | Planned |
-| Template projects | Pre-built pipelines for common hackathon types | Planned |
-| Custom agent prompts | Users define their own agent behaviors | Planned |
-| Theme toggle | Light/dark mode switch | Planned |
-| Multiple model presets | Quick-switch between free-only and quality modes | Planned |
-
-## V3.0 — Multi-User Platform
-**Goal:** Other solo devs can use it
-
-| Feature | Why | Status |
-|---------|-----|--------|
-| User authentication | Multiple users, separate workspaces | Planned |
-| Cloud deployment | Accessible from anywhere, not localhost | Planned |
-| Parallel agents | Run Researcher + Architect simultaneously | Planned |
-| Agent-to-agent chat | Agents discuss before presenting to founder | Planned |
-| Marketplace | Share and sell custom agent configurations | Planned |
-
-## Model Strategy
-
-> [!decision] Cost-Optimized Model Split
-> | Agent | Model | Cost |
-> |-------|-------|------|
-> | CEO, BA, Researcher, PPT | Gemma 4 31B | Free |
-> | Architect | DeepSeek V3 | Free |
-> | Engineer | Claude Sonnet 4 | ~$0.25/run |
-> | Cross-Reviews | Gemma 4 31B | Free |
-> | **Total per run** | | **~$0.26** |
->
-> Budget of $10 = 38+ full pipeline runs. See [[Model Strategy]] for details.
-
-## n8n Integration
-
-> [!status] Webhook Event Hub
-> - Instance: `srv1867770.hstgr.cloud`
-> - 5 event types routed: `agent_completed`, `founder_decision`, `project_completed`, `share`, `research_completed`
-> - 12/12 events delivered in test run
-> - See [[n8n Integration]] for full setup
+| Feature | Description |
+|---------|-------------|
+| Institutional Memory | AI company remembers everything across all users |
+| Self-Improving Agents | Sentinel feedback loops back into employee behavior |
+| Model Independence | Hot-swap any LLM provider without behavior changes |
+| Agent Marketplace | Share and sell custom employee configurations |
 
 ## Design Principles (All Versions)
 
 1. **6 agents, never fewer** — separation of concerns IS the value
-2. **Founder always in control** — approval gates are non-negotiable
-3. **Real outputs** — runnable code, real presentations, not just text
-4. **Build for yourself** — this is your tool, not a demo for judges
+2. **Independent verification** — builder never grades its own work
+3. **Quality over speed** — we're not the fastest, we're the most reliable
+4. **Build for yourself** — this is your tool, not a demo
 
 ---
 
-Related: [[Project Vision]], [[How It Works]], [[Pipeline Test Results]], [[Model Strategy]], [[n8n Integration]], [[GitHub Integration]]
+Related: [[Core Thesis]], [[Project Vision]], [[V2 Vision]], [[Gap Analysis]]
 
 #roadmap #planning

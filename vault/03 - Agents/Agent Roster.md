@@ -1,102 +1,66 @@
 # Agent Roster
 
-## Overview
+## Current: Persistent AI Employees (V3)
 
-| Agent | Role | Approval Gate | Output Format |
-|-------|------|--------------|---------------|
-| CEO | Project Manager + Classifier | No (auto-approved) | JSON (brief + deliverable_type + components) |
-| RAG Agent | Component-based Workflow Search | No (auto, post-CEO) | JSON (per-component workflow recommendations) |
-| Business Analyst | Requirements | Yes | JSON |
-| Researcher | Market Research | Yes | JSON |
-| Architect | Technical Design | Yes | JSON |
-| Engineer | Implementation | Yes | JSON -> .zip and/or .json (n8n workflow) |
-| PPT | Presentation | No (auto-complete) | JSON -> .pptx file |
+| Name | Role | Execution Phases | Sentinel Tier 3 Focus |
+|------|------|-----------------|----------------------|
+| **Sage** | Business Analyst | 6: Plan → Analyze → Structure → Review → QA → Deliver | Testable requirements, acceptance criteria |
+| **Scout** | Researcher | 6: Plan → Research → Analyze → Synthesize → QA → Deliver | Source credibility, evidence quality |
+| **Arc** | Architect | 6: Plan → Design → Evaluate → Refine → QA → Deliver | Scalability, single points of failure |
+| **Atlas** | Software Engineer | 8: Plan → Implement → Execute → Observe → Repair → Test → QA → Deliver | Production resilience, dependency management |
+| **Sentinel** | QA Engineer | 7: Plan → Analyze → Test → Report → QA → Deliver | Test coverage, flaky test indicators |
+| **Scribe** | Technical Writer | 6: Plan → Research → Write → Review → QA → Deliver | Developer-followable docs, code examples |
 
-## Individual Agents
+## How Employees Work
 
-- [[RAG Workflow Agent]] — searches 19,870 n8n workflows before pipeline starts
-- [[CEO Agent]]
-- [[Business Analyst Agent]]
-- [[Researcher Agent]]
-- [[Architect Agent]]
-- [[Engineer Agent]]
-- [[PPT Agent]]
+### Chat Mode
+Direct conversation with any employee. They have memory (5 types), skills (learned from past work), and tool access (code execution, web search, delegation).
 
-## Cross-Review Assignments
+### Autonomous Mode
+1. User sets a **goal** (via Goals Engine or direct)
+2. **Delegation Worker** assigns employee
+3. **Execution Controller** runs role-specific state machine
+4. Employee works through phases autonomously
+5. At **QA phase**, [[Multi-Tier Sentinel|Sentinel]] independently verifies output
+6. On **FAIL**, issues sent back → REPAIRING phase → re-verify
+7. On **PASS**, output delivered + [[Jev Decision Layer|cost tracked]]
 
-Each agent's output is reviewed by the most relevant teammate before the Founder sees it:
+### Verification Flow
 
-| Agent Output | Reviewed By | Focus |
-|-------------|-------------|-------|
-| Business Analyst | CEO | Does analysis match the project brief? |
-| Researcher | Business Analyst | Does research cover requirements? |
-| Architect | Researcher | Are tech choices research-backed? |
-| Engineer | Architect | Does code follow the architecture? |
-| PPT | Engineer | Does the presentation match implementation? |
-
-Reviews include a **quality score (1-10)**, alignment check, and hackathon readiness assessment. See [[Cross Review System]] for details.
-
-## LaunchpadX-Optimized Prompts (v1.4)
-
-All agent prompts tuned for LaunchpadX hackathon (theme: Agentic AI / GenAI / Agent Building):
-
-| Agent | LaunchpadX Optimization |
-|-------|------------------------|
-| CEO | Agentic AI expansion examples (code review agent, support chatbot, research assistant), agent design patterns context |
-| BA | AI agent ecosystem constraints (LLM cost, hallucination, latency), tech-focused Indian personas (SNIST Hyderabad) |
-| Researcher | Agent frameworks (LangChain, CrewAI, AutoGen), LLM providers, vector DBs, production AI tooling |
-| Architect | Agent pipeline design, LLM integration, RAG pipeline, tool calling, memory strategies, cost-per-query |
-| Engineer | Showcase agentic AI patterns, agent DOING something for demo, LLM error handling |
-| PPT | LaunchpadX judge criteria (agent innovation, technical depth, demo quality, agentic AI understanding) |
-
-## Pipeline Order (v1.3)
-
-```
-CEO (FIRST) → RAG → BA → Researcher → Architect → Engineer → PPT
+```mermaid
+graph LR
+    E["Employee Output"] --> S1["Sentinel Tier 1<br/>(Jev — cheap)"]
+    S1 -->|60% caught| FAIL1["FAIL → Repair"]
+    S1 -->|PASS| S2["Sentinel Tier 2<br/>(Deep review)"]
+    S2 -->|PASS| S3{"High priority?"}
+    S2 -->|FAIL| FAIL2["FAIL → Repair"]
+    S3 -->|Yes| S3A["Sentinel Tier 3<br/>(Domain expert)"]
+    S3 -->|No| DONE["Deliver ✓"]
+    S3A --> DONE
+    
+    style S1 fill:#06b6d4,stroke:#06b6d4,color:#fff
+    style S2 fill:#f59e0b,stroke:#f59e0b,color:#0f0f14
+    style S3A fill:#ed5f74,stroke:#ed5f74,color:#fff
 ```
 
-CEO runs first to:
-1. Break problem into 3-7 searchable components
-2. Classify `deliverable_type` as `code`, `workflow`, or `hybrid`
+## Legacy: Pipeline Agents (V1)
 
-RAG then searches per-component using the CEO's breakdown, not the raw input.
+The original 6-agent pipeline still exists for quick project generation:
 
-## RAG Workflow Agent (v1.3)
+| Agent | Role | Approval Gate |
+|-------|------|--------------|
+| CEO | Project Manager + Classifier | No (auto) |
+| RAG Agent | Workflow Search | No (auto) |
+| Business Analyst | Requirements | Yes |
+| Researcher | Market Research | Yes |
+| Architect | Technical Design | Yes |
+| Engineer | Implementation | Yes |
+| PPT | Presentation | No (auto) |
 
-After CEO breaks the problem into components, the RAG agent searches **19,870 indexed n8n workflows** per-component. Results tagged with `matched_component` are stored in shared memory.
+See individual agent pages: [[CEO Agent]], [[Business Analyst Agent]], [[Researcher Agent]], [[Architect Agent]], [[Engineer Agent]], [[PPT Agent]], [[RAG Workflow Agent]]
 
-| Metric | Value |
-|--------|-------|
-| **Workflows indexed** | 19,870 |
-| **Categories** | 27 domain categories |
-| **AI-powered workflows** | 7,806 (39%) |
-| **Search engine** | SQLite FTS5 full-text search |
-| **Search mode** | Per-component (from CEO breakdown) |
-| **Response time** | Instant (<100ms) |
+---
 
-The agent classifies matches into three tiers:
-- **Reusable** (relevance 70%+) — use directly
-- **Modifiable** (40-70%) — adapt for this problem
-- **Inspiration** (<40%) — patterns to learn from
+Related: [[Core Thesis]], [[Multi-Tier Sentinel]], [[Execution Policies]], [[Jev Decision Layer]]
 
-## Deliverable Types (v1.3)
-
-| Type | Output | Example |
-|------|--------|---------|
-| `code` | .zip with project files | "Student portal for attendance" |
-| `workflow` | .json importable into n8n | "AI chatbot for WhatsApp support" |
-| `hybrid` | Both .zip and .json | "E-commerce with inventory automation" |
-
-See [[RAG Workflow Agent]] for details.
-
-## Key Design Decisions
-
-1. **Never consolidate roles** — each agent thinks differently about the same problem. A BA focuses on requirements, a Researcher on what exists, an Architect on how to build. Merging loses the focused perspective.
-
-2. **JSON output** — every agent returns structured JSON, making it parseable, displayable, and storable. The Engineer's JSON includes complete file contents that get extracted to real files.
-
-3. **Context inheritance** — each agent receives all previously approved outputs. The Architect sees the BA requirements AND the Research findings. The Engineer sees everything.
-
-4. **Revision feedback** — when rejected, the agent gets the founder's feedback via shared memory and regenerates with that guidance.
-
-Related: [[How It Works]], [[Orchestrator]], [[Cross Review System]]
+#agents #employees #roster

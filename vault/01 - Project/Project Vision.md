@@ -1,56 +1,65 @@
 # Project Vision
 
-## The Problem
+## The Problem (Original)
 
 I love hackathons but I'm always solo. Finding teammates is painful — begging, coordinating, depending on unreliable people. I don't want to find team members. I want to **build** them.
 
-## The Solution
+## The Evolution
 
-An AI-powered software company that operates as my personal engineering team. Instead of one chatbot, an entire company works on my problem — each employee with a distinct role, expertise, and output.
+What started as a hackathon tool became something bigger:
+
+| Phase | Vision | Status |
+|-------|--------|--------|
+| V1 (Aug 2026) | AI hackathon teammates — paste problem, get product | Done |
+| V2 (Sep 2026) | Persistent AI employees with identity, memory, skills | Done |
+| V3 (Sep 2026) | Autonomous execution with independent verification | Done |
+| V4 (Current) | **Quality Guarantee Platform** — the thesis | In Progress |
+| V5 (Future) | Organizational intelligence — self-improving AI company | Vision |
+
+## The Thesis (V4)
+
+> **"You wouldn't let a junior developer ship code without code review. Why do you let AI do it?"**
+
+Every AI tool today has the builder grading its own exam. ARIA is the only platform with **independent multi-agent verification** that catches what single-agent systems miss.
+
+See [[Core Thesis]] for the full strategic argument.
 
 ## Core Philosophy
 
-- The human **always** leads
-- AI collaborates, recommends, analyzes, executes approved work
-- The human reviews, approves, and makes final decisions
-- The system should **never** become fully autonomous
-- It should behave like an experienced company working with its founder
+- **Independent verification** — builder never grades its own work
+- **6 agents, never fewer** — separation of concerns IS the value
+- **Quality over speed** — we're not the fastest, we're the most reliable
+- **Human leads, AI executes** — approval gates, review points, steering
+- **Build for yourself** — this is your tool, not a demo
 
-## How the Founder Uses It
+## The Current System
 
-1. Open the app
-2. Paste a problem statement
-3. Click **"Start Company"**
-4. Review and approve each stage (4 approval gates)
-5. Download runnable code + presentation
-6. Use "Call Employee" to iterate on specifics
-
-## Version Roadmap
-
-### V1 — Hackathon Teammates (Current)
-- 6 agents: CEO, BA, Researcher, Architect, Engineer, PPT
-- Sequential pipeline with approval gates
-- Call Employee for direct conversation
-- File + PPTX download
-
-### V2 — AI Software Company
-- Shared memory with inter-agent discussions
-- Code reviews, QA, DevOps agents
-- Internal approval workflows
-- Project history
-
-### V3 — Operating System for Builders
-- Multiple simultaneous projects
-- Specialized departments
-- Custom AI employees
-- Plugins, marketplace
-- Marketing, Finance, Legal, Product agents
+```mermaid
+graph TB
+    subgraph "What the user sees"
+        G["Set a Goal"] --> T["Team Works Autonomously"]
+        T --> R["Get Verified Results + Work Report"]
+    end
+    
+    subgraph "What happens inside"
+        GE["Goals Engine"] --> D["Delegation"]
+        D --> E["Employee executes<br/>(role-specific state machine)"]
+        E --> S["Sentinel reviews<br/>(3-tier, independent)"]
+        S -->|FAIL| E
+        S -->|PASS| O["Deliver output"]
+    end
+```
 
 ## Design Principles
 
-- **Don't consolidate agent roles** — the separation IS the value
-- **Quality over quantity** — each agent's output should be directly usable
-- **Build for yourself first** — not for judges, not for users
-- **No premature features** — no auth, billing, multi-user in v1
+1. **Don't consolidate agent roles** — the separation IS the value
+2. **Independent verification is non-negotiable** — no self-grading
+3. **Quality over quantity** — each output should be directly usable
+4. **Build for yourself first** — not for judges, not for investors
+5. **Cost-aware** — Jev layer proves cheap verification beats expensive single-shot
 
-Related: [[How It Works]], [[Agent Roster]], [[Roadmap]]
+---
+
+Related: [[Core Thesis]], [[Roadmap]], [[How It Works]], [[Agent Roster]]
+
+#vision #strategy
