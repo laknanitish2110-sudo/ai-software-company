@@ -162,6 +162,8 @@ PROVIDER_MAP = {
     "ppt":              os.getenv("PROVIDER_PPT",        "nvidia2"),
     "cross_review":     os.getenv("PROVIDER_REVIEW",     "nvidia2"),
     "fixer":            os.getenv("PROVIDER_FIXER",      "nvidia"),
+    "jev":              os.getenv("PROVIDER_JEV",        "groq" if GROQ_API_KEY else "nvidia2"),
+    "qa":               os.getenv("PROVIDER_QA",         "nvidia"),
 }
 
 # Nvidia direct API models — no ":free" suffix, these are free-tier on Nvidia's platform
@@ -177,6 +179,8 @@ MODEL_MAP = {
     "ppt":              os.getenv("MODEL_PPT",        "nvidia/nemotron-3.5-lightning-30b-a3b"),
     "cross_review":     os.getenv("MODEL_REVIEW",     "nvidia/nemotron-3-super-120b-a12b"),
     "fixer":            os.getenv("MODEL_FIXER",      "nvidia/nemotron-3.5-lightning-30b-a3b"),
+    "jev":              os.getenv("MODEL_JEV",        "nvidia/nemotron-3.5-lightning-30b-a3b"),
+    "qa":               os.getenv("MODEL_QA",         "nvidia/nemotron-3-super-120b-a12b"),
 }
 
 FALLBACK_MAP = {
@@ -188,6 +192,8 @@ FALLBACK_MAP = {
     "ppt":              os.getenv("FALLBACK_PPT",         FALLBACK_MODEL),
     "cross_review":     os.getenv("FALLBACK_REVIEW",      FALLBACK_MODEL),
     "fixer":            os.getenv("FALLBACK_FIXER",       SMART_MODEL),
+    "jev":              os.getenv("FALLBACK_JEV",         FALLBACK_MODEL),
+    "qa":               os.getenv("FALLBACK_QA",          FALLBACK_MODEL),
 }
 
 # Fallback provider: use the other NVIDIA key for resilience (OpenRouter has no credits)
@@ -207,7 +213,7 @@ def _fallback_provider(primary: str) -> str:
 
 FALLBACK_PROVIDER_MAP = {
     role: os.getenv(f"FALLBACK_PROVIDER_{role.upper()}", _fallback_provider(PROVIDER_MAP.get(role, "openrouter")))
-    for role in ["ceo", "business_analyst", "researcher", "architect", "engineer", "ppt", "cross_review", "fixer"]
+    for role in ["ceo", "business_analyst", "researcher", "architect", "engineer", "ppt", "cross_review", "fixer", "jev", "qa"]
 }
 
 # ── Model metadata for frontend display ──────────────────────────────

@@ -315,7 +315,7 @@ class AutonomousExecutionController:
             await self._handle_cancellation(execution)
 
     async def _run_sentinel_verification(self, execution: dict, plan_text: str) -> dict | None:
-        """Run independent Sentinel QA verification using a separate LLM context."""
+        """Run multi-tier independent Sentinel QA verification."""
         try:
             from app.core.database import get_db
             db = await get_db()
@@ -341,6 +341,26 @@ class AutonomousExecutionController:
             from app.core.database import get_employee
             employee = await get_employee(execution["employee_id"], execution["user_id"])
             employee_name = employee["name"] if employee else "AI Employee"
+            employee_role = employee.get("role", "software engineer") if employee else "software engineer"
+
+            goal_priority = "medium"
+            try:
+                from app.core.database import get_db as _gdb
+                db2 = await _gdb()
+                try:
+                    cursor2 = await db2.execute(
+                        "SELECT gt.id, g.priority FROM goal_tasks gt "
+                        "JOIN goals g ON g.id = gt.goal_id "
+                        "WHERE gt.execution_id = ?",
+                        (self.execution_id,),
+                    )
+                    row = await cursor2.fetchone()
+                    if row:
+                        goal_priority = row.get("priority", "medium")
+                finally:
+                    await db2.close()
+            except Exception:
+                pass
 
             from app.services.sentinel_verifier import sentinel_verify
             result = await sentinel_verify(
@@ -348,11 +368,15 @@ class AutonomousExecutionController:
                 plan=plan_text,
                 artifacts=artifacts,
                 employee_name=employee_name,
+                employee_role=employee_role,
+                priority=goal_priority,
             )
 
+            tiers_run = result.get("tiers_run", 1)
+            elapsed = result.get("elapsed_seconds", 0)
             await self._publish_progress(
                 "sentinel_qa",
-                f"Sentinel verdict: {result.get('verdict', 'UNKNOWN')}",
+                f"Sentinel verdict: {result.get('verdict', 'UNKNOWN')} ({tiers_run} tiers, {elapsed}s)",
                 {"verdict": result},
             )
 
