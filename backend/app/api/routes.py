@@ -2657,6 +2657,226 @@ async def api_get_ledger_summary(execution_id: str, user=Depends(get_current_use
     return {"execution_id": execution_id, "summary": summary}
 
 
+# ── Verification Proof Engine ────────────────────────────────────────
+
+@router.get("/executions/{execution_id}/scorecard")
+async def api_get_scorecard(execution_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    from app.services.verification_proof import get_proof
+    scorecard = await get_proof(execution_id)
+    if not scorecard:
+        raise HTTPException(404, "No scorecard for this execution")
+    return {"execution_id": execution_id, "scorecard": scorecard}
+
+
+@router.get("/proof/dashboard")
+async def api_get_proof_dashboard(user=Depends(get_current_user)):
+    from app.services.verification_proof import get_user_proof_dashboard
+    dashboard = await get_user_proof_dashboard(user["id"])
+    return dashboard
+
+
+@router.post("/executions/{execution_id}/scorecard/generate")
+async def api_generate_scorecard(execution_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    from app.services.verification_proof import generate_scorecard
+    scorecard = await generate_scorecard(
+        execution_id=execution_id,
+        user_id=user["id"],
+        employee_id=execution.get("employee_id"),
+        goal=execution.get("goal"),
+    )
+    if not scorecard:
+        raise HTTPException(400, "Could not generate scorecard — no sentinel data found")
+    return {"execution_id": execution_id, "scorecard": scorecard}
+
+
+# ── State Truth Engine ───────────────────────────────────────────────
+
+@router.get("/executions/{execution_id}/state")
+async def api_get_execution_state(execution_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    from app.services.state_truth import get_execution_truth
+    truth = await get_execution_truth(execution_id)
+    return truth
+
+
+@router.get("/employees/{employee_id}/truth")
+async def api_get_employee_truth(employee_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_employee
+    employee = await get_employee(employee_id, user["id"])
+    if not employee:
+        raise HTTPException(404, "Employee not found")
+
+    from app.services.state_truth import get_truth
+    truth = await get_truth(employee_id)
+    return {"employee_id": employee_id, **truth}
+
+
+@router.get("/employees/{employee_id}/truth/stale")
+async def api_get_stale_claims(employee_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_employee
+    employee = await get_employee(employee_id, user["id"])
+    if not employee:
+        raise HTTPException(404, "Employee not found")
+
+    from app.services.state_truth import get_stale_claims
+    stale = await get_stale_claims(employee_id)
+    return {"employee_id": employee_id, "stale_claims": stale, "count": len(stale)}
+
+
+# ── Recovery Engine ──────────────────────────────────────────────────
+
+@router.get("/executions/{execution_id}/checkpoints")
+async def api_get_checkpoints(execution_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    from app.core.database import get_checkpoints
+    checkpoints = await get_checkpoints(execution_id)
+    return {"execution_id": execution_id, "checkpoints": checkpoints, "count": len(checkpoints)}
+
+
+@router.get("/executions/{execution_id}/recovery")
+async def api_get_recovery_history(execution_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    from app.services.recovery_engine import get_recovery_history
+    history = await get_recovery_history(execution_id)
+    return history
+
+
+@router.post("/executions/{execution_id}/recover")
+async def api_trigger_recovery(execution_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+    if execution.get("status") != "failed":
+        raise HTTPException(400, "Only failed executions can be recovered")
+
+    from app.services.recovery_engine import diagnose_failure, attempt_recovery
+    diagnosis = await diagnose_failure(
+        execution_id=execution_id,
+        error=execution.get("error", "Unknown failure"),
+        phase=execution.get("state"),
+        iteration=execution.get("iteration"),
+    )
+    recovery = await attempt_recovery(execution_id, diagnosis)
+    return {"execution_id": execution_id, "diagnosis": diagnosis, "recovery": recovery}
+
+
+# ── Cross-Agent Trust Chain ──────────────────────────────────────────
+
+@router.get("/executions/{execution_id}/trust-chain")
+async def api_get_trust_chain(execution_id: str, user=Depends(get_current_user)):
+    try:
+        from app.services.trust_chain import get_proof_trail
+        trail = await get_proof_trail(execution_id)
+        return trail
+    except Exception as e:
+        logger.error(f"Failed to get trust chain: {e}")
+        raise HTTPException(500, str(e))
+
+
+@router.get("/employees/{employee_id}/trust-score")
+async def api_get_agent_trust(employee_id: str, user=Depends(get_current_user)):
+    try:
+        from app.services.trust_chain import get_agent_trust
+        trust = await get_agent_trust(employee_id)
+        return trust
+    except Exception as e:
+        logger.error(f"Failed to get agent trust: {e}")
+        raise HTTPException(500, str(e))
+
+
+@router.get("/trust/chain/{chain_id}")
+async def api_get_chain_by_id(chain_id: str, user=Depends(get_current_user)):
+    try:
+        from app.core.database import get_trust_chain
+        links = await get_trust_chain(chain_id)
+        return {"chain_id": chain_id, "links": links, "total_links": len(links)}
+    except Exception as e:
+        logger.error(f"Failed to get chain: {e}")
+        raise HTTPException(500, str(e))
+
+
+# ── Experience Compiler ──────────────────────────────────────────────
+
+@router.get("/employees/{employee_id}/experience")
+async def api_get_experience(employee_id: str, user=Depends(get_current_user)):
+    try:
+        from app.services.experience_compiler import get_experience
+        exp = await get_experience(employee_id)
+        return exp
+    except Exception as e:
+        logger.error(f"Failed to get experience: {e}")
+        raise HTTPException(500, str(e))
+
+
+@router.get("/employees/{employee_id}/patterns")
+async def api_get_patterns(employee_id: str, user=Depends(get_current_user)):
+    try:
+        from app.core.database import get_patterns_for_employee
+        pattern_type = None
+        patterns = await get_patterns_for_employee(employee_id, pattern_type=pattern_type)
+        return {"employee_id": employee_id, "patterns": patterns, "total": len(patterns)}
+    except Exception as e:
+        logger.error(f"Failed to get patterns: {e}")
+        raise HTTPException(500, str(e))
+
+
+@router.get("/employees/{employee_id}/recommendations")
+async def api_get_recommendations(employee_id: str, user=Depends(get_current_user)):
+    try:
+        from app.services.experience_compiler import get_recommendations
+        recs = await get_recommendations(employee_id)
+        return recs
+    except Exception as e:
+        logger.error(f"Failed to get recommendations: {e}")
+        raise HTTPException(500, str(e))
+
+
+@router.post("/employees/{employee_id}/compile")
+async def api_compile_procedures(employee_id: str, user=Depends(get_current_user)):
+    try:
+        from app.services.experience_compiler import compile_procedures
+        new_procs = await compile_procedures(employee_id, user["id"])
+        return {"employee_id": employee_id, "new_procedures": new_procs, "count": len(new_procs)}
+    except Exception as e:
+        logger.error(f"Failed to compile procedures: {e}")
+        raise HTTPException(500, str(e))
+
+
 # ── Goals Engine ──────────────────────────────────────────────────────
 
 @router.post("/goals")

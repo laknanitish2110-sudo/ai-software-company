@@ -518,6 +518,158 @@ async def init_db():
                 CREATE INDEX IF NOT EXISTS idx_ledger_execution ON action_ledger(execution_id, iteration);
                 CREATE INDEX IF NOT EXISTS idx_ledger_phase ON action_ledger(execution_id, phase);
 
+                CREATE TABLE IF NOT EXISTS verification_scorecards (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL UNIQUE,
+                    employee_id TEXT,
+                    user_id TEXT NOT NULL,
+                    goal_summary TEXT,
+                    raw_quality_score REAL,
+                    verified_quality_score REAL,
+                    quality_delta REAL,
+                    issues_caught INTEGER NOT NULL DEFAULT 0,
+                    issues_by_severity TEXT,
+                    sentinel_tiers_run INTEGER NOT NULL DEFAULT 0,
+                    tier_results TEXT,
+                    verification_cost_tokens INTEGER NOT NULL DEFAULT 0,
+                    verification_cost_usd REAL,
+                    estimated_bug_cost_saved REAL,
+                    would_have_shipped_raw INTEGER NOT NULL DEFAULT 0,
+                    final_verdict TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id),
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_scorecard_execution ON verification_scorecards(execution_id);
+                CREATE INDEX IF NOT EXISTS idx_scorecard_user ON verification_scorecards(user_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS state_claims (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT,
+                    employee_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    claim_type TEXT NOT NULL,
+                    claim_key TEXT NOT NULL,
+                    claim_value TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'unverified',
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    source_action TEXT,
+                    source_ledger_id TEXT,
+                    evidence TEXT,
+                    verified_at TEXT,
+                    verified_by TEXT,
+                    expires_at TEXT,
+                    superseded_by TEXT,
+                    contradiction_of TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id),
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id),
+                    FOREIGN KEY (source_ledger_id) REFERENCES action_ledger(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_claims_employee ON state_claims(employee_id, status);
+                CREATE INDEX IF NOT EXISTS idx_claims_execution ON state_claims(execution_id);
+                CREATE INDEX IF NOT EXISTS idx_claims_key ON state_claims(employee_id, claim_key, status);
+                CREATE INDEX IF NOT EXISTS idx_claims_expiry ON state_claims(status, expires_at);
+
+                CREATE TABLE IF NOT EXISTS recovery_checkpoints (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    employee_id TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    iteration INTEGER NOT NULL,
+                    checkpoint_type TEXT NOT NULL DEFAULT 'auto',
+                    verified_state TEXT,
+                    artifacts_snapshot TEXT,
+                    metadata TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id),
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_checkpoint_execution ON recovery_checkpoints(execution_id, iteration);
+
+                CREATE TABLE IF NOT EXISTS recovery_attempts (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    checkpoint_id TEXT,
+                    failure_type TEXT NOT NULL,
+                    failure_detail TEXT,
+                    failure_phase TEXT,
+                    failure_iteration INTEGER,
+                    strategy TEXT NOT NULL,
+                    actions_taken TEXT,
+                    outcome TEXT NOT NULL DEFAULT 'pending',
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id),
+                    FOREIGN KEY (checkpoint_id) REFERENCES recovery_checkpoints(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_recovery_execution ON recovery_attempts(execution_id);
+
+                CREATE TABLE IF NOT EXISTS trust_chain_links (
+                    id TEXT PRIMARY KEY,
+                    chain_id TEXT NOT NULL,
+                    execution_id TEXT,
+                    parent_link_id TEXT,
+                    depth INTEGER NOT NULL DEFAULT 0,
+                    from_agent_id TEXT NOT NULL,
+                    from_agent_name TEXT,
+                    to_agent_id TEXT NOT NULL,
+                    to_agent_name TEXT,
+                    action_type TEXT NOT NULL,
+                    task_description TEXT,
+                    authority_basis TEXT,
+                    evidence_summary TEXT,
+                    verification_status TEXT NOT NULL DEFAULT 'pending',
+                    verified_at TEXT,
+                    verified_by TEXT,
+                    trust_score REAL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_trust_chain ON trust_chain_links(chain_id);
+                CREATE INDEX IF NOT EXISTS idx_trust_execution ON trust_chain_links(execution_id);
+                CREATE INDEX IF NOT EXISTS idx_trust_agents ON trust_chain_links(from_agent_id, to_agent_id);
+
+                CREATE TABLE IF NOT EXISTS execution_patterns (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    employee_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    pattern_type TEXT NOT NULL,
+                    pattern_key TEXT NOT NULL,
+                    pattern_data TEXT,
+                    outcome TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id),
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_patterns_employee ON execution_patterns(employee_id, pattern_type);
+                CREATE INDEX IF NOT EXISTS idx_patterns_key ON execution_patterns(pattern_key);
+                CREATE INDEX IF NOT EXISTS idx_patterns_execution ON execution_patterns(execution_id);
+
+                CREATE TABLE IF NOT EXISTS compiled_procedures (
+                    id TEXT PRIMARY KEY,
+                    employee_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    procedure_type TEXT NOT NULL,
+                    trigger_condition TEXT NOT NULL,
+                    procedure_steps TEXT,
+                    source_executions TEXT,
+                    success_rate REAL NOT NULL DEFAULT 0.0,
+                    times_applied INTEGER NOT NULL DEFAULT 0,
+                    times_succeeded INTEGER NOT NULL DEFAULT 0,
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_procedures_employee ON compiled_procedures(employee_id, status);
+                CREATE INDEX IF NOT EXISTS idx_procedures_type ON compiled_procedures(procedure_type, status);
+
                 CREATE TABLE IF NOT EXISTS activity_log (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -994,6 +1146,158 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_ledger_execution ON action_ledger(execution_id, iteration);
                 CREATE INDEX IF NOT EXISTS idx_ledger_phase ON action_ledger(execution_id, phase);
+
+                CREATE TABLE IF NOT EXISTS verification_scorecards (
+                    id VARCHAR(255) PRIMARY KEY,
+                    execution_id VARCHAR(255) NOT NULL UNIQUE,
+                    employee_id VARCHAR(255),
+                    user_id VARCHAR(255) NOT NULL,
+                    goal_summary TEXT,
+                    raw_quality_score REAL,
+                    verified_quality_score REAL,
+                    quality_delta REAL,
+                    issues_caught INTEGER NOT NULL DEFAULT 0,
+                    issues_by_severity TEXT,
+                    sentinel_tiers_run INTEGER NOT NULL DEFAULT 0,
+                    tier_results TEXT,
+                    verification_cost_tokens INTEGER NOT NULL DEFAULT 0,
+                    verification_cost_usd REAL,
+                    estimated_bug_cost_saved REAL,
+                    would_have_shipped_raw INTEGER NOT NULL DEFAULT 0,
+                    final_verdict VARCHAR(32),
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_scorecard_execution ON verification_scorecards(execution_id);
+                CREATE INDEX IF NOT EXISTS idx_scorecard_user ON verification_scorecards(user_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS state_claims (
+                    id VARCHAR(255) PRIMARY KEY,
+                    execution_id VARCHAR(255),
+                    employee_id VARCHAR(255) NOT NULL,
+                    user_id VARCHAR(255) NOT NULL,
+                    claim_type VARCHAR(64) NOT NULL,
+                    claim_key VARCHAR(500) NOT NULL,
+                    claim_value TEXT NOT NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'unverified',
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    source_action VARCHAR(64),
+                    source_ledger_id VARCHAR(255),
+                    evidence TEXT,
+                    verified_at TEXT,
+                    verified_by VARCHAR(255),
+                    expires_at TEXT,
+                    superseded_by VARCHAR(255),
+                    contradiction_of VARCHAR(255),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id) ON DELETE SET NULL,
+                    FOREIGN KEY (source_ledger_id) REFERENCES action_ledger(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_claims_employee ON state_claims(employee_id, status);
+                CREATE INDEX IF NOT EXISTS idx_claims_execution ON state_claims(execution_id);
+                CREATE INDEX IF NOT EXISTS idx_claims_key ON state_claims(employee_id, claim_key, status);
+                CREATE INDEX IF NOT EXISTS idx_claims_expiry ON state_claims(status, expires_at);
+
+                CREATE TABLE IF NOT EXISTS recovery_checkpoints (
+                    id VARCHAR(255) PRIMARY KEY,
+                    execution_id VARCHAR(255) NOT NULL,
+                    employee_id VARCHAR(255) NOT NULL,
+                    phase VARCHAR(64) NOT NULL,
+                    iteration INTEGER NOT NULL,
+                    checkpoint_type VARCHAR(32) NOT NULL DEFAULT 'auto',
+                    verified_state TEXT,
+                    artifacts_snapshot TEXT,
+                    metadata TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_checkpoint_execution ON recovery_checkpoints(execution_id, iteration);
+
+                CREATE TABLE IF NOT EXISTS recovery_attempts (
+                    id VARCHAR(255) PRIMARY KEY,
+                    execution_id VARCHAR(255) NOT NULL,
+                    checkpoint_id VARCHAR(255),
+                    failure_type VARCHAR(64) NOT NULL,
+                    failure_detail TEXT,
+                    failure_phase VARCHAR(64),
+                    failure_iteration INTEGER,
+                    strategy VARCHAR(64) NOT NULL,
+                    actions_taken TEXT,
+                    outcome VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER,
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (checkpoint_id) REFERENCES recovery_checkpoints(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_recovery_execution ON recovery_attempts(execution_id);
+
+                CREATE TABLE IF NOT EXISTS trust_chain_links (
+                    id VARCHAR(255) PRIMARY KEY,
+                    chain_id VARCHAR(255) NOT NULL,
+                    execution_id VARCHAR(255),
+                    parent_link_id VARCHAR(255),
+                    depth INTEGER NOT NULL DEFAULT 0,
+                    from_agent_id VARCHAR(255) NOT NULL,
+                    from_agent_name VARCHAR(255),
+                    to_agent_id VARCHAR(255) NOT NULL,
+                    to_agent_name VARCHAR(255),
+                    action_type VARCHAR(64) NOT NULL,
+                    task_description TEXT,
+                    authority_basis TEXT,
+                    evidence_summary TEXT,
+                    verification_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    verified_at TEXT,
+                    verified_by VARCHAR(255),
+                    trust_score REAL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_trust_chain ON trust_chain_links(chain_id);
+                CREATE INDEX IF NOT EXISTS idx_trust_execution ON trust_chain_links(execution_id);
+                CREATE INDEX IF NOT EXISTS idx_trust_agents ON trust_chain_links(from_agent_id, to_agent_id);
+
+                CREATE TABLE IF NOT EXISTS execution_patterns (
+                    id VARCHAR(255) PRIMARY KEY,
+                    execution_id VARCHAR(255) NOT NULL,
+                    employee_id VARCHAR(255) NOT NULL,
+                    user_id VARCHAR(255) NOT NULL,
+                    pattern_type VARCHAR(64) NOT NULL,
+                    pattern_key VARCHAR(512) NOT NULL,
+                    pattern_data TEXT,
+                    outcome VARCHAR(32) NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_patterns_employee ON execution_patterns(employee_id, pattern_type);
+                CREATE INDEX IF NOT EXISTS idx_patterns_key ON execution_patterns(pattern_key);
+                CREATE INDEX IF NOT EXISTS idx_patterns_execution ON execution_patterns(execution_id);
+
+                CREATE TABLE IF NOT EXISTS compiled_procedures (
+                    id VARCHAR(255) PRIMARY KEY,
+                    employee_id VARCHAR(255) NOT NULL,
+                    user_id VARCHAR(255) NOT NULL,
+                    procedure_type VARCHAR(64) NOT NULL,
+                    trigger_condition TEXT NOT NULL,
+                    procedure_steps TEXT,
+                    source_executions TEXT,
+                    success_rate REAL NOT NULL DEFAULT 0.0,
+                    times_applied INTEGER NOT NULL DEFAULT 0,
+                    times_succeeded INTEGER NOT NULL DEFAULT 0,
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    status VARCHAR(32) NOT NULL DEFAULT 'active',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_procedures_employee ON compiled_procedures(employee_id, status);
+                CREATE INDEX IF NOT EXISTS idx_procedures_type ON compiled_procedures(procedure_type, status);
 
                 CREATE TABLE IF NOT EXISTS activity_log (
                     id VARCHAR(255) PRIMARY KEY,
@@ -3525,6 +3829,772 @@ async def get_ledger_summary(execution_id: str) -> dict:
         )
         row = await cursor.fetchone()
         return dict(row) if row else {}
+    finally:
+        await db.close()
+
+
+# ── Verification Scorecards ──────────────────────────────────────────
+
+async def create_scorecard(
+    execution_id: str,
+    user_id: str,
+    employee_id: str | None = None,
+    goal_summary: str | None = None,
+    raw_quality_score: float | None = None,
+    verified_quality_score: float | None = None,
+    quality_delta: float | None = None,
+    issues_caught: int = 0,
+    issues_by_severity: dict | None = None,
+    sentinel_tiers_run: int = 0,
+    tier_results: dict | None = None,
+    verification_cost_tokens: int = 0,
+    verification_cost_usd: float | None = None,
+    estimated_bug_cost_saved: float | None = None,
+    would_have_shipped_raw: bool = False,
+    final_verdict: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        sc_id = new_id()
+        ts = now_iso()
+        import json
+        await db.execute(
+            """INSERT INTO verification_scorecards
+               (id, execution_id, user_id, employee_id, goal_summary,
+                raw_quality_score, verified_quality_score, quality_delta,
+                issues_caught, issues_by_severity, sentinel_tiers_run, tier_results,
+                verification_cost_tokens, verification_cost_usd, estimated_bug_cost_saved,
+                would_have_shipped_raw, final_verdict, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (sc_id, execution_id, user_id, employee_id, goal_summary,
+             raw_quality_score, verified_quality_score, quality_delta,
+             issues_caught, json.dumps(issues_by_severity) if issues_by_severity else None,
+             sentinel_tiers_run, json.dumps(tier_results) if tier_results else None,
+             verification_cost_tokens, verification_cost_usd, estimated_bug_cost_saved,
+             1 if would_have_shipped_raw else 0, final_verdict, ts),
+        )
+        await db.commit()
+        return {"id": sc_id, "execution_id": execution_id, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_scorecard(execution_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM verification_scorecards WHERE execution_id = ?",
+            (execution_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        import json
+        for field in ("issues_by_severity", "tier_results"):
+            if isinstance(result.get(field), str):
+                try:
+                    result[field] = json.loads(result[field])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        result["would_have_shipped_raw"] = bool(result.get("would_have_shipped_raw", 0))
+        return result
+    finally:
+        await db.close()
+
+
+async def get_user_scorecards(user_id: str, limit: int = 50) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT vs.*, ae.goal
+               FROM verification_scorecards vs
+               JOIN autonomous_executions ae ON ae.id = vs.execution_id
+               WHERE vs.user_id = ?
+               ORDER BY vs.created_at DESC LIMIT ?""",
+            (user_id, limit),
+        )
+        rows = await cursor.fetchall()
+        import json
+        results = []
+        for row in rows:
+            r = dict(row)
+            for field in ("issues_by_severity", "tier_results"):
+                if isinstance(r.get(field), str):
+                    try:
+                        r[field] = json.loads(r[field])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            r["would_have_shipped_raw"] = bool(r.get("would_have_shipped_raw", 0))
+            results.append(r)
+        return results
+    finally:
+        await db.close()
+
+
+async def get_aggregate_proof_stats(user_id: str) -> dict:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT
+                 COUNT(*) as total_executions,
+                 AVG(raw_quality_score) as avg_raw_score,
+                 AVG(verified_quality_score) as avg_verified_score,
+                 AVG(quality_delta) as avg_quality_delta,
+                 SUM(issues_caught) as total_issues_caught,
+                 SUM(verification_cost_tokens) as total_verification_tokens,
+                 SUM(COALESCE(verification_cost_usd, 0)) as total_verification_cost,
+                 SUM(COALESCE(estimated_bug_cost_saved, 0)) as total_bug_cost_saved,
+                 SUM(CASE WHEN would_have_shipped_raw = 1 THEN 1 ELSE 0 END) as would_have_shipped_raw,
+                 SUM(CASE WHEN final_verdict = 'pass' THEN 1 ELSE 0 END) as passed,
+                 SUM(CASE WHEN final_verdict = 'fail' THEN 1 ELSE 0 END) as failed,
+                 SUM(CASE WHEN final_verdict = 'pass_with_warnings' THEN 1 ELSE 0 END) as pass_with_warnings
+               FROM verification_scorecards WHERE user_id = ?""",
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        if not row or row["total_executions"] == 0:
+            return {"total_executions": 0}
+        result = dict(row)
+        if result.get("total_verification_cost") and result.get("total_bug_cost_saved"):
+            result["roi_multiplier"] = round(
+                result["total_bug_cost_saved"] / max(result["total_verification_cost"], 0.001), 1
+            )
+        return result
+    finally:
+        await db.close()
+
+
+# ── State Truth Engine ───────────────────────────────────────────────
+
+async def create_state_claim(
+    employee_id: str,
+    user_id: str,
+    claim_type: str,
+    claim_key: str,
+    claim_value: str,
+    execution_id: str | None = None,
+    source_action: str | None = None,
+    source_ledger_id: str | None = None,
+    evidence: dict | None = None,
+    confidence: float = 0.5,
+    status: str = "unverified",
+    expires_at: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        import json
+        claim_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO state_claims
+               (id, execution_id, employee_id, user_id, claim_type, claim_key, claim_value,
+                status, confidence, source_action, source_ledger_id, evidence,
+                expires_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (claim_id, execution_id, employee_id, user_id, claim_type, claim_key, claim_value,
+             status, confidence, source_action, source_ledger_id,
+             json.dumps(evidence) if evidence else None,
+             expires_at, ts, ts),
+        )
+        await db.commit()
+        return {"id": claim_id, "claim_key": claim_key, "status": status, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def verify_claim(claim_id: str, verified_by: str, confidence: float = 0.9) -> dict | None:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        await db.execute(
+            """UPDATE state_claims
+               SET status = 'verified', confidence = ?, verified_at = ?, verified_by = ?, updated_at = ?
+               WHERE id = ?""",
+            (confidence, ts, verified_by, ts, claim_id),
+        )
+        await db.commit()
+        cursor = await db.execute("SELECT * FROM state_claims WHERE id = ?", (claim_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
+async def invalidate_claim(claim_id: str, reason: str = "contradicted") -> None:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        await db.execute(
+            "UPDATE state_claims SET status = ?, updated_at = ? WHERE id = ?",
+            (reason, ts, claim_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def supersede_claim(old_claim_id: str, new_claim_id: str) -> None:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        await db.execute(
+            "UPDATE state_claims SET status = 'superseded', superseded_by = ?, updated_at = ? WHERE id = ?",
+            (new_claim_id, ts, old_claim_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_claims_for_execution(execution_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM state_claims WHERE execution_id = ? ORDER BY created_at",
+            (execution_id,),
+        )
+        rows = await cursor.fetchall()
+        return [_parse_claim_row(dict(r)) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_verified_state(employee_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT * FROM state_claims
+               WHERE employee_id = ? AND status = 'verified'
+               AND (expires_at IS NULL OR expires_at > ?)
+               ORDER BY verified_at DESC""",
+            (employee_id, now_iso()),
+        )
+        rows = await cursor.fetchall()
+        return [_parse_claim_row(dict(r)) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_employee_claims(employee_id: str, status_filter: str | None = None, limit: int = 100) -> list[dict]:
+    db = await get_db()
+    try:
+        if status_filter:
+            cursor = await db.execute(
+                "SELECT * FROM state_claims WHERE employee_id = ? AND status = ? ORDER BY updated_at DESC LIMIT ?",
+                (employee_id, status_filter, limit),
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM state_claims WHERE employee_id = ? ORDER BY updated_at DESC LIMIT ?",
+                (employee_id, limit),
+            )
+        rows = await cursor.fetchall()
+        return [_parse_claim_row(dict(r)) for r in rows]
+    finally:
+        await db.close()
+
+
+async def detect_stale_claims(employee_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        await db.execute(
+            """UPDATE state_claims SET status = 'stale', updated_at = ?
+               WHERE employee_id = ? AND status = 'verified'
+               AND expires_at IS NOT NULL AND expires_at <= ?""",
+            (ts, employee_id, ts),
+        )
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT * FROM state_claims WHERE employee_id = ? AND status = 'stale' ORDER BY updated_at DESC",
+            (employee_id,),
+        )
+        rows = await cursor.fetchall()
+        return [_parse_claim_row(dict(r)) for r in rows]
+    finally:
+        await db.close()
+
+
+async def find_contradictions(employee_id: str, claim_key: str, new_value: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT * FROM state_claims
+               WHERE employee_id = ? AND claim_key = ? AND status IN ('verified', 'unverified')
+               AND claim_value != ?""",
+            (employee_id, claim_key, new_value),
+        )
+        rows = await cursor.fetchall()
+        return [_parse_claim_row(dict(r)) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_truth_summary(employee_id: str) -> dict:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT
+                 COUNT(*) as total_claims,
+                 COUNT(CASE WHEN status = 'verified' THEN 1 END) as verified,
+                 COUNT(CASE WHEN status = 'unverified' THEN 1 END) as unverified,
+                 COUNT(CASE WHEN status = 'stale' THEN 1 END) as stale,
+                 COUNT(CASE WHEN status = 'contradicted' THEN 1 END) as contradicted,
+                 COUNT(CASE WHEN status = 'superseded' THEN 1 END) as superseded,
+                 AVG(CASE WHEN status = 'verified' THEN confidence END) as avg_confidence
+               FROM state_claims WHERE employee_id = ?""",
+            (employee_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else {"total_claims": 0}
+    finally:
+        await db.close()
+
+
+def _parse_claim_row(row: dict) -> dict:
+    import json
+    if isinstance(row.get("evidence"), str):
+        try:
+            row["evidence"] = json.loads(row["evidence"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return row
+
+
+# ── Recovery Engine ──────────────────────────────────────────────────
+
+async def create_checkpoint(
+    execution_id: str,
+    employee_id: str,
+    phase: str,
+    iteration: int,
+    checkpoint_type: str = "auto",
+    verified_state: dict | None = None,
+    artifacts_snapshot: list | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        import json
+        cp_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO recovery_checkpoints
+               (id, execution_id, employee_id, phase, iteration, checkpoint_type,
+                verified_state, artifacts_snapshot, metadata, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (cp_id, execution_id, employee_id, phase, iteration, checkpoint_type,
+             json.dumps(verified_state) if verified_state else None,
+             json.dumps(artifacts_snapshot) if artifacts_snapshot else None,
+             json.dumps(metadata) if metadata else None,
+             ts),
+        )
+        await db.commit()
+        return {"id": cp_id, "phase": phase, "iteration": iteration, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_checkpoints(execution_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM recovery_checkpoints WHERE execution_id = ? ORDER BY iteration DESC",
+            (execution_id,),
+        )
+        rows = await cursor.fetchall()
+        import json
+        results = []
+        for row in rows:
+            r = dict(row)
+            for f in ("verified_state", "artifacts_snapshot", "metadata"):
+                if isinstance(r.get(f), str):
+                    try:
+                        r[f] = json.loads(r[f])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            results.append(r)
+        return results
+    finally:
+        await db.close()
+
+
+async def get_latest_checkpoint(execution_id: str) -> dict | None:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM recovery_checkpoints WHERE execution_id = ? ORDER BY iteration DESC LIMIT 1",
+            (execution_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        import json
+        r = dict(row)
+        for f in ("verified_state", "artifacts_snapshot", "metadata"):
+            if isinstance(r.get(f), str):
+                try:
+                    r[f] = json.loads(r[f])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        return r
+    finally:
+        await db.close()
+
+
+async def create_recovery_attempt(
+    execution_id: str,
+    failure_type: str,
+    failure_detail: str | None,
+    failure_phase: str | None,
+    failure_iteration: int | None,
+    strategy: str,
+    checkpoint_id: str | None = None,
+    actions_taken: dict | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        import json
+        ra_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO recovery_attempts
+               (id, execution_id, checkpoint_id, failure_type, failure_detail,
+                failure_phase, failure_iteration, strategy, actions_taken, outcome, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+            (ra_id, execution_id, checkpoint_id, failure_type, failure_detail,
+             failure_phase, failure_iteration, strategy,
+             json.dumps(actions_taken) if actions_taken else None,
+             ts),
+        )
+        await db.commit()
+        return {"id": ra_id, "strategy": strategy, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def resolve_recovery_attempt(attempt_id: str, outcome: str, tokens_used: int = 0, duration_ms: int | None = None) -> None:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        await db.execute(
+            "UPDATE recovery_attempts SET outcome = ?, tokens_used = ?, duration_ms = ?, resolved_at = ? WHERE id = ?",
+            (outcome, tokens_used, duration_ms, ts, attempt_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_recovery_attempts(execution_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM recovery_attempts WHERE execution_id = ? ORDER BY created_at",
+            (execution_id,),
+        )
+        rows = await cursor.fetchall()
+        import json
+        results = []
+        for row in rows:
+            r = dict(row)
+            if isinstance(r.get("actions_taken"), str):
+                try:
+                    r["actions_taken"] = json.loads(r["actions_taken"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            results.append(r)
+        return results
+    finally:
+        await db.close()
+
+
+# ── Trust Chain ──────────────────────────────────────────────────────
+
+async def create_trust_link(
+    chain_id: str,
+    from_agent_id: str,
+    to_agent_id: str,
+    action_type: str,
+    from_agent_name: str | None = None,
+    to_agent_name: str | None = None,
+    execution_id: str | None = None,
+    parent_link_id: str | None = None,
+    depth: int = 0,
+    task_description: str | None = None,
+    authority_basis: str | None = None,
+    evidence_summary: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        link_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO trust_chain_links
+               (id, chain_id, execution_id, parent_link_id, depth,
+                from_agent_id, from_agent_name, to_agent_id, to_agent_name,
+                action_type, task_description, authority_basis, evidence_summary,
+                verification_status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+            (link_id, chain_id, execution_id, parent_link_id, depth,
+             from_agent_id, from_agent_name, to_agent_id, to_agent_name,
+             action_type, task_description, authority_basis, evidence_summary,
+             ts),
+        )
+        await db.commit()
+        return {"id": link_id, "chain_id": chain_id, "depth": depth, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def verify_trust_link(link_id: str, verified_by: str, trust_score: float = 0.8) -> None:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        await db.execute(
+            """UPDATE trust_chain_links
+               SET verification_status = 'verified', verified_at = ?, verified_by = ?, trust_score = ?
+               WHERE id = ?""",
+            (ts, verified_by, trust_score, link_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def fail_trust_link(link_id: str, reason: str = "verification_failed") -> None:
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE trust_chain_links SET verification_status = ? WHERE id = ?",
+            (reason, link_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_trust_chain(chain_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM trust_chain_links WHERE chain_id = ? ORDER BY depth, created_at",
+            (chain_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_execution_trust_links(execution_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM trust_chain_links WHERE execution_id = ? ORDER BY depth, created_at",
+            (execution_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_agent_trust_history(agent_id: str, limit: int = 50) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT * FROM trust_chain_links
+               WHERE (from_agent_id = ? OR to_agent_id = ?) AND verification_status = 'verified'
+               ORDER BY created_at DESC LIMIT ?""",
+            (agent_id, agent_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_agent_trust_score(agent_id: str) -> dict:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT
+                 COUNT(*) as total_links,
+                 COUNT(CASE WHEN verification_status = 'verified' THEN 1 END) as verified,
+                 COUNT(CASE WHEN verification_status = 'pending' THEN 1 END) as pending,
+                 COUNT(CASE WHEN verification_status NOT IN ('verified', 'pending') THEN 1 END) as failed,
+                 AVG(CASE WHEN verification_status = 'verified' THEN trust_score END) as avg_trust_score,
+                 COUNT(DISTINCT chain_id) as chains_participated
+               FROM trust_chain_links
+               WHERE to_agent_id = ?""",
+            (agent_id,),
+        )
+        row = await cursor.fetchone()
+        result = dict(row) if row else {"total_links": 0}
+        total = result.get("total_links", 0)
+        verified = result.get("verified", 0)
+        result["reliability_rate"] = round(verified / max(total, 1), 2)
+        return result
+    finally:
+        await db.close()
+
+
+# ── Experience Compiler ───────────────────────────────────────────────
+
+async def create_pattern(
+    execution_id: str, employee_id: str, user_id: str,
+    pattern_type: str, pattern_key: str, pattern_data: str,
+    outcome: str,
+) -> dict:
+    db = await get_db()
+    try:
+        pid = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO execution_patterns
+               (id, execution_id, employee_id, user_id, pattern_type, pattern_key, pattern_data, outcome, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (pid, execution_id, employee_id, user_id, pattern_type, pattern_key, pattern_data, outcome, ts),
+        )
+        await db.commit()
+        return {"id": pid, "execution_id": execution_id, "pattern_type": pattern_type,
+                "pattern_key": pattern_key, "outcome": outcome, "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_patterns_for_employee(employee_id: str, pattern_type: str | None = None, limit: int = 50) -> list[dict]:
+    db = await get_db()
+    try:
+        if pattern_type:
+            cursor = await db.execute(
+                "SELECT * FROM execution_patterns WHERE employee_id = ? AND pattern_type = ? ORDER BY created_at DESC LIMIT ?",
+                (employee_id, pattern_type, limit),
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM execution_patterns WHERE employee_id = ? ORDER BY created_at DESC LIMIT ?",
+                (employee_id, limit),
+            )
+        return [dict(r) for r in await cursor.fetchall()]
+    finally:
+        await db.close()
+
+
+async def get_patterns_by_key(pattern_key: str, limit: int = 20) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM execution_patterns WHERE pattern_key = ? ORDER BY created_at DESC LIMIT ?",
+            (pattern_key, limit),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+    finally:
+        await db.close()
+
+
+async def create_procedure(
+    employee_id: str, user_id: str,
+    procedure_type: str, trigger_condition: str,
+    procedure_steps: str, source_executions: str,
+    confidence: float = 0.5,
+) -> dict:
+    db = await get_db()
+    try:
+        pid = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO compiled_procedures
+               (id, employee_id, user_id, procedure_type, trigger_condition, procedure_steps,
+                source_executions, success_rate, times_applied, times_succeeded, confidence, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, 0, 0, ?, 'active', ?, ?)""",
+            (pid, employee_id, user_id, procedure_type, trigger_condition, procedure_steps,
+             source_executions, confidence, ts, ts),
+        )
+        await db.commit()
+        return {"id": pid, "employee_id": employee_id, "procedure_type": procedure_type,
+                "trigger_condition": trigger_condition, "confidence": confidence,
+                "status": "active", "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_procedures_for_employee(employee_id: str, status: str = "active") -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM compiled_procedures WHERE employee_id = ? AND status = ? ORDER BY confidence DESC, updated_at DESC",
+            (employee_id, status),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+    finally:
+        await db.close()
+
+
+async def record_procedure_application(procedure_id: str, succeeded: bool) -> dict:
+    db = await get_db()
+    try:
+        ts = now_iso()
+        if succeeded:
+            await db.execute(
+                "UPDATE compiled_procedures SET times_applied = times_applied + 1, times_succeeded = times_succeeded + 1, success_rate = CAST(times_succeeded + 1 AS REAL) / CAST(times_applied + 1 AS REAL), updated_at = ? WHERE id = ?",
+                (ts, procedure_id),
+            )
+        else:
+            await db.execute(
+                "UPDATE compiled_procedures SET times_applied = times_applied + 1, success_rate = CAST(times_succeeded AS REAL) / CAST(times_applied + 1 AS REAL), updated_at = ? WHERE id = ?",
+                (ts, procedure_id),
+            )
+        await db.commit()
+        cursor = await db.execute("SELECT * FROM compiled_procedures WHERE id = ?", (procedure_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else {}
+    finally:
+        await db.close()
+
+
+async def deprecate_procedure(procedure_id: str) -> None:
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE compiled_procedures SET status = 'deprecated', updated_at = ? WHERE id = ?",
+            (now_iso(), procedure_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_experience_summary(employee_id: str) -> dict:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT
+                 COUNT(*) as total_patterns,
+                 SUM(CASE WHEN outcome = 'success' THEN 1 ELSE 0 END) as success_patterns,
+                 SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) as failure_patterns,
+                 COUNT(DISTINCT pattern_type) as pattern_types,
+                 COUNT(DISTINCT execution_id) as executions_analyzed
+               FROM execution_patterns WHERE employee_id = ?""",
+            (employee_id,),
+        )
+        pattern_stats = dict(await cursor.fetchone())
+
+        cursor = await db.execute(
+            """SELECT
+                 COUNT(*) as total_procedures,
+                 SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_procedures,
+                 SUM(times_applied) as total_applications,
+                 SUM(times_succeeded) as total_successes,
+                 AVG(confidence) as avg_confidence,
+                 AVG(success_rate) as avg_success_rate
+               FROM compiled_procedures WHERE employee_id = ?""",
+            (employee_id,),
+        )
+        proc_stats = dict(await cursor.fetchone())
+        return {**pattern_stats, **proc_stats}
     finally:
         await db.close()
 

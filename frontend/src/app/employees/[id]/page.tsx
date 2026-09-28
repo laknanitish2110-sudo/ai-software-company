@@ -19,6 +19,11 @@ import {
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import ExecutionProgress from "@/components/ExecutionProgress";
 import ActionLedgerPanel from "@/components/ActionLedger";
+import VerificationScorecardPanel from "@/components/VerificationScorecard";
+import StateTruthPanel from "@/components/StateTruth";
+import RecoveryTimelinePanel from "@/components/RecoveryTimeline";
+import TrustChainPanel from "@/components/TrustChain";
+import ExperienceCompilerPanel from "@/components/ExperienceCompiler";
 
 type Tab = "chat" | "memories" | "sessions" | "skills" | "schedule" | "settings";
 
@@ -1246,6 +1251,11 @@ export default function EmployeeChatPage() {
                 onDismiss={() => setActiveExecutionId(null)}
               />
               <ActionLedgerPanel executionId={activeExecutionId} />
+              <VerificationScorecardPanel executionId={activeExecutionId} />
+              <StateTruthPanel executionId={activeExecutionId} />
+              <RecoveryTimelinePanel executionId={activeExecutionId} />
+              <TrustChainPanel executionId={activeExecutionId} />
+              <ExperienceCompilerPanel employeeId={employeeId} />
             </>
           )}
 

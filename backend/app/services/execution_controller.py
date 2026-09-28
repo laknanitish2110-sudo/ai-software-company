@@ -46,6 +46,7 @@ class AutonomousExecutionController:
         self._policy: ExecutionPolicy | None = None
         self._phase_costs: dict[str, int] = {}
         self._total_cost_tokens: int = 0
+        self._last_sentinel_result: dict | None = None
 
     async def run(self):
         """Main entry point — runs the full autonomous loop."""
@@ -251,6 +252,19 @@ class AutonomousExecutionController:
                         )
                     except Exception as le:
                         logger.debug(f"Ledger tool record: {le}")
+
+                    try:
+                        from app.services.state_truth import record_tool_claim
+                        await record_tool_claim(
+                            employee_id=employee["id"],
+                            user_id=execution["user_id"],
+                            execution_id=self.execution_id,
+                            tool_name=func_name,
+                            claim_key=f"{func_name}:{json.dumps(func_args)[:100]}",
+                            claim_value=result_str[:2000],
+                        )
+                    except Exception as se:
+                        logger.debug(f"State claim record: {se}")
             else:
                 response_text = text or "Tool iteration limit reached."
                 chat_messages.append({"role": "assistant", "content": response_text})
@@ -286,6 +300,7 @@ class AutonomousExecutionController:
 
             if state == Phase.QA:
                 sentinel_result = await self._run_sentinel_verification(execution, plan_text)
+                self._last_sentinel_result = sentinel_result
                 if sentinel_result and sentinel_result.get("verdict") == "FAIL":
                     issues_text = json.dumps(sentinel_result.get("issues", []), indent=2)
                     chat_messages.append({
@@ -321,6 +336,16 @@ class AutonomousExecutionController:
                         )
                     except Exception as le:
                         logger.debug(f"Ledger sentinel record: {le}")
+                    try:
+                        from app.services.state_truth import reject_execution_claims
+                        await reject_execution_claims(self.execution_id, reason="sentinel_fail")
+                    except Exception as se:
+                        logger.debug(f"State truth reject: {se}")
+                    try:
+                        from app.services.trust_chain import fail_chain_on_sentinel_fail
+                        await fail_chain_on_sentinel_fail(self.execution_id)
+                    except Exception as te:
+                        logger.debug(f"Trust chain fail: {te}")
                     next_state = Phase.REPAIRING if Phase.REPAIRING in get_valid_transitions(self._policy, state) else Phase.FAILED
                 elif sentinel_result and sentinel_result.get("verdict") == "PASS":
                     await add_execution_log(
@@ -347,6 +372,27 @@ class AutonomousExecutionController:
                         )
                     except Exception as le:
                         logger.debug(f"Ledger sentinel record: {le}")
+                    try:
+                        from app.services.state_truth import promote_execution_claims
+                        await promote_execution_claims(self.execution_id, verified_by="sentinel")
+                    except Exception as se:
+                        logger.debug(f"State truth promote: {se}")
+                    try:
+                        from app.services.recovery_engine import save_checkpoint
+                        await save_checkpoint(
+                            execution_id=self.execution_id,
+                            employee_id=employee["id"],
+                            phase=state.value,
+                            iteration=iteration,
+                            checkpoint_type="sentinel_pass",
+                        )
+                    except Exception as ce:
+                        logger.debug(f"Recovery checkpoint: {ce}")
+                    try:
+                        from app.services.trust_chain import verify_chain_on_sentinel_pass
+                        await verify_chain_on_sentinel_pass(self.execution_id)
+                    except Exception as te:
+                        logger.debug(f"Trust chain verify: {te}")
                     next_state = self._determine_next_state(state, response_text, self._policy)
                 else:
                     next_state = self._determine_next_state(state, response_text, self._policy)
@@ -611,6 +657,31 @@ class AutonomousExecutionController:
         except Exception as le:
             logger.debug(f"Ledger completion record: {le}")
 
+        try:
+            from app.services.verification_proof import generate_scorecard
+            await generate_scorecard(
+                execution_id=self.execution_id,
+                user_id=execution["user_id"],
+                employee_id=execution.get("employee_id"),
+                goal=execution.get("goal"),
+                sentinel_result=self._last_sentinel_result,
+            )
+        except Exception as se:
+            logger.debug(f"Scorecard generation: {se}")
+
+        try:
+            from app.services.experience_compiler import extract_patterns, compile_procedures
+            await extract_patterns(
+                execution_id=self.execution_id,
+                employee_id=execution.get("employee_id", ""),
+                user_id=execution["user_id"],
+                outcome="success",
+                goal=execution.get("goal"),
+            )
+            await compile_procedures(execution.get("employee_id", ""), execution["user_id"])
+        except Exception as xp:
+            logger.debug(f"Experience compiler: {xp}")
+
         await self._publish_progress("completed", f"Execution completed in {iteration} iterations")
 
         from app.core.database import log_activity, get_employee
@@ -647,6 +718,34 @@ class AutonomousExecutionController:
             )
         except Exception as le:
             logger.debug(f"Ledger failure record: {le}")
+
+        try:
+            from app.services.recovery_engine import diagnose_failure, attempt_recovery
+            diagnosis = await diagnose_failure(
+                execution_id=self.execution_id,
+                error=error,
+                phase=execution.get("state"),
+                iteration=execution.get("iteration"),
+            )
+            recovery = await attempt_recovery(self.execution_id, diagnosis)
+            logger.info(
+                f"Recovery for {self.execution_id}: strategy={recovery['strategy']} outcome={recovery['outcome']}"
+            )
+        except Exception as re_err:
+            logger.debug(f"Recovery engine: {re_err}")
+
+        try:
+            from app.services.experience_compiler import extract_patterns, compile_procedures
+            await extract_patterns(
+                execution_id=self.execution_id,
+                employee_id=execution.get("employee_id", ""),
+                user_id=execution["user_id"],
+                outcome="failure",
+                goal=execution.get("goal"),
+            )
+            await compile_procedures(execution.get("employee_id", ""), execution["user_id"])
+        except Exception as xp:
+            logger.debug(f"Experience compiler on failure: {xp}")
 
         await self._publish_progress("failed", error)
 

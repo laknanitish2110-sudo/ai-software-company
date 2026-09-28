@@ -1427,3 +1427,272 @@ export async function getLedgerSummary(executionId: string): Promise<{
   });
   return checkedJson(res, "Failed to fetch ledger summary");
 }
+
+// ── Verification Proof Engine ─────────────────────────────────────────
+
+export interface VerificationScorecard {
+  id: string;
+  execution_id: string;
+  employee_id: string | null;
+  user_id: string;
+  goal_summary: string | null;
+  goal?: string;
+  raw_quality_score: number | null;
+  verified_quality_score: number | null;
+  quality_delta: number | null;
+  issues_caught: number;
+  issues_by_severity: Record<string, number> | null;
+  sentinel_tiers_run: number;
+  tier_results: Record<string, { name: string; verdict: string; confidence: number; issues_found: number; summary: string }> | null;
+  verification_cost_tokens: number;
+  verification_cost_usd: number | null;
+  estimated_bug_cost_saved: number | null;
+  would_have_shipped_raw: boolean;
+  final_verdict: string | null;
+  created_at: string;
+}
+
+export interface ProofAggregate {
+  total_executions: number;
+  avg_raw_score: number | null;
+  avg_verified_score: number | null;
+  avg_quality_delta: number | null;
+  total_issues_caught: number | null;
+  total_verification_tokens: number | null;
+  total_verification_cost: number | null;
+  total_bug_cost_saved: number | null;
+  would_have_shipped_raw: number | null;
+  passed: number | null;
+  failed: number | null;
+  pass_with_warnings: number | null;
+  roi_multiplier?: number;
+}
+
+export async function getExecutionScorecard(executionId: string): Promise<{
+  execution_id: string; scorecard: VerificationScorecard;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/scorecard`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch scorecard");
+}
+
+export async function getProofDashboard(): Promise<{
+  scorecards: VerificationScorecard[]; aggregate: ProofAggregate;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/proof/dashboard`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch proof dashboard");
+}
+
+// ── State Truth Engine ────────────────────────────────────────────────
+
+export interface StateClaim {
+  id: string;
+  execution_id: string | null;
+  employee_id: string;
+  user_id: string;
+  claim_type: string;
+  claim_key: string;
+  claim_value: string;
+  status: "verified" | "unverified" | "stale" | "contradicted" | "superseded";
+  confidence: number;
+  source_action: string | null;
+  evidence: Record<string, unknown> | null;
+  verified_at: string | null;
+  verified_by: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TruthSummary {
+  total_claims: number;
+  verified: number;
+  unverified: number;
+  stale: number;
+  contradicted: number;
+  superseded: number;
+  avg_confidence: number | null;
+}
+
+export async function getExecutionState(executionId: string): Promise<{
+  execution_id: string;
+  claims: StateClaim[];
+  by_status: Record<string, number>;
+  total: number;
+  verified_count: number;
+  trust_ratio: number;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/state`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch execution state");
+}
+
+export async function getEmployeeTruth(employeeId: string): Promise<{
+  employee_id: string;
+  verified_facts: Array<{ key: string; value: string; confidence: number; verified_at: string; claim_type: string; expires_at: string | null }>;
+  summary: TruthSummary;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/truth`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch employee truth");
+}
+
+// ── Recovery Engine ───────────────────────────────────────────────────
+
+export interface RecoveryCheckpoint {
+  id: string;
+  execution_id: string;
+  employee_id: string;
+  phase: string;
+  iteration: number;
+  checkpoint_type: string;
+  verified_state: { claims: Array<{ key: string; value: string; confidence: number }>; count: number } | null;
+  created_at: string;
+}
+
+export interface RecoveryAttempt {
+  id: string;
+  execution_id: string;
+  checkpoint_id: string | null;
+  failure_type: string;
+  failure_detail: string | null;
+  failure_phase: string | null;
+  failure_iteration: number | null;
+  strategy: string;
+  actions_taken: Record<string, unknown> | null;
+  outcome: string;
+  tokens_used: number;
+  duration_ms: number | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export async function getRecoveryHistory(executionId: string): Promise<{
+  execution_id: string;
+  checkpoints: RecoveryCheckpoint[];
+  recovery_attempts: RecoveryAttempt[];
+  checkpoint_count: number;
+  attempt_count: number;
+  successful_recoveries: number;
+  failed_recoveries: number;
+  aborted: number;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/recovery`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch recovery history");
+}
+
+// ── Cross-Agent Trust Chain ─────────────────────────────────────────
+
+export interface TrustChainLink {
+  id: string;
+  chain_id: string;
+  execution_id: string;
+  parent_link_id: string | null;
+  depth: number;
+  from_agent_id: string;
+  from_agent_name: string;
+  to_agent_id: string;
+  to_agent_name: string;
+  action_type: string;
+  task_description: string | null;
+  authority_basis: string;
+  evidence_summary: string | null;
+  verification_status: "pending" | "verified" | "failed";
+  verified_at: string | null;
+  verified_by: string | null;
+  trust_score: number | null;
+  created_at: string;
+}
+
+export interface TrustProofTrail {
+  execution_id: string;
+  links: TrustChainLink[];
+  chains: Record<string, TrustChainLink[]>;
+  total_links: number;
+  verified_links: number;
+  failed_links: number;
+  pending_links: number;
+  agents_involved: string[];
+  max_delegation_depth: number;
+  chain_integrity: "intact" | "partial" | "broken";
+  trust_ratio: number;
+}
+
+export interface AgentTrust {
+  agent_id: string;
+  score: {
+    total_links: number;
+    verified_links: number;
+    failed_links: number;
+    reliability_rate: number;
+  };
+  recent_verifications: TrustChainLink[];
+}
+
+export async function getExecutionTrustChain(executionId: string): Promise<TrustProofTrail> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/trust-chain`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch trust chain");
+}
+
+export async function getAgentTrustScore(employeeId: string): Promise<AgentTrust> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/trust-score`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch agent trust score");
+}
+
+// ── Experience Compiler ─────────────────────────────────────────────
+
+export interface PatternStats {
+  total: number;
+  successes: number;
+  failures: number;
+  types_seen: number;
+  executions_analyzed: number;
+}
+
+export interface ProcedureStats {
+  total: number;
+  active: number;
+  total_applications: number;
+  total_successes: number;
+  avg_confidence: number;
+  avg_success_rate: number;
+}
+
+export interface CompiledProcedure {
+  id: string;
+  type: string;
+  trigger: string;
+  steps: Record<string, unknown> | null;
+  confidence: number;
+  success_rate: number;
+  times_applied: number;
+  times_succeeded: number;
+  status: string;
+  created_at: string;
+}
+
+export interface ExperienceData {
+  employee_id: string;
+  intelligence_level: "novice" | "learning" | "competent" | "proficient" | "expert";
+  patterns: PatternStats;
+  procedures: ProcedureStats;
+  compiled_procedures: CompiledProcedure[];
+}
+
+export async function getEmployeeExperience(employeeId: string): Promise<ExperienceData> {
+  const res = await fetchWithTimeout(`${API_BASE}/employees/${employeeId}/experience`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch employee experience");
+}

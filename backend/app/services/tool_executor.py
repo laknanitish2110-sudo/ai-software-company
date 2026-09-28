@@ -614,6 +614,22 @@ async def _exec_delegate(args: dict, from_employee_id: str, user_id: str, projec
         project_id=project_id,
     )
 
+    try:
+        from app.services.trust_chain import record_delegation_trust
+        from_emp = next((e for e in employees if e["id"] == from_employee_id), None)
+        from_name = from_emp["name"] if from_emp else "Unknown"
+        await record_delegation_trust(
+            from_agent_id=from_employee_id,
+            from_agent_name=from_name,
+            to_agent_id=target["id"],
+            to_agent_name=target["name"],
+            execution_id=delegation["id"],
+            task_description=task,
+            authority_basis=f"delegated_by:{from_name}",
+        )
+    except Exception as te:
+        logger.debug(f"Trust chain record: {te}")
+
     return {
         "success": True,
         "result": f"Task delegated to {target['name']} ({target['role']}). "
