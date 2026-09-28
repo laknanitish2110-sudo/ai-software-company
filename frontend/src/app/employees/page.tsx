@@ -231,7 +231,7 @@ export default function EmployeesPage() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)" }}>
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
+      <div className="page-container" style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: "0 0 4px", letterSpacing: "-0.02em" }}>
@@ -246,7 +246,7 @@ export default function EmployeesPage() {
 
         {/* Stats bar */}
         {teamCount > 0 && (
-          <div style={{
+          <div className="stat-grid" style={{
             display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12,
             marginBottom: 28,
           }}>

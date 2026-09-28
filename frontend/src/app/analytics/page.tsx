@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAnalytics, type AnalyticsData } from "@/lib/api";
 import { ThinkingOrb } from "thinking-orbs";
+import { ErrorBanner, EmptyState } from "@/components/EmptyState";
 
 const ROLE_COLORS: Record<string, string> = {
   "Architect": "#8b5cf6",
@@ -63,22 +64,44 @@ export default function AnalyticsPage() {
   const router = useRouter();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState(30);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
   }, [user, authLoading, router]);
 
-  useEffect(() => {
+  const fetchData = () => {
     if (!user) return;
     setLoading(true);
+    setError(null);
     getAnalytics(period)
       .then(setData)
-      .catch(() => {})
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load analytics"))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchData();
   }, [user, period]);
 
   if (authLoading || !user) return null;
+
+  if (!loading && error) {
+    return (
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 16px" }}>Analytics</h1>
+        <ErrorBanner message={error} onRetry={fetchData} />
+        <EmptyState
+          icon="📊"
+          title="Unable to load analytics"
+          description="We couldn't connect to the server. Check your connection and try again."
+          action="Retry"
+          onAction={fetchData}
+        />
+      </div>
+    );
+  }
 
   if (loading || !data) {
     return (
@@ -162,8 +185,8 @@ export default function AnalyticsPage() {
   const maxMemories = Math.max(...data.employees.map((e) => e.memory_count), 1);
 
   return (
-    <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+    <div className="page-container" style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px" }}>
+      <div className="goal-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>Analytics</h1>
           <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0 }}>
@@ -188,7 +211,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Top stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 32 }}>
+      <div className="analytics-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 32 }}>
         <StatCard label="Total Tokens" value={data.usage.total_tokens} color="var(--accent)" />
         <StatCard label="Sessions" value={totalSessions} color="#3b82f6" />
         <StatCard label="Memories" value={totalMemories} color="#8b5cf6" />
@@ -228,7 +251,7 @@ export default function AnalyticsPage() {
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+      <div className="analytics-grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
         {/* Sessions per employee */}
         <div style={{
           padding: 24, borderRadius: 16,

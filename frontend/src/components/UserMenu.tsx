@@ -63,7 +63,7 @@ export default function UserMenu() {
   const initials = (user.display_name || user.email || "U").slice(0, 2).toUpperCase();
 
   return (
-    <nav style={{
+    <nav className="app-nav" style={{
       display: "flex", alignItems: "center", height: 52,
       padding: "0 20px", borderBottom: "1px solid var(--border)",
       background: "var(--bg-card)", gap: 8,

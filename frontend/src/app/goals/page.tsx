@@ -9,6 +9,7 @@ import {
   type Goal, type GoalTask, type Employee,
 } from "@/lib/api";
 import { ThinkingOrb } from "thinking-orbs";
+import { ErrorBanner } from "@/components/EmptyState";
 
 const PRIORITY_COLORS: Record<string, string> = {
   critical: "#ef4444",
@@ -135,7 +136,7 @@ function GoalCard({
           borderTop: "1px solid var(--border)", padding: "16px 20px",
           background: "var(--bg-secondary)",
         }}>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <div className="goal-actions" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             {goal.status === "draft" && (
               <button onClick={onDecompose} style={{
                 padding: "6px 14px", borderRadius: 8, border: "none",
@@ -225,6 +226,7 @@ export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [taskMap, setTaskMap] = useState<Record<string, GoalTask[]>>({});
   const [creating, setCreating] = useState(false);
@@ -237,14 +239,15 @@ export default function GoalsPage() {
 
   const refresh = useCallback(async () => {
     if (!user) return;
+    setFetchError(null);
     try {
       const [goalsRes, empsRes] = await Promise.all([
         listGoals(), listEmployees(),
       ]);
       setGoals(goalsRes.goals);
       setEmployees(empsRes);
-    } catch {
-      // noop
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : "Failed to load goals");
     } finally {
       setLoading(false);
     }
@@ -350,8 +353,8 @@ export default function GoalsPage() {
   };
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "24px 16px" }}>
-      <div style={{
+    <div className="page-container" style={{ maxWidth: 900, margin: "0 auto", padding: "24px 16px" }}>
+      <div className="goal-header" style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         marginBottom: 24,
       }}>
@@ -374,7 +377,7 @@ export default function GoalsPage() {
       </div>
 
       {/* Stats */}
-      <div style={{
+      <div className="stat-grid" style={{
         display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12,
         marginBottom: 20,
       }}>
@@ -397,7 +400,7 @@ export default function GoalsPage() {
 
       {/* Create Form */}
       {creating && (
-        <div style={{
+        <div className="goal-form" style={{
           padding: 20, borderRadius: 14, marginBottom: 20,
           background: "var(--bg-card)", border: "1px solid var(--border)",
         }}>
@@ -491,6 +494,10 @@ export default function GoalsPage() {
             >Cancel</button>
           </div>
         </div>
+      )}
+
+      {fetchError && (
+        <ErrorBanner message={fetchError} onRetry={refresh} />
       )}
 
       {/* Goal List */}

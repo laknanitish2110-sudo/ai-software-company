@@ -365,18 +365,52 @@ body {
 /* ─── Mobile responsiveness ───────────────────────────────── */
 @media (max-width: 768px) {
   .employee-layout { flex-direction: column !important; }
-  .employee-sidebar { width: 100% !important; max-width: 100% !important; border-right: none !important; border-bottom: 1px solid var(--border) !important; max-height: 200px !important; }
+  .employee-sidebar {
+    width: 100% !important; max-width: 100% !important;
+    border-right: none !important; border-bottom: 1px solid var(--border) !important;
+    max-height: 220px !important; overflow-y: auto !important;
+  }
   .chat-header { padding: 10px 14px !important; }
   .chat-messages { padding: 12px !important; }
-  .chat-input-area { padding: 10px !important; }
+  .chat-input-area { padding: 10px 12px !important; }
   .msg-bubble { max-width: 85% !important; }
   .analytics-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
   .analytics-grid-2 { grid-template-columns: 1fr !important; }
   .settings-container { padding: 24px 14px !important; }
+  .skeleton-card { padding: 14px !important; }
+
+  /* Nav */
+  .app-nav { padding: 0 12px !important; }
+  .app-nav a, .app-nav button { font-size: 12px !important; padding: 6px 10px !important; }
+
+  /* Goals */
+  .goal-header { flex-direction: column !important; gap: 12px !important; align-items: stretch !important; }
+  .goal-form { padding: 16px !important; }
+  .goal-actions { flex-wrap: wrap !important; }
+
+  /* General containers */
+  .page-container { padding: 20px 14px !important; }
+
+  /* Markdown in bubbles */
+  .md-content pre { font-size: 12px !important; padding: 10px !important; }
+  .md-content table { font-size: 12px !important; }
+  .md-content pre code { white-space: pre-wrap !important; word-break: break-word !important; }
 }
 
 @media (max-width: 480px) {
   .employee-sidebar { max-height: 160px !important; }
-  .msg-bubble { max-width: 92% !important; }
+  .msg-bubble { max-width: 92% !important; font-size: 13px !important; }
   .analytics-grid-4 { grid-template-columns: 1fr !important; }
+
+  /* Stack stat grids */
+  .stat-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Full-width buttons on small screens */
+  .goal-actions button { flex: 1 !important; min-width: 0 !important; }
+
+  /* Tighter padding */
+  .skeleton-card { padding: 10px !important; }
+
+  /* Tables scroll horizontally */
+  .md-content table { display: block; overflow-x: auto; }
 }
