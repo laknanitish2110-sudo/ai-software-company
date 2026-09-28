@@ -76,6 +76,13 @@ class AutonomousExecutionController:
         await update_employee(employee["id"], execution["user_id"], {"status": "working"})
 
         try:
+            from app.services.action_ledger import record_execution_start
+            await record_execution_start(
+                execution_id=self.execution_id,
+                actor=employee.get("name", "Employee"),
+                goal=execution["goal"],
+                policy_name=self._policy.role,
+            )
             await self._publish_progress("started", f"Starting autonomous execution: {execution['goal'][:100]}")
             await self._execute_loop(execution, employee)
         except asyncio.CancelledError:
@@ -208,6 +215,7 @@ class AutonomousExecutionController:
                     except (json.JSONDecodeError, TypeError):
                         func_args = {}
 
+                    tool_start = time.time()
                     result = await execute_tool(
                         tool_name=func_name,
                         arguments=func_args,
@@ -215,6 +223,7 @@ class AutonomousExecutionController:
                         user_id=execution["user_id"],
                         project_id=execution.get("session_id"),
                     )
+                    tool_ms = int((time.time() - tool_start) * 1000)
 
                     result_str = json.dumps(result)
                     if len(result_str) > 8000:
@@ -225,6 +234,23 @@ class AutonomousExecutionController:
                         "tool_call_id": tc["id"],
                         "content": result_str,
                     })
+
+                    try:
+                        from app.services.action_ledger import record_tool_execution
+                        tool_success = not (isinstance(result, dict) and result.get("error"))
+                        await record_tool_execution(
+                            execution_id=self.execution_id,
+                            iteration=iteration,
+                            phase=state.value,
+                            actor=employee.get("name", "Employee"),
+                            tool_name=func_name,
+                            tool_input=json.dumps(func_args)[:500],
+                            tool_output=result_str[:500],
+                            success=tool_success,
+                            duration_ms=tool_ms,
+                        )
+                    except Exception as le:
+                        logger.debug(f"Ledger tool record: {le}")
             else:
                 response_text = text or "Tool iteration limit reached."
                 chat_messages.append({"role": "assistant", "content": response_text})
@@ -242,6 +268,21 @@ class AutonomousExecutionController:
                 duration_ms=iter_ms,
                 success=True,
             )
+
+            try:
+                from app.services.action_ledger import record_llm_reasoning
+                await record_llm_reasoning(
+                    execution_id=self.execution_id,
+                    iteration=iteration,
+                    phase=state.value,
+                    actor=employee.get("name", "Employee"),
+                    input_summary=phase_prompt[:300],
+                    output_summary=response_text[:300] if response_text else None,
+                    tokens_used=est_tokens if 'est_tokens' in dir() else 0,
+                    duration_ms=iter_ms,
+                )
+            except Exception as le:
+                logger.debug(f"Ledger reasoning record: {le}")
 
             if state == Phase.QA:
                 sentinel_result = await self._run_sentinel_verification(execution, plan_text)
@@ -267,6 +308,19 @@ class AutonomousExecutionController:
                         duration_ms=0,
                         success=False,
                     )
+                    try:
+                        from app.services.action_ledger import record_sentinel_verdict
+                        await record_sentinel_verdict(
+                            execution_id=self.execution_id, iteration=iteration,
+                            phase=state.value, actor=employee.get("name", "Employee"),
+                            tier=sentinel_result.get("tiers_run", 1),
+                            verdict="FAIL",
+                            issues=sentinel_result.get("issues"),
+                            tiers_run=sentinel_result.get("tiers_run", 1),
+                            elapsed_ms=int(sentinel_result.get("elapsed_seconds", 0) * 1000),
+                        )
+                    except Exception as le:
+                        logger.debug(f"Ledger sentinel record: {le}")
                     next_state = Phase.REPAIRING if Phase.REPAIRING in get_valid_transitions(self._policy, state) else Phase.FAILED
                 elif sentinel_result and sentinel_result.get("verdict") == "PASS":
                     await add_execution_log(
@@ -280,6 +334,19 @@ class AutonomousExecutionController:
                         duration_ms=0,
                         success=True,
                     )
+                    try:
+                        from app.services.action_ledger import record_sentinel_verdict
+                        await record_sentinel_verdict(
+                            execution_id=self.execution_id, iteration=iteration,
+                            phase=state.value, actor=employee.get("name", "Employee"),
+                            tier=sentinel_result.get("tiers_run", 1),
+                            verdict="PASS",
+                            issues=sentinel_result.get("issues"),
+                            tiers_run=sentinel_result.get("tiers_run", 1),
+                            elapsed_ms=int(sentinel_result.get("elapsed_seconds", 0) * 1000),
+                        )
+                    except Exception as le:
+                        logger.debug(f"Ledger sentinel record: {le}")
                     next_state = self._determine_next_state(state, response_text, self._policy)
                 else:
                     next_state = self._determine_next_state(state, response_text, self._policy)
@@ -303,6 +370,24 @@ class AutonomousExecutionController:
                     "policy": self._policy.role,
                 }),
             })
+
+            if next_state != state:
+                try:
+                    from app.services.action_ledger import record_phase_transition
+                    parsed = self._parse_transition_json(response_text)
+                    await record_phase_transition(
+                        execution_id=self.execution_id,
+                        iteration=iteration,
+                        from_phase=state.value,
+                        to_phase=next_state.value,
+                        actor=employee.get("name", "Employee"),
+                        reason=parsed.get("reason") if parsed else None,
+                        confidence=parsed.get("confidence") if parsed else None,
+                        tokens_used=est_tokens if 'est_tokens' in dir() else 0,
+                        duration_ms=iter_ms,
+                    )
+                except Exception as le:
+                    logger.debug(f"Ledger transition record: {le}")
 
             state = next_state
 
@@ -510,6 +595,22 @@ class AutonomousExecutionController:
         })
 
         await self._collect_artifacts(execution)
+
+        try:
+            from app.services.action_ledger import record_execution_complete
+            from app.core.database import list_execution_artifacts
+            artifacts = await list_execution_artifacts(self.execution_id)
+            await record_execution_complete(
+                execution_id=self.execution_id,
+                iteration=iteration,
+                actor=execution.get("employee_id", "Employee"),
+                final_state="COMPLETED",
+                artifacts_count=len(artifacts),
+                total_tokens=tokens_used,
+            )
+        except Exception as le:
+            logger.debug(f"Ledger completion record: {le}")
+
         await self._publish_progress("completed", f"Execution completed in {iteration} iterations")
 
         from app.core.database import log_activity, get_employee
@@ -534,6 +635,19 @@ class AutonomousExecutionController:
             "error": error,
             "completed_at": now_iso(),
         })
+
+        try:
+            from app.services.action_ledger import record_execution_complete
+            await record_execution_complete(
+                execution_id=self.execution_id,
+                iteration=execution.get("iteration", 0),
+                actor=execution.get("employee_id", "Employee"),
+                final_state="FAILED",
+                total_tokens=execution.get("tokens_used", 0),
+            )
+        except Exception as le:
+            logger.debug(f"Ledger failure record: {le}")
+
         await self._publish_progress("failed", error)
 
     async def _handle_cancellation(self, execution: dict):

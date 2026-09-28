@@ -1373,3 +1373,57 @@ export async function getGoalProgress(goalId: string): Promise<{
   });
   return checkedJson(res, "Failed to get goal progress");
 }
+
+// ── Action Ledger ────────────────────────────────────────────────────
+
+export interface LedgerEntry {
+  id: string;
+  execution_id: string;
+  iteration: number;
+  phase: string;
+  action_type: string;
+  intent: string | null;
+  actor: string | null;
+  authority: string | null;
+  preconditions: string[] | null;
+  evidence: Record<string, unknown> | null;
+  expected_effects: string | null;
+  actual_effects: string | null;
+  verification_result: Record<string, unknown> | null;
+  commit_decision: string;
+  tokens_used: number;
+  duration_ms: number | null;
+  cost_usd: number | null;
+  created_at: string;
+}
+
+export interface LedgerSummary {
+  total_entries: number;
+  committed: number;
+  rolled_back: number;
+  pending: number;
+  phase_transitions: number;
+  tool_executions: number;
+  verifications: number;
+  delegations: number;
+  total_tokens: number;
+  total_cost: number;
+}
+
+export async function getExecutionLedger(executionId: string): Promise<{
+  execution_id: string; entries: LedgerEntry[]; count: number;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/ledger`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch action ledger");
+}
+
+export async function getLedgerSummary(executionId: string): Promise<{
+  execution_id: string; summary: LedgerSummary;
+}> {
+  const res = await fetchWithTimeout(`${API_BASE}/executions/${executionId}/ledger/summary`, {
+    headers: authHeaders(),
+  });
+  return checkedJson(res, "Failed to fetch ledger summary");
+}

@@ -2615,6 +2615,48 @@ async def api_get_execution_costs(execution_id: str, user=Depends(get_current_us
     }
 
 
+# ── Action Ledger ────────────────────────────────────────────────────
+
+@router.get("/executions/{execution_id}/ledger")
+async def api_get_execution_ledger(execution_id: str, user=Depends(get_current_user)):
+    """Get the full action ledger for an execution — causal records with evidence."""
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    from app.services.action_ledger import get_ledger
+    entries = await get_ledger(execution_id)
+
+    for entry in entries:
+        for field in ("preconditions", "evidence", "verification_result", "metadata"):
+            val = entry.get(field)
+            if val and isinstance(val, str):
+                try:
+                    entry[field] = json.loads(val)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+    return {"execution_id": execution_id, "entries": entries, "count": len(entries)}
+
+
+@router.get("/executions/{execution_id}/ledger/summary")
+async def api_get_ledger_summary(execution_id: str, user=Depends(get_current_user)):
+    """Get aggregate stats for an execution's action ledger."""
+    from app.core.database import get_autonomous_execution
+    execution = await get_autonomous_execution(execution_id)
+    if not execution:
+        raise HTTPException(404, "Execution not found")
+    if execution["user_id"] != user["id"]:
+        raise HTTPException(403, "Not your execution")
+
+    from app.services.action_ledger import get_summary
+    summary = await get_summary(execution_id)
+    return {"execution_id": execution_id, "summary": summary}
+
+
 # ── Goals Engine ──────────────────────────────────────────────────────
 
 @router.post("/goals")

@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { ThinkingOrb, type OrbState } from "thinking-orbs";
 import ExecutionProgress from "@/components/ExecutionProgress";
+import ActionLedgerPanel from "@/components/ActionLedger";
 
 type Tab = "chat" | "memories" | "sessions" | "skills" | "schedule" | "settings";
 
@@ -1239,10 +1240,13 @@ export default function EmployeeChatPage() {
           })()}
 
           {activeExecutionId && (
-            <ExecutionProgress
-              executionId={activeExecutionId}
-              onDismiss={() => setActiveExecutionId(null)}
-            />
+            <>
+              <ExecutionProgress
+                executionId={activeExecutionId}
+                onDismiss={() => setActiveExecutionId(null)}
+              />
+              <ActionLedgerPanel executionId={activeExecutionId} />
+            </>
           )}
 
           {messages.map((msg) => {

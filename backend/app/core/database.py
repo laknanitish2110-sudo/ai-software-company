@@ -493,6 +493,31 @@ async def init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_exec_logs ON execution_logs(execution_id, iteration);
 
+                CREATE TABLE IF NOT EXISTS action_ledger (
+                    id TEXT PRIMARY KEY,
+                    execution_id TEXT NOT NULL,
+                    iteration INTEGER NOT NULL DEFAULT 0,
+                    phase TEXT NOT NULL,
+                    action_type TEXT NOT NULL,
+                    intent TEXT,
+                    actor TEXT,
+                    authority TEXT,
+                    preconditions TEXT,
+                    evidence TEXT,
+                    expected_effects TEXT,
+                    actual_effects TEXT,
+                    verification_result TEXT,
+                    commit_decision TEXT NOT NULL DEFAULT 'pending',
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER,
+                    cost_usd REAL,
+                    metadata TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (execution_id) REFERENCES autonomous_executions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ledger_execution ON action_ledger(execution_id, iteration);
+                CREATE INDEX IF NOT EXISTS idx_ledger_phase ON action_ledger(execution_id, phase);
+
                 CREATE TABLE IF NOT EXISTS activity_log (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -945,6 +970,30 @@ async def init_db():
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_exec_logs ON execution_logs(execution_id, iteration);
+
+                CREATE TABLE IF NOT EXISTS action_ledger (
+                    id VARCHAR(255) PRIMARY KEY,
+                    execution_id VARCHAR(255) NOT NULL REFERENCES autonomous_executions(id) ON DELETE CASCADE,
+                    iteration INTEGER NOT NULL DEFAULT 0,
+                    phase VARCHAR(64) NOT NULL,
+                    action_type VARCHAR(64) NOT NULL,
+                    intent TEXT,
+                    actor VARCHAR(255),
+                    authority TEXT,
+                    preconditions TEXT,
+                    evidence TEXT,
+                    expected_effects TEXT,
+                    actual_effects TEXT,
+                    verification_result TEXT,
+                    commit_decision VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    tokens_used INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER,
+                    cost_usd REAL,
+                    metadata TEXT,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ledger_execution ON action_ledger(execution_id, iteration);
+                CREATE INDEX IF NOT EXISTS idx_ledger_phase ON action_ledger(execution_id, phase);
 
                 CREATE TABLE IF NOT EXISTS activity_log (
                     id VARCHAR(255) PRIMARY KEY,
@@ -3404,6 +3453,78 @@ async def get_execution_logs(execution_id: str, limit: int = 100) -> list[dict]:
             (execution_id, limit),
         )
         return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+# ── Action Ledger ────────────────────────────────────────────────────
+
+async def create_ledger_entry(
+    execution_id: str, iteration: int, phase: str, action_type: str,
+    intent: str | None = None, actor: str | None = None,
+    authority: str | None = None, preconditions: str | None = None,
+    evidence: str | None = None, expected_effects: str | None = None,
+    actual_effects: str | None = None, verification_result: str | None = None,
+    commit_decision: str = "pending", tokens_used: int = 0,
+    duration_ms: int | None = None, cost_usd: float | None = None,
+    metadata: str | None = None,
+) -> dict:
+    db = await get_db()
+    try:
+        entry_id = new_id()
+        ts = now_iso()
+        await db.execute(
+            """INSERT INTO action_ledger
+               (id, execution_id, iteration, phase, action_type, intent, actor,
+                authority, preconditions, evidence, expected_effects, actual_effects,
+                verification_result, commit_decision, tokens_used, duration_ms,
+                cost_usd, metadata, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (entry_id, execution_id, iteration, phase, action_type, intent, actor,
+             authority, preconditions, evidence, expected_effects, actual_effects,
+             verification_result, commit_decision, tokens_used, duration_ms,
+             cost_usd, metadata, ts),
+        )
+        await db.commit()
+        return {"id": entry_id, "execution_id": execution_id, "phase": phase,
+                "action_type": action_type, "commit_decision": commit_decision,
+                "created_at": ts}
+    finally:
+        await db.close()
+
+
+async def get_execution_ledger(execution_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM action_ledger WHERE execution_id = ? ORDER BY iteration, created_at",
+            (execution_id,),
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def get_ledger_summary(execution_id: str) -> dict:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT
+                 COUNT(*) as total_entries,
+                 COUNT(CASE WHEN commit_decision = 'committed' THEN 1 END) as committed,
+                 COUNT(CASE WHEN commit_decision = 'rolled_back' THEN 1 END) as rolled_back,
+                 COUNT(CASE WHEN commit_decision = 'pending' THEN 1 END) as pending,
+                 COUNT(CASE WHEN action_type = 'phase_transition' THEN 1 END) as phase_transitions,
+                 COUNT(CASE WHEN action_type = 'tool_execution' THEN 1 END) as tool_executions,
+                 COUNT(CASE WHEN action_type = 'sentinel_verification' THEN 1 END) as verifications,
+                 COUNT(CASE WHEN action_type = 'delegation' THEN 1 END) as delegations,
+                 SUM(tokens_used) as total_tokens,
+                 SUM(COALESCE(cost_usd, 0)) as total_cost
+               FROM action_ledger WHERE execution_id = ?""",
+            (execution_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else {}
     finally:
         await db.close()
 
