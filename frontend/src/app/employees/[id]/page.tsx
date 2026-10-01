@@ -1350,30 +1350,84 @@ export default function EmployeeChatPage() {
             }
 
             if (msg.role === "tool_result") {
-              let result: { tool?: string; result?: string; error?: string } = {};
+              let result: { tool?: string; result?: string; error?: string; images?: { type: string; data: string }[]; html?: string; preview_url?: string } = {};
               try {
                 const parsed = JSON.parse(msg.content);
-                const inner = typeof parsed.result === "string" ? JSON.parse(parsed.result) : parsed;
+                const inner = typeof parsed.result === "string" ? (() => { try { return JSON.parse(parsed.result); } catch { return parsed; } })() : parsed;
                 result = { tool: parsed.tool, ...inner };
               } catch { /* skip */ }
-              const isError = !result.error ? false : true;
+              const isError = !!result.error;
               const display = result.error || (typeof result.result === "string" ? result.result : JSON.stringify(result.result));
               const truncated = display && display.length > 200 ? display.slice(0, 200) + "..." : display;
+              const hasImages = result.images && result.images.length > 0;
+              const hasPreview = !!result.preview_url;
               return (
                 <div key={msg.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
                   <div style={{
-                    maxWidth: "80%", padding: "6px 12px", borderRadius: 8,
+                    maxWidth: "80%", borderRadius: 8, overflow: "hidden",
                     background: isError ? "rgba(237,95,116,0.06)" : "rgba(11,191,140,0.06)",
                     border: `1px solid ${isError ? "rgba(237,95,116,0.2)" : "rgba(11,191,140,0.2)"}`,
-                    fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word",
-                    color: isError ? "#ed5f74" : "var(--text-secondary)",
                   }}>
-                    {result.tool && (
-                      <span style={{ fontWeight: 600, marginRight: 6, color: isError ? "#ed5f74" : "#0bbf8c" }}>
-                        {isError ? "x" : "v"} {result.tool}:
-                      </span>
+                    <div style={{
+                      padding: "6px 12px",
+                      fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      color: isError ? "#ed5f74" : "var(--text-secondary)",
+                    }}>
+                      {result.tool && (
+                        <span style={{ fontWeight: 600, marginRight: 6, color: isError ? "#ed5f74" : "#0bbf8c" }}>
+                          {isError ? "x" : "v"} {result.tool}:
+                        </span>
+                      )}
+                      {truncated}
+                    </div>
+                    {hasImages && (
+                      <div style={{ padding: "4px 8px 8px", display: "flex", flexDirection: "column", gap: 6 }}>
+                        {result.images!.map((img, i) => (
+                          <img
+                            key={i}
+                            src={`data:image/${img.type};base64,${img.data}`}
+                            alt={`Output ${i + 1}`}
+                            style={{
+                              maxWidth: "100%", borderRadius: 6,
+                              border: "1px solid var(--border)",
+                              background: "#fff",
+                            }}
+                          />
+                        ))}
+                      </div>
                     )}
-                    {truncated}
+                    {result.html && (
+                      <div style={{ padding: "4px 8px 8px" }}>
+                        <iframe
+                          srcDoc={result.html}
+                          sandbox="allow-scripts"
+                          style={{
+                            width: "100%", height: 300, border: "1px solid var(--border)",
+                            borderRadius: 6, background: "#fff",
+                          }}
+                          title="Code output"
+                        />
+                      </div>
+                    )}
+                    {hasPreview && (
+                      <div style={{ padding: "6px 12px", borderTop: "1px solid rgba(11,191,140,0.15)" }}>
+                        <a
+                          href={result.preview_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            fontSize: 12, fontWeight: 600, color: "var(--accent)",
+                            textDecoration: "none",
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                          </svg>
+                          Open Live Preview
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

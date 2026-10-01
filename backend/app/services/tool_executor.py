@@ -37,7 +37,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_code",
-            "description": "Execute code in a sandboxed environment (E2B). Use this to run Python or Node.js code, install packages, or test implementations.",
+            "description": "Execute code in a sandboxed E2B environment. Returns stdout, images (matplotlib/charts as base64), and optional preview URLs. Use for Python, Node.js, or bash. For visual output (charts, plots), use matplotlib/plotly — images are returned automatically.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -54,6 +54,10 @@ TOOL_SCHEMAS = [
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Packages to install before running (e.g. ['requests', 'pandas'])",
+                    },
+                    "preview_port": {
+                        "type": "integer",
+                        "description": "If the code starts a web server, pass the port number to get a live preview URL",
                     },
                 },
                 "required": ["language", "code"],
@@ -382,17 +386,50 @@ async def _exec_run_code(args: dict, project_id: str | None) -> dict:
                 stdout = "".join(r.text for r in execution.results) if execution.results else ""
                 logs_stdout = "".join(execution.logs.stdout) if execution.logs.stdout else ""
                 logs_stderr = "".join(execution.logs.stderr) if execution.logs.stderr else ""
+
+                images = []
+                charts = []
+                html_outputs = []
+                for r in (execution.results or []):
+                    if r.png:
+                        images.append({"type": "png", "data": r.png})
+                    elif r.jpeg:
+                        images.append({"type": "jpeg", "data": r.jpeg})
+                    elif r.svg:
+                        images.append({"type": "svg", "data": r.svg})
+                    if r.html:
+                        html_outputs.append(r.html)
+                    if r.chart:
+                        charts.append(r.chart)
+
                 if execution.error:
                     return {
                         "success": False,
                         "error": f"{execution.error.name}: {execution.error.value}",
                         "stdout": logs_stdout,
                     }
-                return {
+
+                result_data: dict = {
                     "success": True,
                     "result": stdout or logs_stdout,
                     "stderr": logs_stderr,
                 }
+                if images:
+                    result_data["images"] = images
+                if html_outputs:
+                    result_data["html"] = html_outputs[0]
+                if charts:
+                    result_data["charts"] = charts
+
+                preview_port = args.get("preview_port")
+                if preview_port:
+                    try:
+                        preview_url = sbx.get_host(int(preview_port))
+                        result_data["preview_url"] = f"https://{preview_url}"
+                    except Exception:
+                        pass
+
+                return result_data
             else:
                 if language == "javascript":
                     sbx.files.write("/tmp/script.js", code)
