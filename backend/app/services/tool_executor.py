@@ -359,7 +359,7 @@ async def _exec_run_code(args: dict, project_id: str | None) -> dict:
         return {"success": False, "error": "E2B API key not configured."}
 
     try:
-        sbx = Sandbox(api_key=e2b_key)
+        sbx = Sandbox.create(api_key=e2b_key)
         try:
             if packages:
                 if language == "python":
