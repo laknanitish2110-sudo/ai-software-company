@@ -217,6 +217,9 @@ export default function EmployeesPage() {
     );
   }
 
+  const isDemo = user.email?.endsWith("@forgeai.demo") ?? false;
+  const [demoBannerVisible, setDemoBannerVisible] = useState(true);
+
   const teamCount = employees.length;
   const activeCount = employees.filter(e => e.status === "thinking" || e.status === "working" || e.status === "tool_execution").length;
   const totalSessions = employees.reduce((sum, e) => sum + (e.session_count ?? 0), 0);
@@ -243,6 +246,57 @@ export default function EmployeesPage() {
               : "Your persistent AI employees"}
           </p>
         </div>
+
+        {/* Demo welcome banner */}
+        {isDemo && demoBannerVisible && teamCount > 0 && (
+          <div style={{
+            padding: "16px 20px", borderRadius: 14, marginBottom: 20,
+            background: "linear-gradient(135deg, rgba(99,91,255,0.08) 0%, rgba(11,191,140,0.06) 100%)",
+            border: "1px solid rgba(99,91,255,0.15)",
+            display: "flex", alignItems: "flex-start", gap: 14,
+            animation: "fadeIn 0.4s ease-out",
+          }}>
+            <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>&#x1F44B;</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)", marginBottom: 4 }}>
+                Welcome to your AI team!
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                Click any employee card below to start chatting. Try asking Atlas to build something,
+                or ask Sage to analyze a business idea. Each employee has different skills and remembers your conversations.
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px",
+                  borderRadius: 8, background: "rgba(99,91,255,0.08)", fontSize: 11, fontWeight: 600, color: "var(--accent)",
+                }}>
+                  &#x26A1; Atlas &mdash; builds code
+                </span>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px",
+                  borderRadius: 8, background: "rgba(11,191,140,0.08)", fontSize: 11, fontWeight: 600, color: "#0bbf8c",
+                }}>
+                  &#x1F4CB; Sage &mdash; analyzes ideas
+                </span>
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px",
+                  borderRadius: 8, background: "rgba(139,92,246,0.08)", fontSize: 11, fontWeight: 600, color: "#8b5cf6",
+                }}>
+                  &#x1F3D7;&#xFE0F; Arc &mdash; designs systems
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setDemoBannerVisible(false)}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: "var(--text-muted)", fontSize: 18, lineHeight: 1, padding: 4,
+                flexShrink: 0,
+              }}
+              aria-label="Dismiss"
+            >&times;</button>
+          </div>
+        )}
 
         {/* Stats bar */}
         {teamCount > 0 && (
