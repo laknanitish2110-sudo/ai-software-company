@@ -18,6 +18,7 @@ from app.core.config import (
     BYTEZ_API_KEY, BYTEZ_BASE_URL,
     SMART_MODEL, MODEL_MAP, FALLBACK_MAP,
     PROVIDER_MAP, FALLBACK_PROVIDER_MAP,
+    TEMPERATURE_MAP, MAX_TOKENS_MAP,
 )
 from app.core.database import (
     get_project,
@@ -284,6 +285,7 @@ async def _llm_call_single(
     provider: str = "openrouter",
     tools: list[dict] | None = None,
     tool_choice: str | dict | None = None,
+    temperature: float = 0.7,
 ) -> tuple[str, dict, list | None]:
     """Returns (response_text, usage_dict, tool_calls_or_none)."""
     client = get_client(provider)
@@ -292,7 +294,7 @@ async def _llm_call_single(
     is_async_client = isinstance(client, AsyncOpenAI) or inspect.iscoroutinefunction(create_func)
     target_model = resolve_model_name(model, provider)
 
-    extra_kwargs: dict[str, Any] = {}
+    extra_kwargs: dict[str, Any] = {"temperature": temperature}
     if tools:
         extra_kwargs["tools"] = tools
         if tool_choice:
@@ -423,6 +425,7 @@ async def _llm_call_with_retry(
     role: str | None = None,
     tools: list[dict] | None = None,
     tool_choice: str | dict | None = None,
+    temperature: float = 0.7,
 ) -> tuple[str, str, dict, list | None]:
     """Returns (response_text, model_used, usage_dict, tool_calls_or_none)."""
     if project_id:
@@ -449,6 +452,7 @@ async def _llm_call_with_retry(
             text, usage, tool_calls = await _llm_call_single(
                 model, messages, max_tokens, timeout, stream_callback,
                 provider=provider, tools=tools, tool_choice=tool_choice,
+                temperature=temperature,
             )
             if project_id:
                 await resource_budget.record_llm_call(
@@ -480,6 +484,7 @@ async def _llm_call_with_retry(
             text, usage, tool_calls = await _llm_call_single(
                 fb_model, messages, max_tokens, timeout, stream_callback,
                 provider=fb_prov, tools=tools, tool_choice=tool_choice,
+                temperature=temperature,
             )
             if project_id:
                 await resource_budget.record_llm_call(
@@ -951,27 +956,33 @@ Be specific, helpful, and concise. You have full access to the project state.
 async def call_llm_with_fallback(
     messages: list[dict],
     role: str = "CEO",
-    temperature: float = 0.7,
-    max_tokens: int = 4096,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
     tools: list[dict] | None = None,
     tool_choice: str | dict | None = None,
+    model_override: str | None = None,
+    provider_override: str | None = None,
 ) -> str | tuple[str, list | None]:
     """Public wrapper for employee chat. Returns text when no tools, (text, tool_calls) when tools are provided."""
-    model = MODEL_MAP.get(role.lower(), SMART_MODEL)
-    provider = PROVIDER_MAP.get(role.lower(), "nvidia")
-    fallback = FALLBACK_MAP.get(role.lower())
-    fb_provider = FALLBACK_PROVIDER_MAP.get(role.lower(), "nvidia")
+    role_key = role.lower()
+    model = model_override or MODEL_MAP.get(role_key, SMART_MODEL)
+    provider = provider_override or PROVIDER_MAP.get(role_key, "nvidia")
+    fallback = FALLBACK_MAP.get(role_key)
+    fb_provider = FALLBACK_PROVIDER_MAP.get(role_key, "nvidia")
+    temp = temperature if temperature is not None else TEMPERATURE_MAP.get(role_key, 0.5)
+    tokens = max_tokens if max_tokens is not None else MAX_TOKENS_MAP.get(role_key, 4096)
 
     text, _, _, tool_calls = await _llm_call_with_retry(
         model=model,
         messages=messages,
-        max_tokens=max_tokens,
+        max_tokens=tokens,
         timeout=120,
         fallback_model=fallback,
         provider=provider,
         fallback_provider=fb_provider,
         tools=tools,
         tool_choice=tool_choice,
+        temperature=temp,
     )
     if tools is not None:
         return text, tool_calls

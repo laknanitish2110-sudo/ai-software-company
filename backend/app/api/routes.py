@@ -1764,10 +1764,49 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
             allowed_tool_names = tmpl.get("default_tools")
 
     from app.services.tool_executor import get_tools_for_employee, EMPLOYEE_ROLE_TO_ENGINE_ROLE
+    from app.core.config import MODEL_MAP, SMART_MODEL, MAX_TOKENS_MAP
     employee_tools = get_tools_for_employee(allowed_tool_names)
     tool_names = [t["function"]["name"] for t in employee_tools]
     tool_desc = ", ".join(tool_names) if tool_names else "none"
     system_prompt += f"\n\nYou have access to the following tools: {tool_desc}. Use them when the task requires it."
+
+    # Fix 4: Self-critique suffix — forces the model to verify before responding
+    _SELF_CRITIQUE = {
+        "software engineer": (
+            "\n\nBefore delivering your response, silently verify: "
+            "(1) Does the code compile/run without errors? "
+            "(2) Did I write complete files, not fragments? "
+            "(3) Did I handle edge cases and errors? "
+            "If not, fix it before responding."
+        ),
+        "qa engineer": (
+            "\n\nBefore delivering your response, silently verify: "
+            "(1) Did I test all paths including edge cases? "
+            "(2) Are my findings specific with reproduction steps? "
+            "(3) Did I distinguish severity levels accurately?"
+        ),
+        "architect": (
+            "\n\nBefore delivering your response, silently verify: "
+            "(1) Is the design complete and implementable? "
+            "(2) Did I address scalability, security, and failure modes? "
+            "(3) Are my diagrams/specs actionable by engineers?"
+        ),
+        "business analyst": (
+            "\n\nBefore delivering your response, silently verify: "
+            "(1) Are requirements unambiguous and testable? "
+            "(2) Did I cover all user personas and edge cases? "
+            "(3) Can an engineer build from this spec directly?"
+        ),
+    }
+    role_lower = emp["role"].lower()
+    critique = _SELF_CRITIQUE.get(role_lower)
+    if not critique:
+        for key in _SELF_CRITIQUE:
+            if key in role_lower:
+                critique = _SELF_CRITIQUE[key]
+                break
+    if critique:
+        system_prompt += critique
 
     chat_messages.append({"role": "system", "content": system_prompt})
     for msg in history:
@@ -1786,10 +1825,32 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
             except (json.JSONDecodeError, TypeError):
                 pass
 
+    # Fix 5: Token-aware history truncation — prevent context overflow
+    from app.core.config import MODEL_CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, QUALITY_TIERS, QUALITY_PROVIDER
+    def _estimate_tokens(messages: list[dict]) -> int:
+        return sum(len(json.dumps(m)) // 3 for m in messages)
+
+    engine_role = EMPLOYEE_ROLE_TO_ENGINE_ROLE.get(emp["role"].lower(), "ceo")
+    current_model = MODEL_MAP.get(engine_role, SMART_MODEL)
+    context_limit = MODEL_CONTEXT_WINDOWS.get(current_model, DEFAULT_CONTEXT_WINDOW)
+    max_output = MAX_TOKENS_MAP.get(engine_role, 4096)
+    token_budget = int(context_limit * 0.85) - max_output
+
+    while _estimate_tokens(chat_messages) > token_budget and len(chat_messages) > 3:
+        chat_messages.pop(1)
+
     from app.agents.engine import call_llm_with_fallback
     from app.services.tool_executor import execute_tool
 
-    engine_role = EMPLOYEE_ROLE_TO_ENGINE_ROLE.get(emp["role"].lower(), "ceo")
+    # Fix 3: Quality tier — respect per-employee config override
+    emp_config = emp.get("config") or {}
+    quality_tier = emp_config.get("quality_tier", "balanced") if isinstance(emp_config, dict) else "balanced"
+    model_override = None
+    provider_override = None
+    if quality_tier in QUALITY_TIERS and QUALITY_TIERS[quality_tier] is not None:
+        model_override = QUALITY_TIERS[quality_tier]
+        if quality_tier == "quality":
+            provider_override = QUALITY_PROVIDER
 
     github_token = await _get_user_github_token(user["id"])
     project_id = req.project_id or session.get("project_id")
@@ -1803,8 +1864,9 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
         text, tool_calls = await call_llm_with_fallback(
             messages=chat_messages,
             role=engine_role,
-            temperature=0.7,
             tools=employee_tools if employee_tools else None,
+            model_override=model_override,
+            provider_override=provider_override,
         )
 
         if not tool_calls:
@@ -1846,6 +1908,30 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
         await update_employee(emp["id"], user["id"], {"status": "thinking"})
     else:
         response_text = text or "I've completed the tool operations. Let me know if you need anything else."
+
+    # Fix 6: Output validation — catch empty, truncated, or lazy responses
+    if response_text:
+        word_count = len(response_text.split())
+        request_words = len(req.content.split())
+        is_substantial_request = request_words > 10 or any(
+            kw in req.content.lower() for kw in ["build", "implement", "create", "write", "design", "analyze", "review"]
+        )
+        is_thin_response = word_count < 20 and is_substantial_request
+        is_refusal = response_text.strip().startswith("I can't") or response_text.strip().startswith("I'm unable")
+        if (is_thin_response or is_refusal) and not all_tool_calls:
+            chat_messages.append({"role": "user", "content": (
+                "Your response seems incomplete. The task requires a thorough, detailed answer. "
+                "Please provide a complete response with specific details, code, or analysis as appropriate for your role."
+            )})
+            retry_text, _ = await call_llm_with_fallback(
+                messages=chat_messages,
+                role=engine_role,
+                tools=employee_tools if employee_tools else None,
+                model_override=model_override,
+                provider_override=provider_override,
+            )
+            if retry_text and len(retry_text.split()) > word_count:
+                response_text = retry_text
 
     await update_employee(emp["id"], user["id"], {"status": "idle"})
     employee_msg = await add_session_message(session_id, "employee", response_text)

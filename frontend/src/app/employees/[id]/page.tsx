@@ -962,6 +962,57 @@ export default function EmployeeChatPage() {
                 </p>
               </div>
 
+              {/* Quality Tier */}
+              <div style={{
+                padding: 12, borderRadius: 10, marginBottom: 10,
+                background: "var(--bg-base)", border: "1px solid var(--border)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                  </svg>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Output Quality
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {(["fast", "balanced", "quality"] as const).map((tier) => {
+                    const currentTier = (employee.config as Record<string, unknown>)?.quality_tier as string || "balanced";
+                    const labels: Record<string, string> = { fast: "Fast", balanced: "Balanced", quality: "Quality" };
+                    const descs: Record<string, string> = { fast: "30B model, quick responses", balanced: "120B model, good default", quality: "Frontier model, best output" };
+                    const colors: Record<string, string> = { fast: "var(--warning)", balanced: "var(--accent)", quality: "var(--success)" };
+                    const isActive = currentTier === tier;
+                    return (
+                      <button
+                        key={tier}
+                        onClick={async () => {
+                          try {
+                            const config = { ...(employee.config || {}), quality_tier: tier };
+                            const updated = await updateEmployee(employeeId, { config });
+                            setEmployee(updated);
+                          } catch { /* ignore */ }
+                        }}
+                        style={{
+                          flex: 1, padding: "8px 6px", borderRadius: 8, border: `1px solid ${isActive ? colors[tier] : "var(--border)"}`,
+                          background: isActive ? `${colors[tier]}15` : "var(--bg-card)", cursor: "pointer",
+                          display: "flex", flexDirection: "column", alignItems: "center", gap: 3, transition: "all 0.15s",
+                        }}
+                      >
+                        <span style={{ fontSize: 11, fontWeight: 700, color: isActive ? colors[tier] : "var(--text-primary)" }}>
+                          {labels[tier]}
+                        </span>
+                        <span style={{ fontSize: 9, color: "var(--text-muted)", textAlign: "center", lineHeight: 1.3 }}>
+                          {descs[tier]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.4 }}>
+                  Controls response quality vs speed tradeoff
+                </p>
+              </div>
+
               {/* Tool permissions */}
               <div style={{
                 padding: 12, borderRadius: 10, marginBottom: 10,

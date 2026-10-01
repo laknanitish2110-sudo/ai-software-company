@@ -216,6 +216,51 @@ FALLBACK_PROVIDER_MAP = {
     for role in ["ceo", "business_analyst", "researcher", "architect", "engineer", "ppt", "cross_review", "fixer", "jev", "qa"]
 }
 
+# ── Per-role temperature: code needs precision, research needs creativity ──
+TEMPERATURE_MAP = {
+    "ceo":              0.5,
+    "business_analyst": 0.5,
+    "researcher":       0.7,
+    "architect":        0.3,
+    "engineer":         0.2,
+    "ppt":              0.6,
+    "cross_review":     0.3,
+    "fixer":            0.2,
+    "jev":              0.1,
+    "qa":               0.15,
+}
+
+# ── Per-role max output tokens: code/architecture roles need room ──
+MAX_TOKENS_MAP = {
+    "ceo":              4096,
+    "business_analyst": 6144,
+    "researcher":       6144,
+    "architect":        8192,
+    "engineer":         8192,
+    "ppt":              6144,
+    "cross_review":     4096,
+    "fixer":            8192,
+    "jev":              2048,
+    "qa":               4096,
+}
+
+# ── Model quality tiers: per-employee override via config ──
+QUALITY_MODEL = os.getenv("QUALITY_MODEL", "deepseek/deepseek-chat-v3-0324:free")
+QUALITY_TIERS = {
+    "fast": FALLBACK_MODEL,
+    "balanced": None,
+    "quality": QUALITY_MODEL,
+}
+QUALITY_PROVIDER = os.getenv("QUALITY_PROVIDER", "openrouter")
+
+# ── Model context windows for token budgeting ──
+MODEL_CONTEXT_WINDOWS = {
+    "nvidia/nemotron-3-super-120b-a12b": 32768,
+    "nvidia/nemotron-3.5-lightning-30b-a3b": 32768,
+    "deepseek/deepseek-chat-v3-0324:free": 65536,
+}
+DEFAULT_CONTEXT_WINDOW = 32768
+
 # ── Model metadata for frontend display ──────────────────────────────
 def _model_display(model_id: str) -> dict:
     """Extract human-readable label and provider from a model identifier."""
