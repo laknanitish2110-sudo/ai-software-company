@@ -336,6 +336,11 @@ export function downloadDemoDeliverable(fileType: string) {
   window.open(`${API_BASE}/demo/download/${fileType}`, "_blank");
 }
 
+export async function startDemoSession(): Promise<{ user: Record<string, unknown>; access_token: string }> {
+  const res = await fetchWithTimeout(`${API_BASE}/auth/demo`, { method: "POST" });
+  return checkedJson(res, "Failed to start demo session");
+}
+
 export interface IntrospectionData {
   role: string;
   label: string;

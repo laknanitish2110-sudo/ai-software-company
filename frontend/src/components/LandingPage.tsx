@@ -2,22 +2,23 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const PIPELINE_AGENTS = [
-  { icon: "👨‍💼", label: "CEO", desc: "Understands the problem", color: "#635bff" },
-  { icon: "📋", label: "Business Analyst", desc: "Defines requirements", color: "#0bbf8c" },
-  { icon: "🔍", label: "Researcher", desc: "Finds best approaches", color: "#f5a623" },
-  { icon: "🏗️", label: "Architect", desc: "Designs the system", color: "#8b5cf6" },
-  { icon: "💻", label: "Engineer", desc: "Builds working code", color: "#ef4444" },
-  { icon: "📊", label: "Presenter", desc: "Creates deliverables", color: "#06b6d4" },
+  { icon: "\u{1F468}‍\u{1F4BC}", label: "CEO", desc: "Understands the problem", color: "#635bff" },
+  { icon: "\u{1F4CB}", label: "Business Analyst", desc: "Defines requirements", color: "#0bbf8c" },
+  { icon: "\u{1F50D}", label: "Researcher", desc: "Finds best approaches", color: "#f5a623" },
+  { icon: "\u{1F3D7}️", label: "Architect", desc: "Designs the system", color: "#8b5cf6" },
+  { icon: "\u{1F4BB}", label: "Engineer", desc: "Builds working code", color: "#ef4444" },
+  { icon: "\u{1F4CA}", label: "Presenter", desc: "Creates deliverables", color: "#06b6d4" },
 ];
 
 const EMPLOYEES = [
-  { icon: "🏗️", name: "Arc", role: "Solution Architect", skills: ["System Design", "API Design", "Database Schemas"], color: "#8b5cf6" },
-  { icon: "📋", name: "Sage", role: "Business Analyst", skills: ["Requirements", "Competitive Analysis", "Scoping"], color: "#0bbf8c" },
-  { icon: "🔍", name: "Scout", role: "Research Specialist", skills: ["Tech Research", "Market Analysis", "Best Practices"], color: "#3b82f6" },
+  { icon: "\u{1F3D7}️", name: "Arc", role: "Solution Architect", skills: ["System Design", "API Design", "Database Schemas"], color: "#8b5cf6" },
+  { icon: "\u{1F4CB}", name: "Sage", role: "Business Analyst", skills: ["Requirements", "Competitive Analysis", "Scoping"], color: "#0bbf8c" },
+  { icon: "\u{1F50D}", name: "Scout", role: "Research Specialist", skills: ["Tech Research", "Market Analysis", "Best Practices"], color: "#3b82f6" },
   { icon: "⚡", name: "Atlas", role: "Full-Stack Engineer", skills: ["Implementation", "Bug Fixes", "Code Review"], color: "#f59e0b" },
-  { icon: "🛡️", name: "Sentinel", role: "QA & Security", skills: ["Testing", "Security Audits", "Performance"], color: "#ef4444" },
+  { icon: "\u{1F6E1}️", name: "Sentinel", role: "QA & Security", skills: ["Testing", "Security Audits", "Performance"], color: "#ef4444" },
   { icon: "✍️", name: "Scribe", role: "Technical Writer", skills: ["Documentation", "API Docs", "Reports"], color: "#06b6d4" },
 ];
 
@@ -27,11 +28,20 @@ const DEMO_LINES = [
   "Design a restaurant ordering platform with kitchen display integration",
 ];
 
+const COMPARISON = [
+  { them: "Single AI chatbot", us: "6 specialized AI employees", icon: "\u{1F465}" },
+  { them: "Forgets every conversation", us: "Persistent memory across sessions", icon: "\u{1F9E0}" },
+  { them: "Text responses only", us: "Runs code, pushes to GitHub, writes files", icon: "⚡" },
+  { them: "No quality verification", us: "Built-in QA agent verifies every output", icon: "\u{1F6E1}️" },
+];
+
 export default function LandingPage() {
   const router = useRouter();
+  const { startDemo } = useAuth();
   const [demoIdx, setDemoIdx] = useState(0);
   const [typed, setTyped] = useState("");
   const [activeAgent, setActiveAgent] = useState(-1);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   useEffect(() => {
     const line = DEMO_LINES[demoIdx];
@@ -62,23 +72,31 @@ export default function LandingPage() {
     return () => clearInterval(typeTimer);
   }, [demoIdx]);
 
+  async function handleStartDemo() {
+    setDemoLoading(true);
+    try {
+      await startDemo();
+      router.push("/employees");
+    } catch {
+      router.push("/register");
+    } finally {
+      setDemoLoading(false);
+    }
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#060918", color: "#fff", fontFamily: "system-ui, -apple-system, sans-serif", overflowX: "hidden" }}>
       <style>{`
         @keyframes heroGlow { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.05); } }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slideIn { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
         @keyframes typeCursor { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        @keyframes orbitSlow { 0% { transform: rotate(0deg) translateX(280px) rotate(0deg); } 100% { transform: rotate(360deg) translateX(280px) rotate(-360deg); } }
-        @keyframes pipeFlow { 0% { stroke-dashoffset: 20; } 100% { stroke-dashoffset: 0; } }
         .land-btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 32px; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; transition: all 0.25s ease; border: none; text-decoration: none; }
         .land-btn:hover { transform: translateY(-2px); }
         .land-btn-primary { background: linear-gradient(135deg, #635bff 0%, #7c3aed 100%); color: #fff; box-shadow: 0 4px 24px rgba(99,91,255,0.35); }
         .land-btn-primary:hover { box-shadow: 0 8px 40px rgba(99,91,255,0.55); }
-        .land-btn-secondary { background: rgba(11,191,140,0.12); color: #0bbf8c; border: 1.5px solid rgba(11,191,140,0.3); }
-        .land-btn-secondary:hover { background: rgba(11,191,140,0.2); border-color: rgba(11,191,140,0.5); box-shadow: 0 4px 24px rgba(11,191,140,0.2); }
+        .land-btn-demo { background: linear-gradient(135deg, #0bbf8c 0%, #059669 100%); color: #fff; box-shadow: 0 4px 24px rgba(11,191,140,0.3); }
+        .land-btn-demo:hover { box-shadow: 0 8px 40px rgba(11,191,140,0.5); }
         .land-btn-ghost { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); border: 1px solid rgba(255,255,255,0.1); }
         .land-btn-ghost:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.2); }
         .emp-card { background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 24px; transition: all 0.3s ease; cursor: default; }
@@ -90,12 +108,17 @@ export default function LandingPage() {
         .section-label { font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 12px; }
         .section-title { font-size: clamp(28px, 4vw, 44px); font-weight: 900; letter-spacing: -0.03em; line-height: 1.15; }
         @media (max-width: 768px) {
-          .hero-grid { flex-direction: column !important; }
+          .hero-ctas { flex-direction: column !important; align-items: center !important; }
+          .hero-ctas .land-btn { width: 100% !important; max-width: 320px !important; justify-content: center !important; }
           .modes-grid { grid-template-columns: 1fr !important; }
           .emp-grid { grid-template-columns: repeat(2, 1fr) !important; }
           .feat-grid { grid-template-columns: 1fr !important; }
+          .compare-grid { grid-template-columns: 1fr !important; }
           .stats-bar { gap: 32px !important; }
           .footer-inner { flex-direction: column !important; gap: 16px !important; text-align: center; }
+          .pricing-grid { grid-template-columns: 1fr !important; }
+          .land-nav { padding: 14px 16px !important; }
+          .land-nav-btns .land-btn { padding: 8px 14px !important; font-size: 12px !important; }
         }
         @media (max-width: 480px) {
           .emp-grid { grid-template-columns: 1fr !important; }
@@ -103,7 +126,7 @@ export default function LandingPage() {
       `}</style>
 
       {/* NAV */}
-      <nav style={{
+      <nav className="land-nav" style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "18px 32px", maxWidth: 1200, margin: "0 auto", position: "relative", zIndex: 20,
       }}>
@@ -116,7 +139,7 @@ export default function LandingPage() {
           }}>FA</div>
           <span style={{ fontWeight: 800, fontSize: 20, letterSpacing: "-0.02em" }}>ForgeAI</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="land-nav-btns" style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button className="land-btn land-btn-ghost" onClick={() => router.push("/login")}
             style={{ padding: "10px 24px", fontSize: 14 }}>Sign In</button>
           <button className="land-btn land-btn-primary" onClick={() => router.push("/register")}
@@ -125,17 +148,12 @@ export default function LandingPage() {
       </nav>
 
       {/* HERO */}
-      <section style={{ position: "relative", padding: "80px 24px 100px", maxWidth: 1100, margin: "0 auto" }}>
+      <section style={{ position: "relative", padding: "80px 24px 60px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{
           position: "absolute", top: -100, left: "50%", transform: "translateX(-50%)",
           width: 800, height: 500, borderRadius: "50%",
           background: "radial-gradient(circle, rgba(99,91,255,0.12) 0%, rgba(124,58,237,0.05) 40%, transparent 70%)",
           animation: "heroGlow 8s ease-in-out infinite", pointerEvents: "none",
-        }} />
-        <div style={{
-          position: "absolute", top: 60, right: -100, width: 300, height: 300, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(11,191,140,0.06) 0%, transparent 70%)",
-          animation: "heroGlow 10s ease-in-out infinite 2s", pointerEvents: "none",
         }} />
 
         <div style={{ textAlign: "center", position: "relative", zIndex: 2, animation: "fadeUp 0.8s ease-out" }}>
@@ -146,7 +164,7 @@ export default function LandingPage() {
             fontSize: 13, fontWeight: 600, color: "#a5a0ff", marginBottom: 28,
           }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#0bbf8c", boxShadow: "0 0 8px #0bbf8c" }} />
-            AI Agents That Work As Your Team
+            Not another AI chatbot. A full AI team.
           </div>
 
           <h1 style={{
@@ -171,21 +189,27 @@ export default function LandingPage() {
 
           <p style={{
             fontSize: 19, lineHeight: 1.7, color: "rgba(255,255,255,0.5)",
-            maxWidth: 600, margin: "0 auto 40px",
+            maxWidth: 640, margin: "0 auto 40px",
           }}>
-            Six AI employees that analyze, design, code, and document your product.
-            Run them as a pipeline for one-shot builds, or chat with them as your persistent team.
+            Six AI employees that analyze, design, code, test, and document your product.
+            They remember every conversation, learn new skills, and work while you&apos;re away.
           </p>
 
-          <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+          <div className="hero-ctas" style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+            <button className="land-btn land-btn-demo" onClick={handleStartDemo}
+              disabled={demoLoading}
+              style={{ fontSize: 17, padding: "16px 36px", opacity: demoLoading ? 0.7 : 1 }}>
+              {demoLoading ? "Setting up..." : "Try Demo — No Signup"} <span style={{ fontSize: 20 }}>{demoLoading ? "" : "→"}</span>
+            </button>
             <button className="land-btn land-btn-primary" onClick={() => router.push("/register")}
               style={{ fontSize: 17, padding: "16px 36px" }}>
-              Hire Your Team <span style={{ fontSize: 20 }}>&rarr;</span>
+              Get Started Free <span style={{ fontSize: 20 }}>&rarr;</span>
             </button>
-            <button className="land-btn land-btn-ghost" onClick={() => {
-              document.getElementById("two-modes")?.scrollIntoView({ behavior: "smooth" });
-            }}>See How It Works</button>
           </div>
+
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", marginTop: 14 }}>
+            No credit card required. Demo gives you full access instantly.
+          </p>
         </div>
       </section>
 
@@ -203,8 +227,6 @@ export default function LandingPage() {
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(255,255,255,0.3)", marginBottom: 14, textTransform: "uppercase" as const }}>
             LIVE DEMO
           </div>
-
-          {/* Typed input */}
           <div style={{
             background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: "14px 18px",
             border: "1px solid rgba(99,91,255,0.15)", marginBottom: 20, minHeight: 48,
@@ -215,8 +237,6 @@ export default function LandingPage() {
               <span style={{ animation: "typeCursor 1s step-end infinite", color: "#635bff", fontWeight: 700 }}>|</span>
             </span>
           </div>
-
-          {/* Agent flow */}
           <div style={{ display: "flex", alignItems: "center", gap: 0, justifyContent: "center", flexWrap: "wrap" }}>
             {PIPELINE_AGENTS.map((a, i) => {
               const isActive = i <= activeAgent;
@@ -253,8 +273,6 @@ export default function LandingPage() {
               );
             })}
           </div>
-
-          {/* Output preview */}
           {activeAgent >= PIPELINE_AGENTS.length - 1 && (
             <div style={{
               marginTop: 16, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap",
@@ -272,6 +290,38 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* NOT ANOTHER CHATBOT */}
+      <section style={{ padding: "60px 24px 80px", maxWidth: 900, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div className="section-label" style={{ color: "#ef4444" }}>The Difference</div>
+          <h2 className="section-title" style={{ color: "#fff" }}>
+            Not another AI wrapper
+          </h2>
+          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 15, marginTop: 12, maxWidth: 500, margin: "12px auto 0" }}>
+            Most AI tools give you one chatbot. ForgeAI gives you a team with roles, memory, and tools.
+          </p>
+        </div>
+
+        <div className="compare-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {COMPARISON.map((c) => (
+            <div key={c.us} style={{
+              display: "flex", gap: 16, padding: "20px 24px", borderRadius: 16,
+              background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+            }}>
+              <span style={{ fontSize: 28, flexShrink: 0, marginTop: 2 }}>{c.icon}</span>
+              <div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", textDecoration: "line-through", marginBottom: 4 }}>
+                  {c.them}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#0bbf8c" }}>
+                  {c.us}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* TWO MODES */}
       <section id="two-modes" style={{ padding: "80px 24px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 56 }}>
@@ -285,7 +335,6 @@ export default function LandingPage() {
         </div>
 
         <div className="modes-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-          {/* Pipeline Mode */}
           <div style={{
             background: "rgba(99,91,255,0.04)", border: "1.5px solid rgba(99,91,255,0.15)",
             borderRadius: 24, padding: "36px 32px", position: "relative", overflow: "hidden",
@@ -304,8 +353,8 @@ export default function LandingPage() {
               One idea in, full product out
             </h3>
             <p style={{ fontSize: 14, lineHeight: 1.7, color: "rgba(255,255,255,0.45)", marginBottom: 24 }}>
-              Describe what you want to build. Six agents work sequentially — CEO analyzes, BA defines requirements, Researcher investigates,
-              Architect designs, Engineer codes, Presenter delivers. You get source code, docs, and a pitch deck.
+              Describe what you want. Six agents work sequentially &mdash; CEO analyzes, BA writes specs, Researcher investigates,
+              Architect designs, Engineer codes, Presenter delivers. Source code, docs, and a pitch deck.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 24 }}>
               {PIPELINE_AGENTS.map((a) => (
@@ -327,7 +376,6 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Team Mode */}
           <div style={{
             background: "rgba(11,191,140,0.03)", border: "1.5px solid rgba(11,191,140,0.12)",
             borderRadius: 24, padding: "36px 32px", position: "relative", overflow: "hidden",
@@ -361,7 +409,7 @@ export default function LandingPage() {
               ))}
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {["Long-term memory", "Skill learning", "Team delegation", "Activity feed"].map(f => (
+              {["Long-term memory", "Skill learning", "Team delegation", "Away mode"].map(f => (
                 <span key={f} style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ color: "#0bbf8c" }}>&#10003;</span> {f}
                 </span>
@@ -421,12 +469,12 @@ export default function LandingPage() {
           display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20,
         }}>
           {[
-            { icon: "🧠", title: "Memory That Lasts", desc: "Employees remember past conversations, learn preferences, and build context over time. No more repeating yourself.", color: "#a78bfa" },
-            { icon: "🔄", title: "Team Delegation", desc: "Employees assign tasks to each other. Ask Arc to design a system — they'll delegate security review to Sentinel automatically.", color: "#0bbf8c" },
+            { icon: "\u{1F9E0}", title: "Memory That Lasts", desc: "Employees remember past conversations, learn preferences, and build context over time. No more repeating yourself.", color: "#a78bfa" },
+            { icon: "\u{1F504}", title: "Team Delegation", desc: "Employees assign tasks to each other. Ask Arc to design a system — they'll delegate security review to Sentinel automatically.", color: "#0bbf8c" },
             { icon: "⚡", title: "Multi-Model Power", desc: "Powered by DeepSeek, NVIDIA Nemotron, and more. Automatic fallback chains ensure every request succeeds.", color: "#f5a623" },
-            { icon: "📦", title: "Production Output", desc: "Downloadable source code, architecture docs, PPTX decks, and DOCX reports — all generated and ready to use.", color: "#06b6d4" },
-            { icon: "🛡️", title: "Built-in Security", desc: "Every code output is scanned for vulnerabilities. Fail-closed tool permissions ensure employees only access what they need.", color: "#ef4444" },
-            { icon: "🔗", title: "GitHub Integration", desc: "Push generated code to a repo with one click. Branch creation, commit messages, and PR descriptions — all automatic.", color: "#635bff" },
+            { icon: "\u{1F4E6}", title: "Production Output", desc: "Downloadable source code, architecture docs, PPTX decks, and DOCX reports — all generated and ready to use.", color: "#06b6d4" },
+            { icon: "\u{1F6E1}️", title: "Quality Verification", desc: "Every output is reviewed by Sentinel QA. Code is security-scanned. You choose the quality tier per employee.", color: "#ef4444" },
+            { icon: "\u{1F517}", title: "GitHub Integration", desc: "Push generated code to a repo with one click. Branch creation, commit messages, and PR descriptions — all automatic.", color: "#635bff" },
           ].map((f) => (
             <div key={f.title} className="feat-card" style={{ "--fc-color": f.color } as React.CSSProperties}>
               <div style={{ fontSize: 32, marginBottom: 16 }}>{f.icon}</div>
@@ -434,6 +482,65 @@ export default function LandingPage() {
               <p style={{ fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.4)", margin: 0 }}>{f.desc}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section style={{ padding: "80px 24px", maxWidth: 900, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 56 }}>
+          <div className="section-label" style={{ color: "#f5a623" }}>Pricing</div>
+          <h2 className="section-title" style={{ color: "#fff" }}>Start free, scale when ready</h2>
+        </div>
+
+        <div className="pricing-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+          <div style={{
+            background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.08)",
+            borderRadius: 24, padding: "36px 32px",
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em", textTransform: "uppercase" as const, marginBottom: 8 }}>Free</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 16 }}>
+              <span style={{ fontSize: 48, fontWeight: 900, color: "#fff" }}>$0</span>
+              <span style={{ fontSize: 14, color: "rgba(255,255,255,0.3)" }}>/month</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+              {["6 AI employees", "50 messages/day", "Pipeline mode", "Memory & skills", "GitHub integration"].map(f => (
+                <span key={f} style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "#0bbf8c", fontSize: 14 }}>&#10003;</span> {f}
+                </span>
+              ))}
+            </div>
+            <button className="land-btn land-btn-ghost" onClick={handleStartDemo}
+              style={{ width: "100%", justifyContent: "center", fontSize: 14, padding: "12px 24px" }}>
+              Try Demo
+            </button>
+          </div>
+
+          <div style={{
+            background: "rgba(99,91,255,0.06)", border: "1.5px solid rgba(99,91,255,0.25)",
+            borderRadius: 24, padding: "36px 32px", position: "relative",
+          }}>
+            <div style={{
+              position: "absolute", top: 16, right: 16, padding: "4px 12px", borderRadius: 8,
+              background: "rgba(99,91,255,0.15)", border: "1px solid rgba(99,91,255,0.25)",
+              fontSize: 10, fontWeight: 800, color: "#a5a0ff", letterSpacing: "0.06em",
+            }}>COMING SOON</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#a5a0ff", letterSpacing: "0.08em", textTransform: "uppercase" as const, marginBottom: 8 }}>Pro</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 16 }}>
+              <span style={{ fontSize: 48, fontWeight: 900, color: "#fff" }}>$29</span>
+              <span style={{ fontSize: 14, color: "rgba(255,255,255,0.3)" }}>/month</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+              {["Everything in Free", "Unlimited messages", "Quality-tier models", "Autonomous execution", "Priority support"].map(f => (
+                <span key={f} style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: "#635bff", fontSize: 14 }}>&#10003;</span> {f}
+                </span>
+              ))}
+            </div>
+            <button className="land-btn land-btn-primary" onClick={() => router.push("/register")}
+              style={{ width: "100%", justifyContent: "center", fontSize: 14, padding: "12px 24px" }}>
+              Get Started Free
+            </button>
+          </div>
         </div>
       </section>
 
@@ -445,9 +552,9 @@ export default function LandingPage() {
         }}>
           {[
             { value: "6", label: "AI Employees", color: "#635bff" },
-            { value: "18", label: "Default Skills", color: "#0bbf8c" },
+            { value: "9", label: "Built-in Tools", color: "#0bbf8c" },
             { value: "5+", label: "LLM Providers", color: "#f5a623" },
-            { value: "<5m", label: "To First Build", color: "#06b6d4" },
+            { value: "0", label: "Signup Needed", color: "#06b6d4" },
           ].map((s) => (
             <div key={s.label} style={{ textAlign: "center" }}>
               <div style={{
@@ -480,16 +587,16 @@ export default function LandingPage() {
             fontSize: 17, color: "rgba(255,255,255,0.4)", marginBottom: 36,
             maxWidth: 460, margin: "0 auto 36px", lineHeight: 1.6,
           }}>
-            Start with the pipeline for instant builds, or go straight to chatting with your persistent AI employees.
+            Start with the demo to see it in action. No account needed.
           </p>
           <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
-            <button className="land-btn land-btn-primary" onClick={() => router.push("/register")}
+            <button className="land-btn land-btn-demo" onClick={handleStartDemo}
               style={{ fontSize: 18, padding: "18px 44px" }}>
-              Get Started Free <span style={{ fontSize: 22 }}>&rarr;</span>
+              Try Demo Free <span style={{ fontSize: 22 }}>&rarr;</span>
             </button>
-            <button className="land-btn land-btn-secondary" onClick={() => router.push("/login")}
+            <button className="land-btn land-btn-primary" onClick={() => router.push("/register")}
               style={{ fontSize: 16, padding: "16px 32px" }}>
-              Sign In
+              Create Account
             </button>
           </div>
         </div>

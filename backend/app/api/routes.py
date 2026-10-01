@@ -319,6 +319,39 @@ async def get_me(current_user: dict = Depends(get_current_user)):
     return {"user": current_user}
 
 
+# --- DEMO MODE ---
+
+@router.post("/auth/demo")
+async def start_demo():
+    """Create a temporary demo account with pre-provisioned team. No signup required."""
+    try:
+        allowed, retry_after = await rate_limiter.check_rate_limit(user_id="demo_global", action="demo", limit=10, window_seconds=60)
+        if not allowed:
+            return JSONResponse(status_code=429, content={"error": "RATE_LIMITED", "retry_after_seconds": retry_after})
+    except Exception:
+        pass
+    import uuid
+    demo_id = uuid.uuid4().hex[:12]
+    demo_email = f"demo_{demo_id}@forgeai.demo"
+    pw_hash = hash_password(f"demo_{demo_id}_temp")
+    user = await create_user(demo_email, pw_hash)
+    await set_user_verified(user["id"])
+    token = create_access_token({"sub": user["id"], "email": demo_email, "demo": True})
+    try:
+        await provision_default_team(user["id"])
+    except Exception as e:
+        logger.warning(f"Demo team provisioning failed: {e}")
+    return {
+        "user": {
+            "id": user["id"], "email": demo_email, "created_at": user["created_at"],
+            "display_name": "Demo User", "avatar_url": None,
+            "email_verified": True, "is_demo": True,
+        },
+        "access_token": token,
+        "token_type": "bearer",
+    }
+
+
 # --- OAuth State Management ---
 
 _oauth_states: dict[str, float] = {}

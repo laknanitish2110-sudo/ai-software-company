@@ -25,6 +25,7 @@ interface AuthContextValue {
   verifyEmail: (email: string, code: string) => Promise<void>;
   resendCode: (email: string) => Promise<void>;
   clearPendingVerification: () => void;
+  startDemo: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -39,6 +40,7 @@ const AuthContext = createContext<AuthContextValue>({
   verifyEmail: async () => {},
   resendCode: async () => {},
   clearPendingVerification: () => {},
+  startDemo: async () => {},
 });
 
 export function useAuth() {
@@ -179,6 +181,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [router]);
 
+  const startDemo = useCallback(async () => {
+    const res = await authFetch(`${API_BASE}/auth/demo`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Failed to start demo");
+    const data = await res.json();
+    saveAuth(data.access_token, { ...data.user, email_verified: true });
+  }, [saveAuth]);
+
   const handleOAuthCallback = useCallback(async (oauthToken: string) => {
     localStorage.setItem(TOKEN_KEY, oauthToken);
     setToken(oauthToken);
@@ -200,7 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext value={{ user, token, loading, pendingVerificationEmail, login, register, logout, handleOAuthCallback, verifyEmail, resendCode, clearPendingVerification }}>
+    <AuthContext value={{ user, token, loading, pendingVerificationEmail, login, register, logout, handleOAuthCallback, verifyEmail, resendCode, clearPendingVerification, startDemo }}>
       {children}
     </AuthContext>
   );
