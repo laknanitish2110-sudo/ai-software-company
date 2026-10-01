@@ -147,6 +147,7 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [provisioning, setProvisioning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [demoBannerVisible, setDemoBannerVisible] = useState(true);
   const provisionAttempted = useRef(false);
   const skillSeedAttempted = useRef(false);
 
@@ -218,7 +219,6 @@ export default function EmployeesPage() {
   }
 
   const isDemo = user.email?.endsWith("@forgeai.demo") ?? false;
-  const [demoBannerVisible, setDemoBannerVisible] = useState(true);
 
   const teamCount = employees.length;
   const activeCount = employees.filter(e => e.status === "thinking" || e.status === "working" || e.status === "tool_execution").length;
