@@ -1894,13 +1894,17 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
     response_text = ""
 
     for iteration in range(max_iterations):
-        text, tool_calls = await call_llm_with_fallback(
-            messages=chat_messages,
-            role=engine_role,
-            tools=employee_tools if employee_tools else None,
-            model_override=model_override,
-            provider_override=provider_override,
-        )
+        try:
+            text, tool_calls = await call_llm_with_fallback(
+                messages=chat_messages,
+                role=engine_role,
+                tools=employee_tools if employee_tools else None,
+                model_override=model_override,
+                provider_override=provider_override,
+            )
+        except RuntimeError as llm_err:
+            response_text = f"I'm having trouble connecting to the AI service right now. Please try again in a moment. (Error: {str(llm_err)[:100]})"
+            break
 
         if not tool_calls:
             response_text = text

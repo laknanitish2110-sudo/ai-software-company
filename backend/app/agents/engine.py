@@ -380,6 +380,10 @@ async def _llm_call_single(
 
         usage = _extract_usage(response)
 
+        if hasattr(response, "error") and response.error:
+            err_msg = response.error.get("message", str(response.error)) if isinstance(response.error, dict) else str(response.error)
+            raise RuntimeError(f"Provider error: {err_msg}")
+
         if hasattr(response, "choices") and response.choices:
             choice = response.choices[0]
             tool_calls_out = None
@@ -394,7 +398,8 @@ async def _llm_call_single(
                     usage["completion_tokens"] = len(text) // 4
                     usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
                 return text, usage, tool_calls_out
-        return str(response).strip(), usage, None
+
+        raise RuntimeError("Model returned response with no choices")
 
 
 def _all_fallback_providers(exclude: str) -> list[str]:
