@@ -1463,6 +1463,10 @@ export default function EmployeeChatPage() {
                         }}>
                           {resultText}
                         </div>
+                      ) : isCompleted && !resultText ? (
+                        <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>
+                          Task completed successfully.
+                        </div>
                       ) : resultText ? (
                         <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
                           {resultText}
