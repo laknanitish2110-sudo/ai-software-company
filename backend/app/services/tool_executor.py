@@ -400,7 +400,10 @@ async def _exec_run_code(args: dict, project_id: str | None) -> dict:
                     if r.html:
                         html_outputs.append(r.html)
                     if r.chart:
-                        charts.append(r.chart)
+                        try:
+                            charts.append(str(r.chart))
+                        except Exception:
+                            pass
 
                 if execution.error:
                     return {

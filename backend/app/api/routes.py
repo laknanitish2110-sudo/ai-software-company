@@ -1929,7 +1929,7 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
                 github_token=github_token,
             )
 
-            result_str = json.dumps(result)
+            result_str = json.dumps(result, default=str)
             if len(result_str) > 8000:
                 result_str = result_str[:8000] + "...(truncated)"
 
