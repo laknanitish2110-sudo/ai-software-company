@@ -1398,22 +1398,30 @@ export default function EmployeeChatPage() {
                 const isCompleted = statusVal === "completed";
                 const isPending = statusVal === "pending" || statusVal === "in_progress";
 
+                const borderColor = isDelegateAction ? "rgba(99,91,255,0.2)" : isCompleted ? "rgba(11,191,140,0.25)" : "rgba(245,166,35,0.2)";
+                const bgGradient = isDelegateAction
+                  ? "linear-gradient(135deg, rgba(99,91,255,0.06), rgba(99,91,255,0.02))"
+                  : isCompleted
+                    ? "linear-gradient(135deg, rgba(11,191,140,0.06), rgba(11,191,140,0.02))"
+                    : "linear-gradient(135deg, rgba(245,166,35,0.06), rgba(245,166,35,0.02))";
+                const headerBg = isDelegateAction ? "rgba(99,91,255,0.04)" : isCompleted ? "rgba(11,191,140,0.04)" : "rgba(245,166,35,0.04)";
+
                 return (
                   <div key={msg.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
                     <div style={{
-                      maxWidth: "85%", borderRadius: 12, overflow: "hidden",
-                      background: "linear-gradient(135deg, rgba(99,91,255,0.06), rgba(99,91,255,0.02))",
-                      border: "1px solid rgba(99,91,255,0.2)",
+                      maxWidth: isCompleted && resultText.length > 100 ? "92%" : "85%",
+                      borderRadius: 12, overflow: "hidden",
+                      background: bgGradient, border: `1px solid ${borderColor}`,
                     }}>
                       <div style={{
                         padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
-                        borderBottom: "1px solid rgba(99,91,255,0.1)",
-                        background: "rgba(99,91,255,0.04)",
+                        borderBottom: `1px solid ${borderColor}`,
+                        background: headerBg,
                       }}>
                         <div style={{
                           width: 32, height: 32, borderRadius: 10,
                           background: isDelegateAction ? "rgba(99,91,255,0.12)" : isCompleted ? "rgba(11,191,140,0.12)" : "rgba(245,166,35,0.12)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
+                          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                         }}>
                           {isDelegateAction ? (
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#635bff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1429,7 +1437,7 @@ export default function EmployeeChatPage() {
                             </svg>
                           )}
                         </div>
-                        <div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
                             {isDelegateAction ? `Delegated to ${delegateeName}` : isCompleted ? "Delegation Complete" : "Delegation In Progress"}
                           </div>
@@ -1438,20 +1446,32 @@ export default function EmployeeChatPage() {
                           </div>
                         </div>
                         <div style={{
-                          marginLeft: "auto", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+                          padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, flexShrink: 0,
                           background: isDelegateAction ? "rgba(99,91,255,0.1)" : isCompleted ? "rgba(11,191,140,0.1)" : "rgba(245,166,35,0.1)",
                           color: isDelegateAction ? "#635bff" : isCompleted ? "#0bbf8c" : "#f5a623",
                         }}>
                           {isDelegateAction ? "QUEUED" : isCompleted ? "DONE" : "WORKING"}
                         </div>
                       </div>
-                      <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                        {resultText.length > 300 ? resultText.slice(0, 300) + "..." : resultText}
-                      </div>
+                      {/* Result body — show full output for completed, compact for in-progress */}
+                      {isCompleted && resultText ? (
+                        <div style={{
+                          padding: "14px 16px", fontSize: 13, color: "var(--text-primary)", lineHeight: 1.7,
+                          whiteSpace: "pre-wrap", wordBreak: "break-word",
+                          maxHeight: 500, overflowY: "auto",
+                          background: "rgba(11,191,140,0.02)",
+                        }}>
+                          {resultText}
+                        </div>
+                      ) : resultText ? (
+                        <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                          {resultText}
+                        </div>
+                      ) : null}
                       {taskId && (
                         <div style={{
                           padding: "6px 14px 8px", fontSize: 11, color: "var(--text-muted)",
-                          borderTop: "1px solid rgba(99,91,255,0.08)", fontFamily: "monospace",
+                          borderTop: `1px solid ${borderColor}`, fontFamily: "monospace",
                         }}>
                           Task ID: {taskId}
                         </div>
