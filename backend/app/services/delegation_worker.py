@@ -68,7 +68,7 @@ async def process_delegation_task(task: dict) -> dict:
     try:
         await update_employee(to_emp_id, user_id, {"status": "thinking"})
 
-        session = await get_or_create_active_session(to_emp_id, project_id)
+        session = await get_or_create_active_session(to_emp_id)
         await update_delegation_task(task_id, {"session_id": session["id"]})
 
         delegation_msg = f"[Delegated from {from_name}]\n\n{task['task']}"
