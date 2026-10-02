@@ -1733,6 +1733,24 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
 
     user_msg = await add_session_message(session_id, "user", req.content)
 
+    # Human-State Engine: analyze user message and get interaction policy
+    human_state_policy = None
+    try:
+        from app.services.human_state_engine import human_state_engine, analyze_text_signals
+        from app.core.database import save_human_state_snapshot
+        hs_signals = await analyze_text_signals(req.content)
+        hs_result = human_state_engine.update_state(session_id, hs_signals)
+        human_state_policy = hs_result.get("policy")
+        await save_human_state_snapshot(
+            session_id=session_id,
+            state=hs_result["state"],
+            trajectory=hs_result["trajectory"],
+            policy=human_state_policy,
+            risk_score=hs_result["risk_score"],
+        )
+    except Exception as e:
+        logger.warning(f"Human-State Engine error (non-fatal): {e}")
+
     auto_trigger = _detect_autonomous_trigger(req.content, emp)
     if auto_trigger:
         try:
@@ -1840,6 +1858,23 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
                 break
     if critique:
         system_prompt += critique
+
+    if human_state_policy and isinstance(human_state_policy, dict):
+        alert = human_state_policy.get("alert_level", "none")
+        if alert != "none" or human_state_policy.get("tone") != "neutral":
+            policy_parts = []
+            if human_state_policy.get("tone") == "calm":
+                policy_parts.append("Be calm, patient, and reassuring.")
+            elif human_state_policy.get("tone") == "energetic":
+                policy_parts.append("Be concise and re-engage the user's interest.")
+            if human_state_policy.get("verbosity") == "low":
+                policy_parts.append("Keep your response brief and focused.")
+            if human_state_policy.get("explanation_mode") == "diagnostic":
+                policy_parts.append("Ask a clarifying question to pinpoint the issue.")
+            if human_state_policy.get("pacing") == "slow":
+                policy_parts.append("Take it step by step.")
+            if policy_parts:
+                system_prompt += "\n\nInteraction guidance: " + " ".join(policy_parts)
 
     chat_messages.append({"role": "system", "content": system_prompt})
     for msg in history:
@@ -1996,12 +2031,22 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
     except Exception:
         pass
 
-    return {
+    response = {
         "user_message": user_msg,
         "employee_message": employee_msg,
         "tool_calls": all_tool_calls if all_tool_calls else None,
         "tool_results": all_tool_results if all_tool_results else None,
     }
+
+    try:
+        from app.services.human_state_engine import human_state_engine
+        current_hs = human_state_engine.get_current_state(session_id)
+        if current_hs:
+            response["human_state"] = current_hs
+    except Exception:
+        pass
+
+    return response
 
 
 async def _get_user_github_token(user_id: str) -> str | None:
@@ -3102,3 +3147,118 @@ async def api_goal_progress(goal_id: str, user=Depends(get_current_user)):
         raise HTTPException(404, "Goal not found")
     progress = await get_goal_progress(goal_id)
     return {"goal_id": goal_id, **progress}
+
+
+# ─── Human-State Engine ─────────────────────────────────────────────
+
+@router.post("/human-state/analyze")
+async def api_analyze_human_state(request: Request, user=Depends(get_current_user)):
+    """
+    Analyze user text and update human interaction state for a session.
+    Accepts: { session_id, text, signals? }
+    If signals are provided, they're used directly. Otherwise text is analyzed.
+    """
+    from app.services.human_state_engine import human_state_engine, analyze_text_signals
+    from app.core.database import get_session, save_human_state_snapshot
+
+    body = await request.json()
+    session_id = body.get("session_id")
+    text = body.get("text", "")
+    raw_signals = body.get("signals")
+
+    if not session_id:
+        raise HTTPException(400, "session_id required")
+
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    if raw_signals:
+        signals = raw_signals
+    elif text:
+        signals = await analyze_text_signals(text)
+    else:
+        raise HTTPException(400, "Either text or signals required")
+
+    result = human_state_engine.update_state(session_id, signals)
+
+    await save_human_state_snapshot(
+        session_id=session_id,
+        state=result["state"],
+        trajectory=result["trajectory"],
+        policy=result["policy"],
+        risk_score=result["risk_score"],
+    )
+
+    return result
+
+
+@router.get("/human-state/{session_id}")
+async def api_get_human_state(session_id: str, user=Depends(get_current_user)):
+    from app.services.human_state_engine import human_state_engine
+    from app.core.database import get_session
+
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    state = human_state_engine.get_current_state(session_id)
+    if not state:
+        return {"state": None, "message": "No state data for this session yet"}
+    return state
+
+
+@router.post("/human-state/outcome")
+async def api_measure_outcome(request: Request, user=Depends(get_current_user)):
+    """
+    Measure state change between a prior snapshot and current state.
+    Accepts: { session_id, before_index }
+    """
+    from app.services.human_state_engine import human_state_engine
+    from app.core.database import (
+        get_session, save_human_state_outcome,
+        get_session_state_history
+    )
+
+    body = await request.json()
+    session_id = body.get("session_id")
+    before_index = body.get("before_index", 0)
+
+    if not session_id:
+        raise HTTPException(400, "session_id required")
+
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    result = human_state_engine.measure_outcome(session_id, before_index)
+    if not result:
+        raise HTTPException(400, "Not enough state data to measure outcome")
+
+    history = await get_session_state_history(session_id, limit=50)
+    before_snap_id = history[-(result["turns_elapsed"] + 1)]["id"] if len(history) > result["turns_elapsed"] else None
+    after_snap_id = history[0]["id"] if history else None
+
+    if before_snap_id and after_snap_id:
+        await save_human_state_outcome(
+            session_id=session_id,
+            before_snapshot_id=before_snap_id,
+            after_snapshot_id=after_snap_id,
+            deltas=result["deltas"],
+            outcome=result["outcome"],
+            turns_elapsed=result["turns_elapsed"],
+        )
+
+    return result
+
+
+@router.get("/human-state/{session_id}/history")
+async def api_state_history(session_id: str, user=Depends(get_current_user)):
+    from app.core.database import get_session, get_session_state_history
+
+    session = await get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    snapshots = await get_session_state_history(session_id)
+    return {"session_id": session_id, "snapshots": snapshots}

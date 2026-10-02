@@ -817,6 +817,39 @@ async def init_db():
                 CREATE INDEX IF NOT EXISTS idx_gtasks_goal ON goal_tasks(goal_id, sort_order);
                 CREATE INDEX IF NOT EXISTS idx_gtasks_status ON goal_tasks(goal_id, status);
                 CREATE INDEX IF NOT EXISTS idx_gtasks_employee ON goal_tasks(assigned_employee_id);
+
+                CREATE TABLE IF NOT EXISTS human_state_snapshots (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    frustration REAL NOT NULL DEFAULT 0.0,
+                    confusion REAL NOT NULL DEFAULT 0.0,
+                    engagement REAL NOT NULL DEFAULT 0.5,
+                    urgency REAL NOT NULL DEFAULT 0.0,
+                    arousal REAL NOT NULL DEFAULT 0.3,
+                    valence REAL NOT NULL DEFAULT 0.0,
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    trajectory TEXT,
+                    policy TEXT,
+                    risk_score REAL NOT NULL DEFAULT 0.0,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES employee_sessions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_hstate_session ON human_state_snapshots(session_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS human_state_outcomes (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    before_snapshot_id TEXT NOT NULL,
+                    after_snapshot_id TEXT NOT NULL,
+                    deltas TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    turns_elapsed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES employee_sessions(id),
+                    FOREIGN KEY (before_snapshot_id) REFERENCES human_state_snapshots(id),
+                    FOREIGN KEY (after_snapshot_id) REFERENCES human_state_snapshots(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_hsoutcome_session ON human_state_outcomes(session_id);
             """)
         else:
             # PostgreSQL DDL
@@ -1436,6 +1469,35 @@ async def init_db():
                 CREATE INDEX IF NOT EXISTS idx_gtasks_goal ON goal_tasks(goal_id, sort_order);
                 CREATE INDEX IF NOT EXISTS idx_gtasks_status ON goal_tasks(goal_id, status);
                 CREATE INDEX IF NOT EXISTS idx_gtasks_employee ON goal_tasks(assigned_employee_id);
+
+                CREATE TABLE IF NOT EXISTS human_state_snapshots (
+                    id VARCHAR(255) PRIMARY KEY,
+                    session_id VARCHAR(255) NOT NULL REFERENCES employee_sessions(id),
+                    frustration REAL NOT NULL DEFAULT 0.0,
+                    confusion REAL NOT NULL DEFAULT 0.0,
+                    engagement REAL NOT NULL DEFAULT 0.5,
+                    urgency REAL NOT NULL DEFAULT 0.0,
+                    arousal REAL NOT NULL DEFAULT 0.3,
+                    valence REAL NOT NULL DEFAULT 0.0,
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    trajectory TEXT,
+                    policy TEXT,
+                    risk_score REAL NOT NULL DEFAULT 0.0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_hstate_session ON human_state_snapshots(session_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS human_state_outcomes (
+                    id VARCHAR(255) PRIMARY KEY,
+                    session_id VARCHAR(255) NOT NULL REFERENCES employee_sessions(id),
+                    before_snapshot_id VARCHAR(255) NOT NULL REFERENCES human_state_snapshots(id),
+                    after_snapshot_id VARCHAR(255) NOT NULL REFERENCES human_state_snapshots(id),
+                    deltas TEXT NOT NULL,
+                    outcome VARCHAR(50) NOT NULL,
+                    turns_elapsed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_hsoutcome_session ON human_state_outcomes(session_id);
             """)
         await db.commit()
 
@@ -4833,5 +4895,90 @@ async def get_next_runnable_goal_tasks(goal_id: str) -> list[dict]:
             if not deps or all(d in completed_ids for d in deps):
                 runnable.append(t)
         return runnable
+    finally:
+        await db.close()
+
+
+# ─── Human State Engine DB helpers ───────────────────────────────────
+
+async def save_human_state_snapshot(
+    session_id: str,
+    state: dict,
+    trajectory: dict | None = None,
+    policy: dict | None = None,
+    risk_score: float = 0.0,
+) -> dict:
+    db = await get_db()
+    try:
+        snapshot_id = uuid.uuid4().hex[:16]
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute(
+            """INSERT INTO human_state_snapshots
+               (id, session_id, frustration, confusion, engagement, urgency,
+                arousal, valence, confidence, trajectory, policy, risk_score, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (snapshot_id, session_id,
+             state.get("frustration", 0.0), state.get("confusion", 0.0),
+             state.get("engagement", 0.5), state.get("urgency", 0.0),
+             state.get("arousal", 0.3), state.get("valence", 0.0),
+             state.get("confidence", 0.5),
+             json.dumps(trajectory) if trajectory else None,
+             json.dumps(policy) if policy else None,
+             risk_score, now)
+        )
+        await db.commit()
+        return {"id": snapshot_id, "session_id": session_id, "created_at": now}
+    finally:
+        await db.close()
+
+
+async def get_session_state_history(session_id: str, limit: int = 50) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT * FROM human_state_snapshots
+               WHERE session_id = ? ORDER BY created_at DESC LIMIT ?""",
+            (session_id, limit)
+        )
+        return await cursor.fetchall()
+    finally:
+        await db.close()
+
+
+async def save_human_state_outcome(
+    session_id: str,
+    before_snapshot_id: str,
+    after_snapshot_id: str,
+    deltas: dict,
+    outcome: str,
+    turns_elapsed: int = 0,
+) -> dict:
+    db = await get_db()
+    try:
+        outcome_id = uuid.uuid4().hex[:16]
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute(
+            """INSERT INTO human_state_outcomes
+               (id, session_id, before_snapshot_id, after_snapshot_id,
+                deltas, outcome, turns_elapsed, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (outcome_id, session_id, before_snapshot_id, after_snapshot_id,
+             json.dumps(deltas), outcome, turns_elapsed, now)
+        )
+        await db.commit()
+        return {"id": outcome_id, "outcome": outcome, "created_at": now}
+    finally:
+        await db.close()
+
+
+async def get_session_outcomes(session_id: str) -> list[dict]:
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """SELECT * FROM human_state_outcomes
+               WHERE session_id = ? ORDER BY created_at DESC""",
+            (session_id,)
+        )
+        return await cursor.fetchall()
     finally:
         await db.close()
