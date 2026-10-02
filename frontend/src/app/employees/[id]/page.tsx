@@ -1160,8 +1160,8 @@ export default function EmployeeChatPage() {
               "Business Analyst": ["Analyze the market for our product", "Create a competitive analysis", "Draft user stories for the next sprint"],
               "Researcher": ["Research the latest trends in AI", "Find papers on retrieval-augmented generation", "Summarize key findings from our data"],
               "Architect": ["Design the system architecture for a new feature", "Review our database schema", "Propose a microservices migration plan"],
-              "Software Engineer": ["Implement the authentication module", "Debug the failing API endpoint", "Write unit tests for the user service"],
-              "QA Engineer": ["Create a test plan for the login flow", "Run regression tests on the API", "Document the edge cases we need to cover"],
+              "Software Engineer": ["Build a Python function to validate email addresses, then delegate to Sentinel to test it", "Write a sorting algorithm and run it to verify correctness", "Implement a REST API endpoint and ask Sentinel to write test cases for it"],
+              "QA Engineer": ["Write test cases for a user registration flow and run them", "Create a comprehensive test plan and delegate to Atlas to implement the code", "Analyze this code for bugs and edge cases"],
               "Technical Writer": ["Write API documentation for our endpoints", "Create a user guide for onboarding", "Draft release notes for v2.0"],
             };
             const prompts = SUGGESTIONS[employee.role] || ["Help me with a task", "What can you do?", "Let's brainstorm ideas"];
@@ -1315,22 +1315,52 @@ export default function EmployeeChatPage() {
               let calls: { function: { name: string; arguments: string } }[] = [];
               try { calls = JSON.parse(msg.content); } catch { /* skip */ }
               if (calls.length === 0) return null;
+
+              const hasDelegation = calls.some(tc => tc.function.name === "delegate");
+
               return (
                 <div key={msg.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 8 }}>
                   <div style={{
                     maxWidth: "80%", padding: "8px 14px", borderRadius: 10,
-                    background: "var(--bg-card)", border: "1px dashed var(--accent-border)",
+                    background: hasDelegation ? "linear-gradient(135deg, rgba(99,91,255,0.06), rgba(99,91,255,0.02))" : "var(--bg-card)",
+                    border: hasDelegation ? "1px solid rgba(99,91,255,0.2)" : "1px dashed var(--accent-border)",
                     fontSize: 12, color: "var(--text-secondary)",
                   }}>
                     {calls.map((tc, i) => {
+                      const isDelegateCall = tc.function.name === "delegate";
                       let argSummary = "";
+                      let delegateTo = "";
+                      let delegateTask = "";
                       try {
                         const args = JSON.parse(tc.function.arguments);
+                        if (isDelegateCall) {
+                          delegateTo = args.to || "";
+                          delegateTask = args.task || "";
+                        }
                         argSummary = Object.entries(args).map(([k, v]) => {
                           const val = typeof v === "string" && v.length > 60 ? v.slice(0, 60) + "..." : String(v);
                           return `${k}: ${val}`;
                         }).join(", ");
                       } catch { argSummary = tc.function.arguments; }
+
+                      if (isDelegateCall) {
+                        return (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: i < calls.length - 1 ? 6 : 0 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#635bff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+                            </svg>
+                            <span style={{ fontWeight: 700, color: "#635bff" }}>
+                              Delegating to {delegateTo}
+                            </span>
+                            {delegateTask && (
+                              <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+                                — {delegateTask.length > 80 ? delegateTask.slice(0, 80) + "..." : delegateTask}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+
                       return (
                         <div key={i} style={{ marginBottom: i < calls.length - 1 ? 6 : 0 }}>
                           <span style={{ fontWeight: 600, color: "var(--accent)", fontFamily: "monospace" }}>
@@ -1350,13 +1380,87 @@ export default function EmployeeChatPage() {
             }
 
             if (msg.role === "tool_result") {
-              let result: { tool?: string; result?: string; error?: string; images?: { type: string; data: string }[]; html?: string; preview_url?: string } = {};
+              let result: { tool?: string; result?: string; error?: string; images?: { type: string; data: string }[]; html?: string; preview_url?: string; task_id?: string; delegated_to?: string; status?: string; success?: boolean } = {};
               try {
                 const parsed = JSON.parse(msg.content);
                 const inner = typeof parsed.result === "string" ? (() => { try { return JSON.parse(parsed.result); } catch { return parsed; } })() : parsed;
                 result = { tool: parsed.tool, ...inner };
               } catch { /* skip */ }
               const isError = !!result.error;
+              const isDelegation = result.tool === "delegate" || result.tool === "check_delegation";
+
+              if (isDelegation && !isError) {
+                const isDelegateAction = result.tool === "delegate";
+                const delegateeName = result.delegated_to || "";
+                const taskId = result.task_id || "";
+                const statusVal = result.status || "";
+                const resultText = typeof result.result === "string" ? result.result : "";
+                const isCompleted = statusVal === "completed";
+                const isPending = statusVal === "pending" || statusVal === "in_progress";
+
+                return (
+                  <div key={msg.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
+                    <div style={{
+                      maxWidth: "85%", borderRadius: 12, overflow: "hidden",
+                      background: "linear-gradient(135deg, rgba(99,91,255,0.06), rgba(99,91,255,0.02))",
+                      border: "1px solid rgba(99,91,255,0.2)",
+                    }}>
+                      <div style={{
+                        padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
+                        borderBottom: "1px solid rgba(99,91,255,0.1)",
+                        background: "rgba(99,91,255,0.04)",
+                      }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: 10,
+                          background: isDelegateAction ? "rgba(99,91,255,0.12)" : isCompleted ? "rgba(11,191,140,0.12)" : "rgba(245,166,35,0.12)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {isDelegateAction ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#635bff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+                            </svg>
+                          ) : isCompleted ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0bbf8c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                          ) : (
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f5a623" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+                            {isDelegateAction ? `Delegated to ${delegateeName}` : isCompleted ? "Delegation Complete" : "Delegation In Progress"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>
+                            {isDelegateAction ? "Multi-agent collaboration" : `Status: ${statusVal}`}
+                          </div>
+                        </div>
+                        <div style={{
+                          marginLeft: "auto", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+                          background: isDelegateAction ? "rgba(99,91,255,0.1)" : isCompleted ? "rgba(11,191,140,0.1)" : "rgba(245,166,35,0.1)",
+                          color: isDelegateAction ? "#635bff" : isCompleted ? "#0bbf8c" : "#f5a623",
+                        }}>
+                          {isDelegateAction ? "QUEUED" : isCompleted ? "DONE" : "WORKING"}
+                        </div>
+                      </div>
+                      <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                        {resultText.length > 300 ? resultText.slice(0, 300) + "..." : resultText}
+                      </div>
+                      {taskId && (
+                        <div style={{
+                          padding: "6px 14px 8px", fontSize: 11, color: "var(--text-muted)",
+                          borderTop: "1px solid rgba(99,91,255,0.08)", fontFamily: "monospace",
+                        }}>
+                          Task ID: {taskId}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
               const display = result.error || (typeof result.result === "string" ? result.result : JSON.stringify(result.result));
               const truncated = display && display.length > 200 ? display.slice(0, 200) + "..." : display;
               const hasImages = result.images && result.images.length > 0;
