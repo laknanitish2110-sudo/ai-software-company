@@ -1933,15 +1933,23 @@ async def api_send_message(session_id: str, req: SendMessageRequest, user=Depend
                 github_token=github_token,
             )
 
-            result_str = json.dumps(result, default=str)
-            if len(result_str) > 8000:
-                result_str = result_str[:8000] + "...(truncated)"
+            full_result_str = json.dumps(result, default=str)
 
-            tool_result_record = {"tool_call_id": tc["id"], "tool": func_name, "result": result_str}
+            llm_result = dict(result) if isinstance(result, dict) else result
+            if isinstance(llm_result, dict):
+                llm_result.pop("images", None)
+                llm_result.pop("html", None)
+                if "images" in (result if isinstance(result, dict) else {}):
+                    llm_result["_note"] = f"{len(result['images'])} image(s) generated and displayed to user"
+            llm_str = json.dumps(llm_result, default=str)
+            if len(llm_str) > 8000:
+                llm_str = llm_str[:8000] + "...(truncated)"
+
+            tool_result_record = {"tool_call_id": tc["id"], "tool": func_name, "result": full_result_str}
             all_tool_results.append(tool_result_record)
 
-            chat_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
-            await add_session_message(session_id, "tool_result", json.dumps(tool_result_record))
+            chat_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": llm_str})
+            await add_session_message(session_id, "tool_result", json.dumps(tool_result_record, default=str))
         await update_employee(emp["id"], user["id"], {"status": "thinking"})
     else:
         response_text = text or "I've completed the tool operations. Let me know if you need anything else."
