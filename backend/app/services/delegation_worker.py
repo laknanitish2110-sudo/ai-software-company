@@ -89,6 +89,7 @@ async def process_delegation_task(task: dict) -> dict:
         if memory_context:
             system_prompt += memory_context
         system_prompt += f"\n\nA teammate ({from_name}) has delegated a task to you. Complete it thoroughly."
+        system_prompt += "\n\nIMPORTANT: After completing your work, always provide a clear text summary of what you did and the results. Never return an empty response."
 
         history = await get_session_messages(session["id"], limit=10)
         chat_messages = [{"role": "system", "content": system_prompt}]
@@ -113,6 +114,8 @@ async def process_delegation_task(task: dict) -> dict:
 
         max_iterations = 3
         response_text = ""
+
+        tool_results_log = []
 
         for iteration in range(max_iterations):
             text, tool_calls = await call_llm_with_fallback(
@@ -149,6 +152,7 @@ async def process_delegation_task(task: dict) -> dict:
                 if len(result_str) > 4000:
                     result_str = result_str[:4000] + "...(truncated)"
 
+                tool_results_log.append({"tool": func_name, "result": result_str})
                 chat_messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
                 await add_session_message(
                     session["id"], "tool_result",
@@ -158,6 +162,19 @@ async def process_delegation_task(task: dict) -> dict:
             await update_employee(to_emp_id, user_id, {"status": "thinking"})
         else:
             response_text = text or "Task completed."
+
+        if not response_text.strip() and tool_results_log:
+            parts = [f"Completed delegated task using {len(tool_results_log)} tool(s):"]
+            for tr in tool_results_log:
+                try:
+                    parsed = json.loads(tr["result"])
+                    res_val = parsed.get("result", tr["result"]) if isinstance(parsed, dict) else tr["result"]
+                except (json.JSONDecodeError, TypeError):
+                    res_val = tr["result"]
+                parts.append(f"- {tr['tool']}: {str(res_val)[:500]}")
+            response_text = "\n".join(parts)
+        elif not response_text.strip():
+            response_text = "Task completed."
 
         await add_session_message(session["id"], "employee", response_text)
         await update_employee(to_emp_id, user_id, {"status": "idle"})
